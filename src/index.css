@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+/* Custom Scrollbar minimalista, translúcida e sem setas de rolagem */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+  backdrop-filter: blur(4px);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* Suporte padrão para Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+/* Animações de Movimentação e Postura para Sprites dos Marinheiros */
+@keyframes marineIdle {
+  0%, 100% {
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-2px) scale(1.02, 0.98) rotate(-1deg);
+  }
+  50% {
+    transform: translateY(-4px) scale(1.04, 0.97) rotate(0deg);
+  }
+  75% {
+    transform: translateY(-2px) scale(1.01, 0.99) rotate(1deg);
+  }
+}
+
+@keyframes marineWalk {
+  0%, 100% {
+    transform: translateY(0) rotate(-3deg) scaleX(1);
+  }
+  50% {
+    transform: translateY(-5px) rotate(3deg) scaleX(1.03);
+  }
+}
+
+@keyframes marineSlash {
+  0% {
+    transform: scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 0px rgba(59, 130, 246, 0));
+  }
+  40% {
+    transform: translateX(-4px) scale(1.15) rotate(-10deg);
+    filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.8));
+  }
+  70% {
+    transform: translateX(6px) scale(1.1) rotate(12deg);
+    filter: drop-shadow(0 0 12px rgba(239, 68, 68, 0.9));
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 0px rgba(59, 130, 246, 0));
+  }
+}
+
+.animate-marine-idle {
+  animation: marineIdle 1.8s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.animate-marine-walk {
+  animation: marineWalk 0.6s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.animate-marine-slash {
+  animation: marineSlash 0.5s ease-in-out;
+  transform-origin: bottom center;
+}
+

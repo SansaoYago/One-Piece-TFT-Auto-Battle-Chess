@@ -1,0 +1,6 @@
+{
+  "name": "One Piece Tactics",
+  "description": "Auto Battler tático em tempo real inspirado em One Piece, com motor de simulação fluida, sinergias avançadas, sistema de Haki e chips de sinergia.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
