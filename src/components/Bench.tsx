@@ -1,6 +1,6 @@
 import React from 'react';
 import { UnitInstance } from '../types/game';
-import { Sparkles, Star } from 'lucide-react';
+import { Sparkles, Star, ShipWheel } from 'lucide-react';
 import { SYNERGY_DATABASE } from '../data/synergies';
 import { ITEM_DATABASE } from '../data/items';
 import { ChampionVisual } from './ChampionVisual';
@@ -17,6 +17,11 @@ interface BenchProps {
   isViewingOpponentArena?: boolean;
   opponentName?: string;
   isTestMode?: boolean;
+  playerUnitsCount?: number;
+  maxUnits?: number;
+  level?: number;
+  xp?: number;
+  xpNeeded?: number;
 }
 
 export const Bench: React.FC<BenchProps> = ({
@@ -31,6 +36,11 @@ export const Bench: React.FC<BenchProps> = ({
   isViewingOpponentArena = false,
   opponentName = 'Oponente',
   isTestMode = false,
+  playerUnitsCount = 0,
+  maxUnits = 1,
+  level = 1,
+  xp = 0,
+  xpNeeded = 2,
 }) => {
   return (
     <div className={`flex items-center gap-2 px-3 py-1.5 backdrop-blur-md rounded-2xl border shadow-2xl transition-all ${
@@ -40,15 +50,39 @@ export const Bench: React.FC<BenchProps> = ({
         ? 'bg-slate-950/90 border-amber-500/60 ring-1 ring-amber-500/30'
         : 'bg-slate-950/40 border-slate-700/40'
     }`}>
-      <div className="flex flex-col items-center justify-center mr-1 flex-shrink-0">
-        <span className={`text-[10px] font-black uppercase tracking-wider ${
-          isViewingOpponentArena ? 'text-cyan-400' : 'text-amber-400'
-        }`}>
-          {isViewingOpponentArena ? `Banco (${opponentName.split(' ')[0]})` : isTestMode ? 'Heróis' : 'Banco'}
-        </span>
-        <span className="text-[9px] text-slate-400 font-mono font-bold">
-          {isTestMode ? `${benchSlots.length} Disp.` : '8 Slots'}
-        </span>
+      {/* Embutido no lugar de BANCO 8 Slots: Ícone de Leme redondo (ShipWheel) + Contagem de Unidades (sem a palavra Unidades) + Barra de XP abaixo */}
+      <div className="flex flex-col items-center justify-center px-1.5 py-0.5 mr-1 flex-shrink-0 min-w-[58px]">
+        {/* Unidades: Ícone de Leme Redondo (Navio) + Contagem */}
+        <div className="flex items-center gap-1.5">
+          <ShipWheel className={`w-4 h-4 ${isViewingOpponentArena ? 'text-cyan-400' : 'text-amber-400'}`} />
+          <span
+            className={`text-[12px] font-mono font-black ${
+              !isTestMode && playerUnitsCount > maxUnits
+                ? 'text-rose-400 animate-pulse'
+                : isViewingOpponentArena
+                ? 'text-cyan-300'
+                : 'text-amber-300'
+            }`}
+          >
+            {isTestMode ? benchSlots.length : `${playerUnitsCount}/${maxUnits}`}
+          </span>
+        </div>
+
+        {/* Barra de XP abaixo de unidades */}
+        {!isViewingOpponentArena && (
+          <div className="w-14 flex flex-col items-center mt-1">
+            <div className="w-full flex items-center justify-between text-[7.5px] font-bold text-slate-300 leading-none mb-0.5">
+              <span className="text-amber-300 font-mono">Nv.{level}</span>
+              <span className="text-[7px] text-slate-400 font-mono">{xp}/{xpNeeded}</span>
+            </div>
+            <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden border border-slate-700/80 shadow-inner">
+              <div
+                className="h-full bg-gradient-to-r from-amber-500 to-amber-300 rounded-full transition-all duration-300"
+                style={{ width: `${Math.min(100, (xp / (xpNeeded || 1)) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className={`flex items-center gap-1.5 ${isTestMode ? 'overflow-x-auto max-w-[80vw] pb-1 scrollbar-thin' : ''}`}>

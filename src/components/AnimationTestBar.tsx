@@ -42,6 +42,8 @@ export const AnimationTestBar: React.FC<AnimationTestBarProps> = ({
 
   const isDrinker = selectedUnit.unitId === 'zoro' || selectedUnit.unitId === 'shanks';
   const isZoro = selectedUnit.unitId === 'zoro';
+  const isNami = selectedUnit.unitId === 'nami';
+  const isUsopp = selectedUnit.unitId === 'usopp';
   const hasSake = selectedUnit.items?.includes('garrafa_sake');
 
   const animButtons = isZoro
@@ -52,6 +54,24 @@ export const AnimationTestBar: React.FC<AnimationTestBarProps> = ({
         { id: 'punch1', label: '⚔️ Golpe 1', desc: 'Slash1' },
         { id: 'punch2', label: '⚔️ Golpe 2', desc: 'Slash1' },
         { id: 'kick1', label: '⚔️ Golpe Forte', desc: 'Slash1' },
+        { id: 'turnLeft', label: '↪️ Girar Esq.', desc: 'Curva esquerda' },
+        { id: 'turnRight', label: '↩️ Girar Dir.', desc: 'Curva direita' },
+        { id: 'death', label: '💀 Morte', desc: 'Derrota' },
+      ]
+    : isNami
+    ? [
+        { id: 'idle', label: '🧍 Skin Nami', desc: 'SkinNami.glb' },
+        { id: 'walk', label: '🚶 Caminhar', desc: 'WalkFem.glb' },
+        { id: 'attack', label: '⚡ Nami Atk', desc: 'NamiAtk.glb (Clima-Tact)' },
+        { id: 'turnLeft', label: '↪️ Girar Esq.', desc: 'Curva esquerda' },
+        { id: 'turnRight', label: '↩️ Girar Dir.', desc: 'Curva direita' },
+        { id: 'death', label: '💀 Morte', desc: 'Derrota' },
+      ]
+    : isUsopp
+    ? [
+        { id: 'idle', label: '🧍 Skin Usopp', desc: 'SkinUsopp.glb' },
+        { id: 'walk', label: '🚶 Caminhar', desc: 'Walk.glb' },
+        { id: 'attack', label: '🎯 Usopp Atk', desc: 'UsoppAtk.glb (Disparo Estilingue)' },
         { id: 'turnLeft', label: '↪️ Girar Esq.', desc: 'Curva esquerda' },
         { id: 'turnRight', label: '↩️ Girar Dir.', desc: 'Curva direita' },
         { id: 'death', label: '💀 Morte', desc: 'Derrota' },

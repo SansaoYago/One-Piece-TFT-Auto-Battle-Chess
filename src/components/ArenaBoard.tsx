@@ -224,13 +224,17 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
           transformStyle: 'preserve-3d',
         }}
       >
-        {/* Top Floating Overlay: Structured Clean HUD (HP, MP, Stars, Items, Name) - Hidden immediately when unit is defeated */}
+        {/* Top Floating Overlay: Structured Clean HUD (HP, MP, Stars, Items, Name) - Positioned with safe head clearance above 3D model */}
         {showUnitHud && !isDead && (
-          <div className="absolute -top-12 sm:-top-14 lg:-top-16 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none z-30 animate-in fade-in duration-200 whitespace-nowrap">
+          <div className="absolute bottom-full mb-2 sm:mb-3 lg:mb-4 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none z-30 animate-in fade-in duration-200 whitespace-nowrap">
             {/* Casting / Stun Floating Status Pill */}
             {isCasting && combatState?.castingSkillName && (
-              <div className="mb-1 px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[9px] font-black uppercase tracking-wider animate-bounce shadow-lg border border-amber-200">
-                ⚡ {combatState.castingSkillName}
+              <div className={`mb-1 px-2 py-0.5 rounded-full ${
+                combatState.castingSkillType === 'ORB_SPECIAL'
+                  ? 'bg-purple-600 text-purple-100 border-purple-300 shadow-purple-900/50'
+                  : 'bg-amber-400 text-slate-950 border-amber-200 shadow-amber-900/50'
+              } text-[9px] font-black uppercase tracking-wider animate-bounce shadow-lg border`}>
+                {combatState.castingSkillType === 'ORB_SPECIAL' ? '🔮' : '⚡'} {combatState.castingSkillName}
               </div>
             )}
             {isStunned && (
@@ -271,7 +275,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
               </span>
             </div>
 
-            {/* Barras de HP e Mana (Mana com metade da altura da barra de HP) */}
+            {/* Barras de HP, Mana e Barra Especial de Orbe (Roxo 250 pt) */}
             <div className="w-16 sm:w-20 flex flex-col gap-0.5">
               {/* Barra de HP (h-2) */}
               <div className="w-full h-2 bg-slate-950/90 rounded-full overflow-hidden border border-slate-700/80 shadow-inner">
@@ -285,7 +289,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                 />
               </div>
 
-              {/* Barra de Mana (h-1 - Exatamente metade da altura de HP) */}
+              {/* Barra de Mana / Ataque Especial Normal (h-1 - Exatamente metade da altura de HP) */}
               <div className="w-full h-1 bg-slate-950/90 rounded-full overflow-hidden border border-slate-700/80 shadow-inner">
                 <div
                   className="h-full bg-gradient-to-r from-cyan-500 to-cyan-300 rounded-full transition-all duration-150 shadow-sm"
@@ -294,6 +298,18 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                   }}
                 />
               </div>
+
+              {/* Barra de Especial de Orbe (Roxo, 250 pt) - Apenas para unidades equipadas com o Orbe */}
+              {unit.hasSpecialItem && (
+                <div className="w-full h-1 bg-slate-950/90 rounded-full overflow-hidden border border-purple-900/80 shadow-inner">
+                  <div
+                    className="h-full bg-gradient-to-r from-purple-600 via-purple-500 to-fuchsia-400 rounded-full transition-all duration-150 shadow-sm"
+                    style={{
+                      width: `${Math.min(100, (((unit.orbMana || combatState?.orbMana || 0) / (unit.maxOrbMana || 250)) * 100))}%`,
+                    }}
+                  />
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -323,7 +339,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                 : isCombatStarting || battleOutcome !== null
                 ? 'idle'
                 : isCasting
-                ? 'kick1'
+                ? (unit.unitId === 'nami' || unit.unitId === 'usopp' ? 'attack' : 'kick1')
                 : combatState?.currentAnimation && combatState.currentAnimation !== 'idle'
                 ? combatState.currentAnimation
                 : combatState?.moveCooldown && combatState.moveCooldown > 0
@@ -365,96 +381,18 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
         } rounded-full blur-3xl pointer-events-none transition-colors duration-700`}
       />
 
-      {/* Floating Tactical Controls Bar - Cleaned & Streamlined */}
-      <div className="absolute top-2.5 left-4 right-4 z-20 flex items-center justify-between pointer-events-none">
-        {/* Units Counter */}
-        <div className="flex items-center gap-2 pointer-events-auto">
-          <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-slate-900/90 border border-amber-500/30 shadow-xl backdrop-blur-md">
-            <Swords className="w-3.5 h-3.5 text-amber-400" />
-            <span className="text-[11px] font-bold text-slate-200">
-              {isTestMode ? 'Unidades no Campo:' : 'Unidades:'}
-            </span>
-            <span
-              className={`text-[11px] font-mono font-black px-2 py-0.5 rounded-md border ${
-                !isTestMode && playerUnitsCount > maxUnits
-                  ? 'bg-rose-950 text-rose-300 border-rose-600 animate-pulse'
-                  : 'bg-amber-950/80 text-amber-300 border-amber-600/60'
-              }`}
-            >
-              {isTestMode ? boardUnits.length : `${playerUnitsCount}/${maxUnits}`}
-            </span>
+      {/* Overtime 2X Indicator Badge */}
+      {isOvertime && (
+        <div className="absolute top-2.5 left-4 z-20 pointer-events-none">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-rose-600/90 text-white font-black text-[11px] shadow-lg animate-pulse border border-rose-400">
+            <Flame className="w-3.5 h-3.5 text-amber-300 animate-bounce" />
+            <span>OVERTIME 2X</span>
           </div>
-
-          {/* Overtime 2X Indicator Badge */}
-          {isOvertime && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-rose-600/90 text-white font-black text-[11px] shadow-lg animate-pulse border border-rose-400">
-              <Flame className="w-3.5 h-3.5 text-amber-300 animate-bounce" />
-              <span>OVERTIME 2X</span>
-            </div>
-          )}
         </div>
-      </div>
+      )}
 
       {/* 3D Isometric Tactical Arena Container (Elevated so bench does not cover bottom tiles) */}
       <div className="relative transform-gpu transition-transform duration-500 ease-out [perspective:1400px] flex items-center justify-center -translate-y-8 sm:-translate-y-12 lg:-translate-y-14 mt-4 mb-auto scale-95 lg:scale-100">
-        {/* Commander Tactical Platform on Player Flank (Elevated Pedestal) */}
-        <div
-          className="absolute -left-24 bottom-6 z-20 flex flex-col items-center pointer-events-none"
-          style={{
-            transform: 'translate3d(-40px, 40px, 60px)',
-          }}
-        >
-          <div className="relative flex flex-col items-center group">
-            {/* Commander Tag */}
-            <div className={`mb-1 px-2.5 py-0.5 rounded-md border text-[9px] font-black shadow flex items-center gap-1 ${
-              isViewingOpponentArena
-                ? 'bg-slate-900/95 border-cyan-500/60 text-cyan-300'
-                : 'bg-slate-900/90 border-amber-500/50 text-amber-300'
-            }`}>
-              <Crown className={`w-2.5 h-2.5 ${isViewingOpponentArena ? 'text-cyan-400' : 'text-amber-400'}`} />
-              {isViewingOpponentArena ? viewingCommander?.name || 'Oponente' : 'Você'}
-            </div>
-
-            {/* 3D Elevated Commander Stand */}
-            <div className={`w-14 h-14 rounded-2xl border-2 shadow-xl flex items-center justify-center text-2xl relative ring-2 ${
-              isViewingOpponentArena
-                ? 'bg-gradient-to-t from-cyan-950 via-slate-900 to-slate-800 border-cyan-400/80 shadow-[0_15px_30px_rgba(6,182,212,0.3)] ring-cyan-400/20'
-                : 'bg-gradient-to-t from-amber-950 via-slate-900 to-slate-800 border-amber-400/80 shadow-[0_15px_30px_rgba(245,158,11,0.3)] ring-amber-400/20'
-            }`}>
-              <span className="drop-shadow-lg">{viewingCommander?.avatar || '🏴‍☠️'}</span>
-              <div className="absolute -bottom-2 w-10 h-2 bg-black/60 rounded-full blur-xs" />
-            </div>
-
-            {/* Gold & XP Bar transferred to Você pedestal */}
-            {!isViewingOpponentArena && gold !== undefined ? (
-              <div className="mt-1.5 flex flex-col items-center gap-1 bg-slate-950/95 border border-amber-500/50 rounded-xl px-2.5 py-1.5 shadow-2xl backdrop-blur-md min-w-[96px] pointer-events-auto">
-                <div className="flex items-center gap-1 text-amber-300 font-mono font-black text-xs">
-                  <Coins className="w-3.5 h-3.5 text-amber-400" />
-                  <span>{gold} <span className="text-amber-400 font-serif">฿</span></span>
-                </div>
-                <div className="w-full flex flex-col items-center">
-                  <div className="w-full flex items-center justify-between text-[8px] font-bold text-slate-300 mb-0.5">
-                    <span className="text-amber-300">Nv.{level}</span>
-                    <span className="text-[7px] text-slate-400 font-mono">{xp}/{xpNeeded} XP</span>
-                  </div>
-                  <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
-                    <div
-                      className="h-full bg-gradient-to-r from-amber-500 to-amber-300 rounded-full transition-all duration-300"
-                      style={{ width: `${Math.min(100, (xp / xpNeeded) * 100)}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            ) : isViewingOpponentArena ? (
-              <div className="w-20 h-5 bg-gradient-to-b from-cyan-900/80 to-slate-950 border border-cyan-500/40 rounded-full shadow-xl mt-1 flex items-center justify-center">
-                <span className="text-[8px] font-mono uppercase font-black text-cyan-400/90">
-                  Oponente
-                </span>
-              </div>
-            ) : null}
-          </div>
-        </div>
-
         {/* 3D Arena Stadium Floor */}
         <div
           className="relative grid grid-cols-8 gap-2.5 p-7 rounded-[2.5rem] bg-gradient-to-b from-slate-950/95 via-slate-900/90 to-slate-950/95 border-[3px] border-amber-500/30 shadow-[0_30px_70px_-15px_rgba(0,0,0,0.95),0_0_60px_rgba(245,158,11,0.12)] backdrop-blur-2xl ring-1 ring-white/5"

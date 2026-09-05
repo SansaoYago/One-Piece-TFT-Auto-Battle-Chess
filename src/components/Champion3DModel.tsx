@@ -30,12 +30,20 @@ function lerpAngle(current: number, target: number, speed: number) {
   return current + diff * speed;
 }
 
+// Configuração de calibração de ângulo de Pré-Batalha / Idle (em radianos).
+// Permite ajustar a inclinação de qualquer personagem durante a fase de preparação / pré-batalha
+// sem afetar a mira precisa durante os ataques de combate.
+export const CHAMPION_IDLE_ANGLE_OFFSETS: Record<string, number> = {
+  // Exemplo: 'zoro': 0, // Pode ser ajustado facilmente se no futuro usar uma animação pré-battle inclinada
+};
+
 // Helper to compute target rotation Y based on positions and team
 function computeTargetRotationY(
   isEnemy: boolean,
   currentPos?: { x: number; y: number } | null,
   targetPos?: { x: number; y: number } | null,
-  facingAngle?: number
+  facingAngle?: number,
+  unitId?: string
 ): number {
   if (typeof facingAngle === 'number') {
     return facingAngle;
@@ -60,7 +68,9 @@ function computeTargetRotationY(
   // Natural isometric idle stance aligned precisely with arena grid lines:
   // Player (cols 0-3): facing enemy side along grid line (dx = +1, dy = 0) => atan2(0.866, -0.287) ~ 1.89 rad (108deg)
   // Enemy (cols 4-7): facing player side along grid line (dx = -1, dy = 0) => atan2(-0.866, 0.287) ~ -1.25 rad (-72deg)
-  return isEnemy ? -1.25 : 1.89;
+  const baseAngle = isEnemy ? -1.25 : 1.89;
+  const idleOffset = unitId ? (CHAMPION_IDLE_ANGLE_OFFSETS[unitId.toLowerCase()] || 0) : 0;
+  return baseAngle + idleOffset;
 }
 
 export const Champion3DModel: React.FC<Champion3DModelProps> = ({
@@ -87,7 +97,7 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
   const animStateRef = useRef<'idle' | 'walk' | 'punch' | 'cast'>('idle');
 
   const targetRotationYRef = useRef<number>(
-    computeTargetRotationY(isEnemy, currentPos, targetPos, facingAngle)
+    computeTargetRotationY(isEnemy, currentPos, targetPos, facingAngle, unitId)
   );
   const [isReady, setIsReady] = useState(false);
 
@@ -97,12 +107,29 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
       isEnemy,
       currentPos,
       targetPos,
-      facingAngle
+      facingAngle,
+      unitId
     );
-  }, [isEnemy, currentPos?.x, currentPos?.y, targetPos?.x, targetPos?.y, facingAngle]);
+  }, [isEnemy, currentPos?.x, currentPos?.y, targetPos?.x, targetPos?.y, facingAngle, unitId]);
+
+  const isNami = unitId?.toLowerCase().includes('nami');
+  const isUsopp = unitId?.toLowerCase().includes('usopp');
 
   // Determine active action key
   const getActionKey = (): string => {
+    if (isNami) {
+      // Nami currently has no attack animation: stays in idle/rest pose during attacks
+      if (animationName === 'walk') return 'walk';
+      if (animationName === 'turnLeft') return 'turnLeft';
+      if (animationName === 'turnRight') return 'turnRight';
+      if (animationName === 'death') return 'death';
+      return 'idle';
+    }
+    if (isUsopp) {
+      if (isCasting || animationName?.includes('punch') || animationName?.includes('kick') || animationName === 'attack' || animationName === 'slash1') {
+        return 'attack';
+      }
+    }
     if (isCasting) return 'kick1';
     if (animationName === 'punch' || animationName === 'punch1' || animationName === 'attack' || animationName === 'slash1') return 'punch1';
     if (animationName === 'punch2') return 'punch2';
@@ -124,9 +151,9 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
 
     // Procedural fallback state
     if (isCasting) {
-      animStateRef.current = 'cast';
+      animStateRef.current = isUsopp ? 'punch' : isNami ? 'idle' : 'cast';
     } else if (animationName?.includes('punch') || animationName === 'attack' || animationName === 'slash1' || animationName?.includes('kick')) {
-      animStateRef.current = 'punch';
+      animStateRef.current = isNami ? 'idle' : 'punch';
     } else if (animationName === 'walk' || animationName === 'turnLeft' || animationName === 'turnRight') {
       animStateRef.current = 'walk';
     } else {
@@ -136,11 +163,20 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     if (!mixerRef.current || !actionsRef.current) return;
 
     let targetAction = actionsRef.current[targetKey];
+    if (isNami) {
+      targetAction = targetKey === 'walk'
+        ? (actionsRef.current['walk'] || actionsRef.current['idle'])
+        : actionsRef.current['idle'];
+    } else if (isUsopp && (targetKey.startsWith('punch') || targetKey.startsWith('kick') || targetKey === 'attack')) {
+      targetAction = actionsRef.current['attack'] || actionsRef.current['punch1'] || actionsRef.current['idle'];
+    }
     if (!targetAction && targetKey.startsWith('punch')) {
       targetAction = actionsRef.current['punch1'] || actionsRef.current['punch'] || actionsRef.current['idle'];
     }
     if (!targetAction && targetKey.startsWith('kick')) {
-      targetAction = actionsRef.current['kick1'] || actionsRef.current['kick'] || actionsRef.current['punch1'] || actionsRef.current['idle'];
+      targetAction = isUsopp
+        ? (actionsRef.current['attack'] || actionsRef.current['punch1'] || actionsRef.current['idle'])
+        : (actionsRef.current['kick1'] || actionsRef.current['kick'] || actionsRef.current['punch1'] || actionsRef.current['idle']);
     }
     if (!targetAction && (targetKey === 'turnLeft' || targetKey === 'turnRight')) {
       targetAction = actionsRef.current['walk'] || actionsRef.current['idle'];
@@ -182,6 +218,12 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
         }
         activeActionRef.current = targetAction;
       }
+    } else {
+      // Skinned character in idle: fade out active animation so model returns cleanly to its own SkinPersonagem rest pose
+      if (activeActionRef.current) {
+        activeActionRef.current.fadeOut(0.12);
+        activeActionRef.current = null;
+      }
     }
   }, [animationName, isCasting, lastAttackTimestamp]);
 
@@ -199,14 +241,19 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     const fov = 50;
     const camera = new THREE.PerspectiveCamera(fov, width / height, 0.1, 100);
     // Elevated Y and distanced Z camera creating tactical 45°-48° top-down isometric angle looking at champion's center
-    camera.position.set(0, 2.2, 1.65);
-    camera.lookAt(0, 0.52, 0);
+    camera.position.set(0, 2.25, 1.75);
+    camera.lookAt(0, 0.55, 0);
 
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    const renderer = new THREE.WebGLRenderer({
+      alpha: true,
+      antialias: false,
+      powerPreference: 'high-performance',
+      precision: 'mediump',
+    });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = false;
 
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
@@ -267,12 +314,14 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
         if (!isMounted) return;
 
         try {
-          // Dedicated 3D models available for Luffy and Zoro
+          // Dedicated 3D models available for Luffy, Zoro, Nami, Usopp, or any champion with customSkin
           const normId = unitId.toLowerCase();
           const isLuffy = normId === 'luffy';
           const isZoro = normId === 'zoro';
+          const isNami = normId === 'nami';
+          const isUsopp = normId === 'usopp';
 
-          if (!isLuffy && !isZoro) {
+          if (!isLuffy && !isZoro && !isNami && !isUsopp && !customSkin) {
             fallbackToProcedural();
             return;
           }
@@ -298,7 +347,7 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
             ? SkeletonUtils.clone(sourceModel)
             : sourceModel.clone(true)) as THREE.Group;
 
-          // 1. Reset root rotation - all models (both static and animated Mixamo) are upright Y-up
+          // 1. Reset root rotation - models are upright Y-up and face forward
           clonedRig.rotation.set(0, 0, 0);
 
           // 2. Configure SkinnedMesh and bones if rigged
@@ -359,62 +408,100 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
 
             const actions: { [key: string]: THREE.AnimationAction } = {};
             const isFemale = isFemaleChampion(unitId);
+            const hasDedicatedSkin = isLuffy || isZoro || isNami || isUsopp || customSkin?.isDedicatedSkin || !!customSkin;
 
-            let idleClipToUse =
-              (isFemale
-                ? rigData.animations.femaleIdle || rigData.animations.idle
-                : rigData.animations.maleIdle || rigData.animations.idle) ||
-              customSkin?.animations?.[0];
+            // For champions with a dedicated skin, do not apply Idle from base animations.
+            // Base pose is the model's own skin rest/bind pose from SkinPersonagem.
+            let idleClipToUse: THREE.AnimationClip | undefined = undefined;
+            if (!hasDedicatedSkin) {
+              idleClipToUse =
+                (isFemale
+                  ? rigData.animations.femaleIdle || rigData.animations.idle
+                  : rigData.animations.maleIdle || rigData.animations.idle) ||
+                customSkin?.animations?.[0];
+            }
+
             let walkClipToUse = rigData.animations.walk;
 
-            // Dedicated Zoro animations (IdleZoro.glb, ZoroWalk.glb, Slash1.glb)
-            if (isZoro && customSkin?.customAnimations) {
-              if (customSkin.customAnimations.idle) {
-                idleClipToUse = customSkin.customAnimations.idle;
-              }
-              if (customSkin.customAnimations.walk) {
-                walkClipToUse = customSkin.customAnimations.walk;
-              }
+            // Dedicated Zoro walk
+            if (isZoro && customSkin?.customAnimations?.walk) {
+              walkClipToUse = customSkin.customAnimations.walk;
+            }
+
+            // Dedicated Nami walk
+            if (isNami && customSkin?.customAnimations?.walk) {
+              walkClipToUse = customSkin.customAnimations.walk;
             }
 
             const idleAction = getRetargetedAction(idleClipToUse);
             const walkAction = getRetargetedAction(walkClipToUse);
 
-            // Zoro's default and only attack is Slash1; punches & kicks do not apply to Zoro's swordsmanship
-            const zoroAttackClip = isZoro
+            // Dedicated attack clips for Zoro (Slash1), Nami (NamiAtk), or Usopp (UsoppAtk)
+            const championAttackClip = isZoro
               ? (customSkin?.customAnimations?.slash1 || customSkin?.customAnimations?.attack || customAttackClip)
+              : isNami
+              ? (customSkin?.customAnimations?.attack || customAttackClip)
+              : isUsopp
+              ? (customSkin?.customAnimations?.attack || customAttackClip)
               : customAttackClip;
-            const customAttackAction = getRetargetedAction(zoroAttackClip || undefined);
+            const customAttackAction = getRetargetedAction(championAttackClip || undefined);
 
             const punchAction = customAttackAction || getRetargetedAction(rigData.animations.punch || rigData.animations.punch1);
             const punch2Action = customAttackAction || getRetargetedAction(rigData.animations.punch2);
             const punch3Action = customAttackAction || getRetargetedAction(rigData.animations.punch3);
             const punch4Action = customAttackAction || getRetargetedAction(rigData.animations.punch4);
-            const kickAction = customAttackAction || getRetargetedAction(rigData.animations.kick || rigData.animations.kick1);
-            const kick2Action = customAttackAction || getRetargetedAction(rigData.animations.kick2);
-            const kick3Action = customAttackAction || getRetargetedAction(rigData.animations.kick3);
+
+            // Nami and Usopp STRICTLY have no kicks: only their unique attack clip (customAttackAction) or punch, never rigData.animations.kick
+            const isNoKickChampion = isNami || isUsopp;
+            const kickAction = isNoKickChampion
+              ? (customAttackAction || punchAction)
+              : (customAttackAction || getRetargetedAction(rigData.animations.kick || rigData.animations.kick1));
+            const kick2Action = isNoKickChampion
+              ? (customAttackAction || punchAction)
+              : (customAttackAction || getRetargetedAction(rigData.animations.kick2));
+            const kick3Action = isNoKickChampion
+              ? (customAttackAction || punchAction)
+              : (customAttackAction || getRetargetedAction(rigData.animations.kick3));
             const turnLeftAction = getRetargetedAction(rigData.animations.turnLeft) || walkAction;
             const turnRightAction = getRetargetedAction(rigData.animations.turnRight) || walkAction;
             const deathAction = getRetargetedAction(rigData.animations.death);
 
             if (idleAction) actions['idle'] = idleAction;
             if (walkAction) actions['walk'] = walkAction;
-            if (punchAction) {
-              actions['punch'] = punchAction;
-              actions['punch1'] = punchAction;
-            }
-            if (punch2Action) actions['punch2'] = punch2Action;
-            if (punch3Action) actions['punch3'] = punch3Action;
-            if (punch4Action) actions['punch4'] = punch4Action;
-            if (kickAction) {
-              actions['kick'] = kickAction;
-              actions['kick1'] = kickAction;
-            }
-            if (kick2Action) actions['kick2'] = kick2Action;
-            if (kick3Action) actions['kick3'] = kick3Action;
-            if (customAttackAction) {
-              actions['attack'] = customAttackAction;
-              actions['slash1'] = customAttackAction;
+
+            if (isNami || isUsopp) {
+              // Nami & Usopp: Map every attack and combat action directly to their unique attack clip
+              const uniqueCharAttack = customAttackAction || punchAction;
+              if (uniqueCharAttack) {
+                actions['attack'] = uniqueCharAttack;
+                actions['punch'] = uniqueCharAttack;
+                actions['punch1'] = uniqueCharAttack;
+                actions['punch2'] = uniqueCharAttack;
+                actions['punch3'] = uniqueCharAttack;
+                actions['punch4'] = uniqueCharAttack;
+                actions['kick'] = uniqueCharAttack;
+                actions['kick1'] = uniqueCharAttack;
+                actions['kick2'] = uniqueCharAttack;
+                actions['kick3'] = uniqueCharAttack;
+              }
+            } else {
+              if (punchAction) {
+                actions['punch'] = punchAction;
+                actions['punch1'] = punchAction;
+              }
+              if (punch2Action) actions['punch2'] = punch2Action;
+              if (punch3Action) actions['punch3'] = punch3Action;
+              if (punch4Action) actions['punch4'] = punch4Action;
+              if (kickAction) {
+                actions['kick'] = kickAction;
+                actions['kick1'] = kickAction;
+              }
+              if (kick2Action) actions['kick2'] = kick2Action;
+              if (kick3Action) actions['kick3'] = kick3Action;
+              if (customAttackAction) {
+                actions['attack'] = customAttackAction;
+                actions['slash1'] = customAttackAction;
+              }
             }
             if (turnLeftAction) actions['turnLeft'] = turnLeftAction;
             if (turnRightAction) actions['turnRight'] = turnRightAction;
@@ -442,22 +529,22 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
           const isChopper = normId === 'chopper';
           
           const targetHeight = normId === 'luffy'
-            ? 1.70
-            : normId === 'zoro'
-            ? 1.78
-            : isMihawk
-            ? 1.85
-            : isShanks || isSmoke
-            ? 1.55
-            : isChopper
-            ? 1.25
-            : normId === 'tashigi'
-            ? 1.42
-            : normId === 'nami' || normId === 'usopp'
-            ? 1.40
-            : normId === 'buggy'
             ? 1.48
-            : 1.50;
+            : normId === 'zoro'
+            ? 1.52
+            : isMihawk
+            ? 1.56
+            : isShanks || isSmoke
+            ? 1.50
+            : isChopper
+            ? 1.18
+            : normId === 'tashigi'
+            ? 1.38
+            : normId === 'nami' || normId === 'usopp'
+            ? 1.36
+            : normId === 'buggy'
+            ? 1.42
+            : 1.45;
 
           const measuredBox = new THREE.Box3().setFromObject(clonedRig);
           const measuredSize = new THREE.Vector3();

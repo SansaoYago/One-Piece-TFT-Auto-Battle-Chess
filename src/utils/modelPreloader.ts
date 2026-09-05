@@ -67,6 +67,10 @@ export const REQUIRED_3D_ASSETS = [
   { url: './models/IdleZoro.glb', label: 'Postura Zoro (IdleZoro.glb)' },
   { url: './models/ZoroWalk.glb', label: 'Caminhada Zoro (ZoroWalk.glb)' },
   { url: './models/Slash1.glb', label: 'Ataque Espada 1 (Slash1.glb)' },
+  { url: './models/SkinNami.glb', label: 'Skin Nami (SkinNami.glb)' },
+  { url: './models/WalkFem.glb', label: 'Caminhada Nami (WalkFem.glb)' },
+  { url: './models/SkinUsopp.glb', label: 'Skin Usopp (SkinUsopp.glb)' },
+  { url: './models/UsoppAtk.glb', label: 'Ataque Usopp (UsoppAtk.glb)' },
   { url: './models/Idle.glb', label: 'Postura Base (Idle.glb)' },
   { url: './models/Walk.glb', label: 'Caminhada (Walk.glb)' },
   { url: './models/Punch1.glb', label: 'Soco 1 (Punch1.glb)' },
@@ -146,6 +150,29 @@ export const loadModelCached = (
     loader.load(
       url,
       (fbx) => {
+        // Apply textures if Nami FBX is loaded
+        if (url.toLowerCase().includes('nami')) {
+          const texLoader = new THREE.TextureLoader();
+          const diffuseMap = texLoader.load('./models/nami_diffuse.png');
+          diffuseMap.flipY = false;
+          diffuseMap.colorSpace = THREE.SRGBColorSpace;
+          const normalMap = texLoader.load('./models/nami_normal.png');
+          normalMap.flipY = false;
+          fbx.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+              const mesh = child as THREE.Mesh;
+              if (mesh.material) {
+                const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+                if (mat) {
+                  (mat as any).map = diffuseMap;
+                  (mat as any).normalMap = normalMap;
+                  mat.needsUpdate = true;
+                }
+              }
+            }
+          });
+        }
+
         modelCache[url] = {
           object: fbx,
           animations: fbx.animations || [],
@@ -289,11 +316,8 @@ export async function loadChampionSkinModel(unitId: string): Promise<ChampionSki
 
     for (const url of candidateUrls) {
       try {
-        const [zoroSkin, idleZoro, walkZoro, slash1Zoro] = await Promise.all([
+        const [zoroSkin, walkZoro, slash1Zoro] = await Promise.all([
           loadModelCached(url),
-          loadModelCached('./models/IdleZoro.glb')
-            .catch(() => loadModelCached('/models/IdleZoro.glb'))
-            .catch(() => null),
           loadModelCached('./models/ZoroWalk.glb')
             .catch(() => loadModelCached('/models/ZoroWalk.glb'))
             .catch(() => null),
@@ -303,10 +327,8 @@ export async function loadChampionSkinModel(unitId: string): Promise<ChampionSki
         ]);
 
         if (zoroSkin && zoroSkin.object) {
-          const idleClip = idleZoro?.animations?.[0];
           const walkClip = walkZoro?.animations?.[0];
           const slashClip = slash1Zoro?.animations?.[0];
-          if (idleClip) idleClip.name = 'idle';
           if (walkClip) walkClip.name = 'walk';
           if (slashClip) slashClip.name = 'slash1';
 
@@ -315,7 +337,6 @@ export async function loadChampionSkinModel(unitId: string): Promise<ChampionSki
             url,
             isDedicatedSkin: true,
             customAnimations: {
-              idle: idleClip,
               walk: walkClip,
               attack: slashClip,
               slash1: slashClip,
@@ -332,10 +353,10 @@ export async function loadChampionSkinModel(unitId: string): Promise<ChampionSki
   // 2. Luffy Dedicated Rig
   if (normId === 'luffy') {
     const candidateUrls = [
-      './models/SkinLuffy_a.glb',
-      '/models/SkinLuffy_a.glb',
       './models/SkinLuffy_b.glb',
       '/models/SkinLuffy_b.glb',
+      './models/SkinLuffy_a.glb',
+      '/models/SkinLuffy_a.glb',
     ];
 
     for (const url of candidateUrls) {
@@ -343,6 +364,90 @@ export async function loadChampionSkinModel(unitId: string): Promise<ChampionSki
         const res = await loadModelCached(url);
         if (res && res.object) {
           return { ...res, url, isDedicatedSkin: true };
+        }
+      } catch {
+        // continue trying candidate URLs
+      }
+    }
+    return null;
+  }
+
+  // 3. Nami Dedicated Rig (SkinNami, WalkFem, NamiAtk)
+  if (normId === 'nami') {
+    const candidateUrls = [
+      './models/SkinNami.glb',
+      '/models/SkinNami.glb',
+      './models/IdleNami.glb',
+      '/models/IdleNami.glb',
+      './models/Nami.glb',
+      '/models/Nami.glb',
+    ];
+
+    for (const url of candidateUrls) {
+      try {
+        const [namiSkin, walkFem] = await Promise.all([
+          loadModelCached(url),
+          loadModelCached('./models/WalkFem.glb')
+            .catch(() => loadModelCached('/models/WalkFem.glb'))
+            .catch(() => null),
+        ]);
+
+        if (namiSkin && namiSkin.object) {
+          // If IdleNami has animations, use the first clip; otherwise null (static posed rest)
+          const idleClip = namiSkin.animations && namiSkin.animations.length > 0
+            ? namiSkin.animations[0]
+            : null;
+          const walkClip = walkFem?.animations?.[0] || null;
+
+          if (idleClip) idleClip.name = 'idle';
+          if (walkClip) walkClip.name = 'walk';
+
+          return {
+            ...namiSkin,
+            url,
+            isDedicatedSkin: true,
+            customAnimations: {
+              idle: idleClip || undefined,
+              walk: walkClip || undefined,
+              attack: undefined,
+            },
+          };
+        }
+      } catch {
+        // continue trying candidate URLs
+      }
+    }
+    return null;
+  }
+
+  // 4. Usopp Dedicated Rig (SkinUsopp, UsoppAtk)
+  if (normId === 'usopp') {
+    const candidateUrls = [
+      './models/SkinUsopp.glb',
+      '/models/SkinUsopp.glb',
+    ];
+
+    for (const url of candidateUrls) {
+      try {
+        const [usoppSkin, usoppAtk] = await Promise.all([
+          loadModelCached(url),
+          loadModelCached('./models/UsoppAtk.glb')
+            .catch(() => loadModelCached('/models/UsoppAtk.glb'))
+            .catch(() => null),
+        ]);
+
+        if (usoppSkin && usoppSkin.object) {
+          const attackClip = usoppAtk?.animations?.[0] || null;
+          if (attackClip) attackClip.name = 'attack';
+
+          return {
+            ...usoppSkin,
+            url,
+            isDedicatedSkin: true,
+            customAnimations: {
+              attack: attackClip || undefined,
+            },
+          };
         }
       } catch {
         // continue trying candidate URLs
@@ -365,6 +470,18 @@ export async function loadChampionAttackAnimation(unitId: string): Promise<THREE
       return null;
     }
   }
+  if (normId === 'nami') {
+    return null;
+  }
+  if (normId === 'usopp') {
+    try {
+      const res = await loadModelCached('./models/UsoppAtk.glb')
+        .catch(() => loadModelCached('/models/UsoppAtk.glb'));
+      return res?.animations?.[0] || null;
+    } catch {
+      return null;
+    }
+  }
   return null;
 }
 
@@ -380,11 +497,11 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
   }
 
   championRigPromise = (async () => {
-    // 1. Try loading SkinLuffy_a GLB first as base model
-    const baseModel = await loadModelCached('./models/SkinLuffy_a.glb')
-      .catch(() => loadModelCached('/models/SkinLuffy_a.glb'))
-      .catch(() => loadModelCached('./models/SkinLuffy_b.glb'))
+    // 1. Try loading SkinLuffy_b GLB first as base model
+    const baseModel = await loadModelCached('./models/SkinLuffy_b.glb')
       .catch(() => loadModelCached('/models/SkinLuffy_b.glb'))
+      .catch(() => loadModelCached('./models/SkinLuffy_a.glb'))
+      .catch(() => loadModelCached('/models/SkinLuffy_a.glb'))
       .catch(() => null);
 
     // 2. Load animations in parallel

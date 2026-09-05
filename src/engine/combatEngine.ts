@@ -30,6 +30,8 @@ export function initializeCombatUnits(boardUnits: UnitInstance[]): CombatUnitSta
 
   return activeUnits.map((unit) => ({
     ...unit,
+    orbMana: unit.hasSpecialItem ? (unit.orbMana || 0) : 0,
+    maxOrbMana: 250,
     currentPosX: unit.gridX,
     currentPosY: unit.gridY,
     targetInstanceId: null,
@@ -184,10 +186,17 @@ export function simulateCombatTick(
     const effectiveRange = unit.range === 1 ? 1.55 : unit.range + 0.35;
 
     if (distanceToTarget <= effectiveRange) {
-      // In range: Check if ready to cast skill or normal attack from any angle (front, shoulders, flanks, back)
-      if (unit.mana >= unit.maxMana) {
-        // --- TRIGGER SPECIAL / ACTIVE SKILL CAST ---
-        executeSkillCast(unit, target, livingUnits, newFloatingTexts, newAttackEffects, now);
+      // In range: Check if ready to cast Orb Special (250 pts), or regular active skill (100 mana), or basic attack
+      const hasOrb = unit.hasSpecialItem;
+      const canCastOrbSpecial = hasOrb && (unit.orbMana || 0) >= (unit.maxOrbMana || 250);
+      const canCastNormalSkill = unit.mana >= unit.maxMana;
+
+      if (canCastOrbSpecial) {
+        // --- TRIGGER ORB SPECIAL SKILL CAST (Requires 250 pt) ---
+        executeSkillCast(unit, target, livingUnits, newFloatingTexts, newAttackEffects, now, true);
+      } else if (canCastNormalSkill) {
+        // --- TRIGGER NORMAL ACTIVE SKILL CAST ---
+        executeSkillCast(unit, target, livingUnits, newFloatingTexts, newAttackEffects, now, false);
       } else if (unit.attackCooldown <= 0) {
         // --- EXECUTE BASIC ATTACK ---
         executeBasicAttack(
@@ -522,8 +531,14 @@ function executeBasicAttack(
 
   let strikeKey: 'punch1' | 'punch2' | 'punch3' | 'punch4' | 'kick1' | 'kick2' | 'kick3';
   let isComboFinisher = false;
+  const isNami = attacker.unitId === 'nami';
+  const isUsopp = attacker.unitId === 'usopp';
 
-  if (attacker.comboStep === 0) {
+  if (isNami || isUsopp) {
+    // Nami and Usopp strictly use their dedicated weapon attacks (never any kicks)
+    strikeKey = 'punch1';
+    attacker.comboStep = 0;
+  } else if (attacker.comboStep === 0) {
     // 1st Strike: Punch (12, 18, 20, or 12 pts)
     strikeKey = punchChoices[Math.floor(Math.random() * punchChoices.length)];
     attacker.comboStep = 1;
@@ -541,10 +556,14 @@ function executeBasicAttack(
   }
 
   const strikeConfig = COMBO_STRIKES[strikeKey];
-  attacker.currentAnimation = strikeKey;
+  attacker.currentAnimation = (isNami || isUsopp) ? 'attack' : strikeKey;
   attacker.attackAnimTimer = 0.52; // Active animation duration window
   attacker.lastAttackTimestamp = now;
-  attacker.lastStrikeName = attacker.unitId === 'zoro'
+  attacker.lastStrikeName = isNami
+    ? 'Clima-Tact (NamiAtk)'
+    : isUsopp
+    ? 'Kayaku Boshi (UsoppAtk)'
+    : attacker.unitId === 'zoro'
     ? attacker.stars === 3
       ? 'Santoryu: Onigiri (Slash 1)'
       : attacker.stars === 2
@@ -577,19 +596,6 @@ function executeBasicAttack(
   // Apply Damage to Shield first, then HP
   applyDamageToTarget(attacker, target, finalDamage, attacker.attackType, isCrit, floatingTexts);
 
-  // Show Combo Floating Text
-  if (isComboFinisher) {
-    floatingTexts.push({
-      id: `combo_finisher_${attacker.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
-      x: target.currentPosX,
-      y: target.currentPosY - 0.2,
-      value: `🔥 ${strikeConfig.name} [${strikeConfig.basePoints}pts]`,
-      type: 'CRIT',
-      color: '#F59E0B',
-      timestamp: now,
-    });
-  }
-
   // Life Steal (Brigão Trait)
   if (!attacker.isEnemy && lifestealPercent > 0 && attacker.attackType === 'PHYSICAL') {
     const healAmount = Math.round(finalDamage * lifestealPercent);
@@ -609,6 +615,14 @@ function executeBasicAttack(
   // Mana Generation: Attacker gains +10 mana, Target gains +5 mana
   attacker.mana = Math.min(attacker.maxMana, attacker.mana + 10);
   target.mana = Math.min(target.maxMana, target.mana + 5);
+
+  // Orb Special Generation (250 pts required): Only for units equipped with orb
+  if (attacker.hasSpecialItem) {
+    attacker.orbMana = Math.min(attacker.maxOrbMana || 250, (attacker.orbMana || 0) + 20);
+  }
+  if (target.hasSpecialItem) {
+    target.orbMana = Math.min(target.maxOrbMana || 250, (target.orbMana || 0) + 10);
+  }
 
   // Visual Attack Effect
   attackEffects.push({
@@ -643,15 +657,9 @@ function executeBasicAttack(
       if (attacker.hp > 0 && target.hp > 0) {
         applyDamageToTarget(attacker, target, Math.round(finalDamage * 0.7), attacker.attackType, false, floatingTexts);
         attacker.mana = Math.min(attacker.maxMana, attacker.mana + 10);
-        floatingTexts.push({
-          id: `combo_${attacker.instanceId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          x: target.currentPosX,
-          y: target.currentPosY,
-          value: '⚔️ GOLPE DUPLO!',
-          type: 'CRIT',
-          color: '#FBBF24',
-          timestamp: Date.now(),
-        });
+        if (attacker.hasSpecialItem) {
+          attacker.orbMana = Math.min(attacker.maxOrbMana || 250, (attacker.orbMana || 0) + 15);
+        }
       }
     }, 150);
   }
@@ -664,44 +672,56 @@ function executeSkillCast(
   allLiving: CombatUnitState[],
   floatingTexts: FloatingText[],
   attackEffects: AttackEffect[],
-  now: number
+  now: number,
+  isOrbSpecial: boolean = false
 ) {
   const baseData = CHAMPION_DATABASE[caster.unitId];
-  caster.mana = 0; // Reset mana on cast
+
+  if (isOrbSpecial) {
+    caster.orbMana = 0;
+    caster.castingSkillType = 'ORB_SPECIAL';
+  } else {
+    caster.mana = 0;
+    caster.castingSkillType = 'NORMAL';
+    if (caster.hasSpecialItem) {
+      caster.orbMana = Math.min(caster.maxOrbMana || 250, (caster.orbMana || 0) + 25);
+    }
+  }
+
   caster.isCasting = true;
   caster.castProgress = 0;
 
-  // Determine which skill is active
+  // Determine which skill is active: Orb Special vs normal skill A/B
   let skillToCast =
-    caster.hasSpecialItem && baseData?.skillSpecial
+    isOrbSpecial && baseData?.skillSpecial
       ? baseData.skillSpecial
       : caster.activeSkill === 'SKILL_A'
       ? baseData?.skillA
       : baseData?.skillB;
 
   if (!skillToCast && baseData) {
-    skillToCast = baseData.skillA;
+    skillToCast = isOrbSpecial ? baseData.skillSpecial || baseData.skillA : baseData.skillA;
   }
 
-  const skillName = skillToCast?.name || 'Habilidade Ativa';
+  const skillName = skillToCast?.name || (isOrbSpecial ? 'Especial do Orbe' : 'Habilidade Ativa');
   caster.castingSkillName = skillName;
 
-  // Spawn Skill Declaration Floating Banner
+  // Spawn Skill Declaration Floating Banner (Only skills and orb special appear on screen)
   floatingTexts.push({
     id: `skill_name_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
     x: caster.currentPosX,
     y: caster.currentPosY - 0.5,
-    value: `⚡ ${skillName}!`,
+    value: isOrbSpecial ? `🔮 ${skillName}!` : `⚡ ${skillName}!`,
     type: 'SKILL',
-    color: '#F59E0B',
+    color: isOrbSpecial ? '#C084FC' : '#F59E0B',
     timestamp: now,
   });
 
   // Unique Skill Logic for Key Champions
   if (caster.unitId === 'luffy') {
-    if (caster.hasSpecialItem) {
+    if (isOrbSpecial) {
       // Gear Second Jet Bazooka: True Haki Damage + Dash
-      const skillDamage = Math.round(350 * (caster.stars === 1 ? 1 : caster.stars === 2 ? 1.8 : 3.2));
+      const skillDamage = Math.round(380 * (caster.stars === 1 ? 1 : caster.stars === 2 ? 1.8 : 3.2));
       applyDamageToTarget(caster, primaryTarget, skillDamage, 'TRUE_HAKI', true, floatingTexts);
 
       attackEffects.push({
@@ -762,23 +782,92 @@ function executeSkillCast(
         durationMs: 500,
       });
     }
-  } else if (caster.unitId === 'nami') {
-    // Thunder / Cyclone Tempo
-    const skillDamage = Math.round(240 * (caster.stars === 1 ? 1 : 1.7) + caster.ap * 1.2);
-    applyDamageToTarget(caster, primaryTarget, skillDamage, 'MAGICAL', true, floatingTexts);
+  } else if (caster.unitId === 'zoro') {
+    if (isOrbSpecial) {
+      // San-Zen Seikai (Três Mil Mundos): True Haki damage ignoring defenses
+      const skillDamage = Math.round(520 * (caster.stars === 1 ? 1 : caster.stars === 2 ? 1.8 : 3.2));
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'TRUE_HAKI', true, floatingTexts);
 
-    attackEffects.push({
-      id: `nami_thunder_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
-      fromX: caster.currentPosX,
-      fromY: caster.currentPosY,
-      toX: primaryTarget.currentPosX,
-      toY: primaryTarget.currentPosY,
-      type: 'LIGHTNING',
-      color: '#38BDF8',
-      skillName: 'Thunder Tempo',
-      timestamp: now,
-      durationMs: 500,
-    });
+      attackEffects.push({
+        id: `zoro_special_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: primaryTarget.currentPosX,
+        toY: primaryTarget.currentPosY,
+        type: 'SKILL_IMPACT',
+        color: '#A855F7',
+        skillName: 'San-Zen Seikai',
+        timestamp: now,
+        durationMs: 700,
+      });
+    } else if (caster.activeSkill === 'SKILL_A') {
+      const skillDamage = Math.round(260 * (caster.stars === 1 ? 1 : 1.6) + caster.ad * 1.2);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts);
+
+      attackEffects.push({
+        id: `zoro_onigiri_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: primaryTarget.currentPosX,
+        toY: primaryTarget.currentPosY,
+        type: 'MELEE_SLASH',
+        color: '#10B981',
+        skillName: 'Onigiri',
+        timestamp: now,
+        durationMs: 400,
+      });
+    } else {
+      const skillDamage = Math.round(220 * (caster.stars === 1 ? 1 : 1.5) + caster.ad * 0.9);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts);
+
+      attackEffects.push({
+        id: `zoro_tatsumaki_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: primaryTarget.currentPosX,
+        toY: primaryTarget.currentPosY,
+        type: 'SKILL_IMPACT',
+        color: '#34D399',
+        skillName: 'Tatsu Maki',
+        timestamp: now,
+        durationMs: 450,
+      });
+    }
+  } else if (caster.unitId === 'nami') {
+    if (isOrbSpecial) {
+      const skillDamage = Math.round(580 * (caster.stars === 1 ? 1 : 1.7) + caster.ap * 1.8);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'MAGICAL', true, floatingTexts);
+
+      attackEffects.push({
+        id: `nami_tornado_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: primaryTarget.currentPosX,
+        toY: primaryTarget.currentPosY,
+        type: 'LIGHTNING',
+        color: '#C084FC',
+        skillName: 'Tornado Tempo Climatáctico',
+        timestamp: now,
+        durationMs: 700,
+      });
+    } else {
+      // Thunder / Cyclone Tempo
+      const skillDamage = Math.round(240 * (caster.stars === 1 ? 1 : 1.7) + caster.ap * 1.2);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'MAGICAL', true, floatingTexts);
+
+      attackEffects.push({
+        id: `nami_thunder_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: primaryTarget.currentPosX,
+        toY: primaryTarget.currentPosY,
+        type: 'LIGHTNING',
+        color: '#38BDF8',
+        skillName: 'Thunder Tempo',
+        timestamp: now,
+        durationMs: 500,
+      });
+    }
   } else if (caster.unitId.startsWith('marine_recruit')) {
     // Marine Recruit Mosquete / Cutelo
     const skillDamage = Math.round(140 + caster.ad * 0.5);
@@ -796,9 +885,10 @@ function executeSkillCast(
       durationMs: 350,
     });
   } else {
-    // Generic champion skill
-    const skillDamage = Math.round(caster.ad * 1.6 + caster.ap * 1.2);
-    applyDamageToTarget(caster, primaryTarget, skillDamage, caster.attackType, true, floatingTexts);
+    // Generic champion skill (or orb special)
+    const mult = isOrbSpecial ? 2.8 : 1.6;
+    const skillDamage = Math.round(caster.ad * mult + caster.ap * mult);
+    applyDamageToTarget(caster, primaryTarget, skillDamage, isOrbSpecial ? 'TRUE_HAKI' : caster.attackType, true, floatingTexts);
 
     attackEffects.push({
       id: `generic_skill_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
@@ -807,7 +897,7 @@ function executeSkillCast(
       toX: primaryTarget.currentPosX,
       toY: primaryTarget.currentPosY,
       type: 'SKILL_IMPACT',
-      color: caster.color || '#F59E0B',
+      color: isOrbSpecial ? '#C084FC' : (caster.color || '#F59E0B'),
       skillName,
       timestamp: now,
       durationMs: 500,

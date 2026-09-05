@@ -80,6 +80,8 @@ export interface UnitInstance {
   shield: number;
   mana: number;
   maxMana: number;
+  orbMana?: number;
+  maxOrbMana?: number;
   armor: number;
   mr: number;
   ad: number;

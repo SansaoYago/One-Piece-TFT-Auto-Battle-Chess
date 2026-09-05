@@ -1936,6 +1936,11 @@ export default function App() {
             isViewingOpponentArena={isViewingOpponentArena}
             opponentName={viewingCommander.name}
             isTestMode={isTestMode}
+            playerUnitsCount={playerUnitsOnBoard.length}
+            maxUnits={maxBoardUnits}
+            level={level}
+            xp={xp}
+            xpNeeded={xpNeeded}
           />
 
           {/* Retractable Golden Shop Modal - Hidden in Test Mode */}

@@ -69,6 +69,8 @@ export function createUnitInstance(
     shield: 0,
     mana: base.startMana,
     maxMana: base.baseMana,
+    orbMana: 0,
+    maxOrbMana: 250,
     armor: base.baseArmor,
     mr: base.baseMr,
     ad,
