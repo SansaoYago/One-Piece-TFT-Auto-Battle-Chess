@@ -61,7 +61,7 @@ export const AnimationTestBar: React.FC<AnimationTestBarProps> = ({
       ]
     : isSanji
     ? [
-        { id: 'idle', label: '🧍 Idle Sanji', desc: 'Idle.glb' },
+        { id: 'idle', label: '🧍 Pose da Skin', desc: 'Repouso da SkinSanji' },
         { id: 'walk', label: '🚶 Caminhar', desc: 'Walk.glb' },
         { id: 'kick1', label: '🦶 Chute 1', desc: 'Kick1.glb (Mouton Shot)' },
         { id: 'kick2', label: '🌪️ Chute 2', desc: 'SanjiKick1.glb (Premier Haché)' },

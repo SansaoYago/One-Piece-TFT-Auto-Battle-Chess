@@ -356,14 +356,23 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
           const isZoro = normId === 'zoro';
           const isNami = normId === 'nami';
           const isUsopp = normId === 'usopp';
+          const isMarine = normId.startsWith('marine_recruit');
+          const isChopper = normId === 'chopper' || normId === 'chopper_monster';
 
           if (!isLuffy && !isZoro && !isNami && !isUsopp && !customSkin) {
             fallbackToProcedural();
             return;
           }
 
-          const isDedicatedCustomSkin = true;
-          const sourceModel = customSkin?.object || rigData.baseModel;
+          let customSkinHasMesh = false;
+          customSkin?.object.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh || (child as THREE.SkinnedMesh).isSkinnedMesh) {
+              customSkinHasMesh = true;
+            }
+          });
+          const useBaseModelForMarine = isMarine && !customSkinHasMesh;
+          const isDedicatedCustomSkin = !useBaseModelForMarine;
+          const sourceModel = useBaseModelForMarine ? rigData.baseModel : customSkin?.object || rigData.baseModel;
 
           if (!sourceModel) {
             fallbackToProcedural();
@@ -438,34 +447,42 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
             // Retarget all animations to the active model
             const getRetargetedAction = (clip: THREE.AnimationClip | undefined) => {
               if (!clip) return undefined;
-              const retargeted = retargetClipToModel(clip, clonedRig, unitId);
-              return retargeted ? mixer!.clipAction(retargeted) : undefined;
+              const directTrackCount = clip.tracks.filter((track) => {
+                const dotIndex = track.name.lastIndexOf('.');
+                if (dotIndex < 0) return false;
+                return Boolean(clonedRig.getObjectByName(track.name.slice(0, dotIndex)));
+              }).length;
+              // Skins use the same base skeleton. Keep the original clip so
+              // Three.js resolves its tracks against the skin bones directly.
+              // Retarget only clips exported with a different bone naming scheme.
+              const retargeted = directTrackCount > 0 ? undefined : retargetClipToModel(clip, clonedRig, unitId);
+              const usableClip = directTrackCount > 0
+                ? clip
+                : retargeted && retargeted.tracks.length > 0
+                ? retargeted
+                : clip;
+              return mixer!.clipAction(usableClip);
             };
 
             const actions: { [key: string]: THREE.AnimationAction } = {};
             const isFemale = isFemaleChampion(unitId);
-            const hasDedicatedSkin = isLuffy || isZoro || isNami || isUsopp || customSkin?.isDedicatedSkin || !!customSkin;
 
-            // For champions with a dedicated skin, do not apply Idle from base animations.
-            // Base pose is the model's own skin rest/bind pose from SkinPersonagem.
-            let idleClipToUse: THREE.AnimationClip | undefined = undefined;
-            if (!hasDedicatedSkin) {
-              idleClipToUse =
-                (isFemale
-                  ? rigData.animations.femaleIdle || rigData.animations.idle
-                  : rigData.animations.maleIdle || rigData.animations.idle) ||
-                customSkin?.animations?.[0];
-            }
+            // Idle stays on the skin's own bind/rest pose. Idle.glb is not used.
+            const idleClipToUse = customSkin?.animations?.[0];
 
-            let walkClipToUse = rigData.animations.walk;
+            let walkClipToUse = isChopper
+              ? undefined
+              : isFemale
+              ? rigData.animations.femaleWalk || rigData.animations.walk
+              : rigData.animations.walk;
 
             // Dedicated Zoro walk
             if (isZoro && customSkin?.customAnimations?.walk) {
               walkClipToUse = customSkin.customAnimations.walk;
             }
 
-            // Dedicated Nami walk
-            if (isNami && customSkin?.customAnimations?.walk) {
+            // Dedicated walk clips take priority when a character has one.
+            if (customSkin?.customAnimations?.walk) {
               walkClipToUse = customSkin.customAnimations.walk;
             }
 
@@ -473,7 +490,9 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
             const walkAction = getRetargetedAction(walkClipToUse);
 
             // Dedicated attack clips for Zoro (Slash1), Nami (NamiAtk), or Usopp (UsoppAtk)
-            const championAttackClip = isZoro
+            const championAttackClip = isChopper
+              ? undefined
+              : isZoro
               ? (customSkin?.customAnimations?.slash1 || customSkin?.customAnimations?.attack || customAttackClip)
               : isNami
               ? (customSkin?.customAnimations?.attack || customAttackClip)
@@ -482,10 +501,10 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
               : customAttackClip;
             const customAttackAction = getRetargetedAction(championAttackClip || undefined);
 
-            const punchAction = customAttackAction || getRetargetedAction(rigData.animations.punch || rigData.animations.punch1);
-            const punch2Action = customAttackAction || getRetargetedAction(rigData.animations.punch2);
-            const punch3Action = customAttackAction || getRetargetedAction(rigData.animations.punch3);
-            const punch4Action = customAttackAction || getRetargetedAction(rigData.animations.punch4);
+            const punchAction = isChopper ? undefined : customAttackAction || getRetargetedAction(rigData.animations.punch || rigData.animations.punch1);
+            const punch2Action = isChopper ? undefined : customAttackAction || getRetargetedAction(rigData.animations.punch2);
+            const punch3Action = isChopper ? undefined : customAttackAction || getRetargetedAction(rigData.animations.punch3);
+            const punch4Action = isChopper ? undefined : customAttackAction || getRetargetedAction(rigData.animations.punch4);
 
             // Dedicated Sanji kicks or modular rig kicks
             const sanjiKick1Action = getRetargetedAction(customSkin?.customAnimations?.kick1);
@@ -494,17 +513,23 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
 
             // Nami and Usopp STRICTLY have no kicks: only their unique attack clip (customAttackAction) or punch
             const isNoKickChampion = isNami || isUsopp;
-            const kickAction = isNoKickChampion
+            const kickAction = isChopper
+              ? undefined
+              : isNoKickChampion
               ? (customAttackAction || punchAction)
               : (sanjiKick1Action || getRetargetedAction(rigData.animations.kick1 || rigData.animations.kick) || customAttackAction);
-            const kick2Action = isNoKickChampion
+            const kick2Action = isChopper
+              ? undefined
+              : isNoKickChampion
               ? (customAttackAction || punchAction)
               : (sanjiKick2Action || getRetargetedAction(rigData.animations.kick2) || kickAction);
-            const kick3Action = isNoKickChampion
+            const kick3Action = isChopper
+              ? undefined
+              : isNoKickChampion
               ? (customAttackAction || punchAction)
               : (sanjiKick3Action || getRetargetedAction(rigData.animations.kick3) || kickAction);
-            const turnLeftAction = getRetargetedAction(rigData.animations.turnLeft) || walkAction;
-            const turnRightAction = getRetargetedAction(rigData.animations.turnRight) || walkAction;
+            const turnLeftAction = isChopper ? undefined : getRetargetedAction(rigData.animations.turnLeft) || walkAction;
+            const turnRightAction = isChopper ? undefined : getRetargetedAction(rigData.animations.turnRight) || walkAction;
             const deathAction = getRetargetedAction(rigData.animations.death);
 
             if (idleAction) actions['idle'] = idleAction;

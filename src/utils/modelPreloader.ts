@@ -14,6 +14,7 @@ export interface ChampionRigData {
     femaleIdle?: THREE.AnimationClip;
     maleIdle?: THREE.AnimationClip;
     walk?: THREE.AnimationClip;
+    femaleWalk?: THREE.AnimationClip;
     punch?: THREE.AnimationClip;
     punch1?: THREE.AnimationClip;
     punch2?: THREE.AnimationClip;
@@ -85,7 +86,6 @@ export const REQUIRED_3D_ASSETS = [
   { url: './models/SkinSmoker.glb', label: 'Skin Smoker (SkinSmoker.glb)' },
   { url: './models/SkinShanks.glb', label: 'Skin Shanks (SkinShanks.glb)' },
   { url: './models/SkinBoaHancock.glb', label: 'Skin Boa Hancock (SkinBoaHancock.glb)' },
-  { url: './models/Idle.glb', label: 'Postura Base (Idle.glb)' },
   { url: './models/Walk.glb', label: 'Caminhada (Walk.glb)' },
   { url: './models/Punch1.glb', label: 'Soco 1 (Punch1.glb)' },
   { url: './models/Punch2.glb', label: 'Soco 2 (Punch2.glb)' },
@@ -275,30 +275,20 @@ export function retargetClipToModel(
       continue;
     }
 
-    // Discard all .scale tracks to ensure unified 1:1:1 transform scale and avoid bone scaling deforming mesh vertices
-    if (propName === '.scale') {
+    // Keep the model scale controlled by the canonical height calculation.
+    if (propName === '.scale' || propName === '.scaleXYZ') {
       continue;
     }
 
-    // Discard .scale tracks to keep clean 1:1:1 proportions
-    if (propName === '.scale') {
-      continue;
-    }
-
-    // Discard position tracks for non-Hips bones to avoid mesh stretching,
-    // and for Hips, lock horizontal root displacement (X and Z) to the base pose to enforce in-place
-    // combat animation (avoiding models sliding 3 steps forward into canvas bounds/containers),
-    // while faithfully preserving vertical Y dynamics (jumps, squats, stomps, stance elevation).
-    if (propName === '.position') {
+    // Preserve bone position tracks because kicks, jumps and crouches often animate
+    // position rather than rotation. Only lock horizontal hips displacement so
+    // attacks stay in place without flattening the actual pose.
+    if (propName === '.position' || propName === '.translation') {
       const isHips = matchedName.toLowerCase().includes('hips');
-      if (!isHips) {
-        continue;
-      }
-
       const cloned = track.clone() as THREE.VectorKeyframeTrack;
-      cloned.name = matchedName + propName;
+      cloned.name = matchedName + (propName === '.translation' ? '.position' : propName);
       const values = cloned.values;
-      if (values && values.length >= 3) {
+      if (isHips && values && values.length >= 3) {
         const baseRootX = values[0];
         const baseRootZ = values[2];
         const numKeys = cloned.times.length;
@@ -863,22 +853,20 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
 
     // 2. Load animations in parallel
     const [
-      idleData,
       walkData,
+      femaleWalkData,
       punch1Data,
       punch2Data,
       punch3Data,
       kick1Data,
-      kick2Data,
-      kick3Data,
       turnLeftData,
       turnRightData,
     ] = await Promise.all([
-      loadModelCached('./models/Idle.glb')
-        .catch(() => loadModelCached('/models/Idle.glb'))
-        .catch(() => null),
       loadModelCached('./models/Walk.glb')
         .catch(() => loadModelCached('/models/Walk.glb'))
+        .catch(() => null),
+      loadModelCached('./models/WalkFem.glb')
+        .catch(() => loadModelCached('/models/WalkFem.glb'))
         .catch(() => null),
       loadModelCached('./models/Punch1.glb')
         .catch(() => loadModelCached('/models/Punch1.glb'))
@@ -891,12 +879,6 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
         .catch(() => null),
       loadModelCached('./models/Kick1.glb')
         .catch(() => loadModelCached('/models/Kick1.glb'))
-        .catch(() => null),
-      loadModelCached('./models/SanjiKick1.glb')
-        .catch(() => loadModelCached('/models/SanjiKick1.glb'))
-        .catch(() => null),
-      loadModelCached('./models/SanjiKick2.glb')
-        .catch(() => loadModelCached('/models/SanjiKick2.glb'))
         .catch(() => null),
       loadModelCached('./models/TurnLeftt.glb')
         .catch(() => loadModelCached('/models/TurnLeftt.glb'))
@@ -913,19 +895,21 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
       throw new Error('Base model (SkinLuffy_a.glb) not found');
     }
 
-    let defaultIdleClip = idleData?.animations?.[0];
     let walkClip = walkData?.animations?.[0];
+    // WalkFem.glb currently contains the female mesh but no animation clip;
+    // use the compatible shared walk until a clipped WalkFem asset is supplied.
+    let femaleWalkClip = femaleWalkData?.animations?.[0] || walkClip;
     let punch1Clip = punch1Data?.animations?.[0];
     let punch2Clip = punch2Data?.animations?.[0];
     let punch3Clip = punch3Data?.animations?.[0];
     let kick1Clip = kick1Data?.animations?.[0];
-    let kick2Clip = kick2Data?.animations?.[0] || kick1Clip;
-    let kick3Clip = kick3Data?.animations?.[0] || kick1Clip;
+    let kick2Clip = kick1Clip;
+    let kick3Clip = kick1Clip;
     let turnLeftClip = turnLeftData?.animations?.[0];
     let turnRightClip = turnRightData?.animations?.[0];
 
-    if (defaultIdleClip) defaultIdleClip.name = 'idle';
     if (walkClip) walkClip.name = 'walk';
+    if (femaleWalkClip) femaleWalkClip.name = 'femaleWalk';
     if (punch1Clip) punch1Clip.name = 'punch1';
     if (punch2Clip) punch2Clip.name = 'punch2';
     if (punch3Clip) punch3Clip.name = 'punch3';
@@ -938,10 +922,8 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
     return {
       baseModel: chosenBase,
       animations: {
-        idle: defaultIdleClip,
-        maleIdle: defaultIdleClip,
-        femaleIdle: defaultIdleClip,
         walk: walkClip,
+        femaleWalk: femaleWalkClip,
         punch: punch1Clip,
         punch1: punch1Clip,
         punch2: punch2Clip,
