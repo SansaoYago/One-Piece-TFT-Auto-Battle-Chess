@@ -269,9 +269,24 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
             </div>
 
             {/* Nome do Campeão Acima da Barra */}
-            <div className="my-0.5 text-center px-1">
+            <div className="my-0.5 text-center px-1 flex flex-col items-center">
+              {combatState?.transformationPhase === 'INVOKING' && (
+                <span className="mb-0.5 px-1.5 py-0.2 rounded-full bg-purple-700/90 text-[8px] font-black text-purple-200 border border-purple-400 animate-bounce tracking-tight">
+                  🔮 INVOCANDO...
+                </span>
+              )}
+              {combatState?.transformationPhase === 'TRANSFORMED' && (
+                <span className="mb-0.5 px-1.5 py-0.2 rounded-full bg-rose-700/95 text-[8px] font-black text-amber-200 border border-rose-400 animate-pulse tracking-tight shadow-md">
+                  👹 MONSTER CHOPPER (3m)
+                </span>
+              )}
+              {combatState?.isUnconscious && (
+                <span className="mb-0.5 px-1.5 py-0.2 rounded-full bg-slate-800 text-[8px] font-black text-yellow-300 border border-slate-600 animate-pulse tracking-tight">
+                  💫 DESMAIADO (3s)
+                </span>
+              )}
               <span className="text-[10px] font-black text-slate-100 uppercase tracking-wide drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
-                {cleanName}
+                {combatState?.isTransformed ? 'Monster Chopper' : cleanName}
               </span>
             </div>
 
@@ -316,7 +331,11 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
 
         {/* 3D Global Mannequin Body with Fallback & Clean View */}
         <div
-          className={`w-24 h-32 sm:w-30 sm:h-38 lg:w-36 lg:h-44 flex items-end justify-center relative transition-all ${
+          className={`${
+            combatState?.isTransformed
+              ? 'w-36 h-48 sm:w-44 sm:h-56 lg:w-52 lg:h-64'
+              : 'w-24 h-32 sm:w-30 sm:h-38 lg:w-36 lg:h-44'
+          } flex items-end justify-center relative transition-all duration-300 ${
             isSelected ? 'scale-105 drop-shadow-[0_0_16px_rgba(245,158,11,1)]' : ''
           }`}
         >
@@ -327,6 +346,9 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
             isEnemy={unit.isEnemy}
             isStunned={isStunned}
             isCasting={isCasting}
+            isTransformed={combatState?.isTransformed}
+            transformationPhase={combatState?.transformationPhase}
+            isUnconscious={combatState?.isUnconscious}
             stars={unit.stars || 1}
             currentPos={currentPos}
             targetPos={targetPos}
@@ -337,6 +359,10 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                 : unit.hp <= 0 || isDead
                 ? 'death'
                 : isCombatStarting || battleOutcome !== null
+                ? 'idle'
+                : combatState?.transformationPhase === 'INVOKING'
+                ? 'monster_invoke'
+                : combatState?.isUnconscious
                 ? 'idle'
                 : isCasting
                 ? (unit.unitId === 'nami' || unit.unitId === 'usopp' ? 'attack' : 'kick1')

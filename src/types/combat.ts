@@ -42,13 +42,18 @@ export interface CombatUnitState extends UnitInstance {
   lastHitTimestamp: number;
   // Dynamic Combo and Animation State
   comboStep: number; // 0: Punch 1/2, 1: Punch 2/2, 2: Kick Finisher
-  currentAnimation?: 'idle' | 'walk' | 'punch1' | 'punch2' | 'punch3' | 'punch4' | 'kick1' | 'kick2' | 'kick3' | 'attack' | 'slash1' | 'turnLeft' | 'turnRight' | 'death';
+  currentAnimation?: 'idle' | 'walk' | 'punch1' | 'punch2' | 'punch3' | 'punch4' | 'kick1' | 'kick2' | 'kick3' | 'attack' | 'slash1' | 'turnLeft' | 'turnRight' | 'death' | 'monster_invoke';
   attackAnimTimer: number; // Duration of current attack animation in seconds
   lastAttackTimestamp: number;
   lastStrikeName?: string;
   lastStrikePoints?: number;
   isDefeated?: boolean;
   deathTimestamp?: number;
+  // Transformation & Specialized States
+  isTransformed?: boolean;
+  transformationPhase?: 'NONE' | 'INVOKING' | 'TRANSFORMED' | 'UNCONSCIOUS';
+  transformationTimer?: number;
+  isUnconscious?: boolean;
 }
 
 export interface TheftEvent {

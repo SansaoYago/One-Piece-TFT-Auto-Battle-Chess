@@ -119,12 +119,98 @@ export function simulateCombatTick(
   for (const unit of livingUnits) {
     if (unit.hp <= 0) continue;
 
-    // Handle stun duration
+    // Handle Chopper transformation phases and timers
+    if (unit.transformationTimer && unit.transformationTimer > 0) {
+      unit.transformationTimer -= deltaSeconds * speedMultiplier;
+
+      if (unit.transformationPhase === 'INVOKING') {
+        unit.isCasting = true;
+        unit.currentAnimation = 'monster_invoke';
+        if (unit.transformationTimer <= 0) {
+          // Invocation animation finished! Attacks only start now!
+          unit.transformationPhase = 'TRANSFORMED';
+          unit.transformationTimer = 3.0; // 3 seconds in Monster Chopper form
+          unit.isCasting = false;
+          unit.attackCooldown = 0.05;
+          unit.currentAnimation = 'idle';
+          unit.isTransformed = true;
+
+          newFloatingTexts.push({
+            id: `chopper_monster_active_${unit.instanceId}_${now}`,
+            x: unit.currentPosX,
+            y: unit.currentPosY - 0.7,
+            value: '🔥 MONSTER CHOPPER ATIVO (3m)!',
+            type: 'CRIT',
+            color: '#EF4444',
+            timestamp: now,
+          });
+
+          newAttackEffects.push({
+            id: `chopper_roar_${unit.instanceId}_${now}`,
+            fromX: unit.currentPosX,
+            fromY: unit.currentPosY,
+            toX: unit.currentPosX,
+            toY: unit.currentPosY,
+            type: 'SKILL_IMPACT',
+            color: '#DC2626',
+            skillName: 'Monster Roar Shockwave',
+            timestamp: now,
+            durationMs: 700,
+          });
+        }
+        continue; // Cannot attack or move while invoking
+      } else if (unit.transformationPhase === 'TRANSFORMED') {
+        if (unit.transformationTimer <= 0) {
+          // 3 seconds finished! Revert to normal Chopper and become unconscious for 3 seconds!
+          unit.isTransformed = false;
+          unit.transformationPhase = 'UNCONSCIOUS';
+          unit.transformationTimer = 3.0; // 3 seconds unconscious
+          unit.isStunned = true;
+          unit.stunDuration = 3.0;
+          unit.isUnconscious = true;
+          unit.currentAnimation = 'idle';
+
+          newFloatingTexts.push({
+            id: `chopper_unconscious_${unit.instanceId}_${now}`,
+            x: unit.currentPosX,
+            y: unit.currentPosY - 0.5,
+            value: '💫 INCONSCIENTE POR 3s!',
+            type: 'MISS',
+            color: '#94A3B8',
+            timestamp: now,
+          });
+        }
+      } else if (unit.transformationPhase === 'UNCONSCIOUS') {
+        unit.isStunned = true;
+        unit.isUnconscious = true;
+        if (unit.transformationTimer <= 0) {
+          // 3 seconds of unconsciousness finished! Chopper regains consciousness!
+          unit.transformationPhase = 'NONE';
+          unit.isStunned = false;
+          unit.isUnconscious = false;
+          unit.stunDuration = 0;
+
+          newFloatingTexts.push({
+            id: `chopper_wakeup_${unit.instanceId}_${now}`,
+            x: unit.currentPosX,
+            y: unit.currentPosY - 0.4,
+            value: '✨ Chopper Acordou!',
+            type: 'HEAL',
+            color: '#38BDF8',
+            timestamp: now,
+          });
+        }
+      }
+    }
+
+    // Handle stun duration (including unconsciousness)
     if (unit.isStunned) {
       unit.stunDuration -= deltaSeconds;
       if (unit.stunDuration <= 0) {
-        unit.isStunned = false;
-        unit.stunDuration = 0;
+        if (!unit.isUnconscious) {
+          unit.isStunned = false;
+          unit.stunDuration = 0;
+        }
       }
       continue;
     }
@@ -525,63 +611,109 @@ function executeBasicAttack(
   const baseData = CHAMPION_DATABASE[attacker.unitId];
   const isMelee = attacker.range === 1;
 
-  // Combo Selection: Always 2 Punches followed by 1 Kick Finisher
+  // Special Champion Attack & Combo Handling
+  const isNami = attacker.unitId === 'nami';
+  const isUsopp = attacker.unitId === 'usopp';
+  const isSanji = attacker.unitId === 'sanji';
+  const isCrocodile = attacker.unitId === 'crocodile';
+  const isChopperMonster = attacker.unitId === 'chopper' && attacker.isTransformed;
+
+  // Combo Selection
   const punchChoices: Array<'punch1' | 'punch2' | 'punch3' | 'punch4'> = ['punch1', 'punch2', 'punch3', 'punch4'];
   const kickChoices: Array<'kick1' | 'kick2' | 'kick3'> = ['kick1', 'kick2', 'kick3'];
+  const sanjiKickChoices: Array<'kick1' | 'kick2' | 'kick3'> = ['kick1', 'kick2', 'kick3'];
 
   let strikeKey: 'punch1' | 'punch2' | 'punch3' | 'punch4' | 'kick1' | 'kick2' | 'kick3';
   let isComboFinisher = false;
-  const isNami = attacker.unitId === 'nami';
-  const isUsopp = attacker.unitId === 'usopp';
 
-  if (isNami || isUsopp) {
-    // Nami and Usopp strictly use their dedicated weapon attacks (never any kicks)
+  if (isNami) {
+    // User requested: "Deixe somente a nami sem ataque, vou tirar o gld do local, e substituir por um esqueleto animado, mas pode tirar dela a animação de ataque"
     strikeKey = 'punch1';
     attacker.comboStep = 0;
+  } else if (isUsopp) {
+    strikeKey = 'punch1';
+    attacker.comboStep = 0;
+  } else if (isCrocodile) {
+    // Crocodile uses CrocodileATK
+    strikeKey = 'punch1';
+    attacker.comboStep = (attacker.comboStep + 1) % 3;
+    isComboFinisher = attacker.comboStep === 0;
+  } else if (isSanji) {
+    // Sanji: "não vai bater com as mão, e sim todos os kicks, sendo Kick1, SanjiKick1, 2"
+    strikeKey = sanjiKickChoices[attacker.comboStep % 3];
+    attacker.comboStep = (attacker.comboStep + 1) % 3;
+    isComboFinisher = strikeKey === 'kick3';
+  } else if (isChopperMonster) {
+    strikeKey = attacker.comboStep % 2 === 0 ? 'punch3' : 'kick1';
+    attacker.comboStep = (attacker.comboStep + 1) % 2;
+    isComboFinisher = true;
   } else if (attacker.comboStep === 0) {
-    // 1st Strike: Punch (12, 18, 20, or 12 pts)
     strikeKey = punchChoices[Math.floor(Math.random() * punchChoices.length)];
     attacker.comboStep = 1;
   } else if (attacker.comboStep === 1) {
-    // 2nd Strike: Punch (pick varied punch)
     const filtered = punchChoices.filter((p) => p !== attacker.currentAnimation);
     const pool = filtered.length > 0 ? filtered : punchChoices;
     strikeKey = pool[Math.floor(Math.random() * pool.length)];
     attacker.comboStep = 2;
   } else {
-    // 3rd Strike: KICK FINISHER! (18, 24, or 28 pts — 16..29 range)
     strikeKey = kickChoices[Math.floor(Math.random() * kickChoices.length)];
-    attacker.comboStep = 0; // Reset combo cycle
+    attacker.comboStep = 0;
     isComboFinisher = true;
   }
 
   const strikeConfig = COMBO_STRIKES[strikeKey];
-  attacker.currentAnimation = (isNami || isUsopp) ? 'attack' : strikeKey;
-  attacker.attackAnimTimer = 0.52; // Active animation duration window
+  attacker.currentAnimation = isNami
+    ? 'idle' // Nami strictly has NO attack animation
+    : isUsopp || isCrocodile
+    ? 'attack'
+    : isSanji
+    ? strikeKey
+    : strikeKey;
+
+  attacker.attackAnimTimer = 0.52;
   attacker.lastAttackTimestamp = now;
+
+  // Strike names
   attacker.lastStrikeName = isNami
-    ? 'Clima-Tact (NamiAtk)'
+    ? 'Clima-Tact (Suporte)'
     : isUsopp
     ? 'Kayaku Boshi (UsoppAtk)'
+    : isCrocodile
+    ? 'Desert Spada (CrocodileATK)'
+    : isSanji
+    ? (strikeKey === 'kick1'
+      ? 'Mouton Shot (Kick1)'
+      : strikeKey === 'kick2'
+      ? 'Diable Jambe: Premier Haché (SanjiKick1)'
+      : 'Diable Jambe: Flambage Shot (SanjiKick2)')
+    : isChopperMonster
+    ? 'Monster Point: Heavy Stomp (Dano Terrível)'
     : attacker.unitId === 'zoro'
-    ? attacker.stars === 3
+    ? (attacker.stars === 3
       ? 'Santoryu: Onigiri (Slash 1)'
       : attacker.stars === 2
       ? 'Nitoryu: Nigiri (Slash 1)'
-      : 'Ittoryu: Iai Shishi Sonson (Slash 1)'
+      : 'Ittoryu: Iai Shishi Sonson (Slash 1)')
     : strikeConfig.name;
-  attacker.lastStrikePoints = strikeConfig.basePoints;
+
+  attacker.lastStrikePoints = isChopperMonster ? 65 : strikeConfig.basePoints;
 
   // Calculate Base Damage from Strike Points & Champion Stats
   const starMultiplier = attacker.stars === 3 ? 1.7 : attacker.stars === 2 ? 1.3 : 1.0;
   const isCrit = Math.random() < (isComboFinisher ? 0.35 : 0.20);
   const critMultiplier = isCrit ? 1.5 : 1.0;
-  // Scaled damage formula with balanced strike points
   const adScaling = attacker.ad / 36;
-  const rawDamage = Math.max(
-    strikeConfig.basePoints,
-    Math.round(strikeConfig.basePoints * adScaling * starMultiplier * critMultiplier)
-  );
+
+  let rawDamage: number;
+  if (isChopperMonster) {
+    // Monster Chopper: "com dano terrivel"
+    rawDamage = Math.round((520 + attacker.ad * 2.5) * starMultiplier * critMultiplier);
+  } else {
+    rawDamage = Math.max(
+      strikeConfig.basePoints,
+      Math.round(strikeConfig.basePoints * adScaling * starMultiplier * critMultiplier)
+    );
+  }
 
   // Defense Mitigation: Armor reduces physical, MR reduces magical
   let finalDamage = rawDamage;
@@ -868,6 +1000,163 @@ function executeSkillCast(
         durationMs: 500,
       });
     }
+  } else if (caster.unitId === 'chopper') {
+    if (isOrbSpecial) {
+      // Chopper equipped with Orb fills special bar -> Invocação de Monster Point!
+      caster.isTransformed = true;
+      caster.transformationPhase = 'INVOKING';
+      caster.transformationTimer = 1.4; // ChopperMonsterActive invocation animation duration
+      caster.currentAnimation = 'monster_invoke';
+      caster.isCasting = true;
+      caster.castProgress = 0;
+      caster.castingSkillName = 'Monster Point (Invocação)';
+
+      floatingTexts.push({
+        id: `chopper_invoke_${caster.instanceId}_${now}`,
+        x: caster.currentPosX,
+        y: caster.currentPosY - 0.6,
+        value: '🔮 RUMBLE BALL: MONSTER POINT!',
+        type: 'SKILL',
+        color: '#A855F7',
+        timestamp: now,
+      });
+
+      attackEffects.push({
+        id: `chopper_invoke_fx_${caster.instanceId}_${now}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: caster.currentPosX,
+        toY: caster.currentPosY,
+        type: 'SKILL_IMPACT',
+        color: '#9333EA',
+        skillName: 'Monster Point: ChopperMonsterActive',
+        timestamp: now,
+        durationMs: 1400,
+      });
+      return;
+    } else if (caster.activeSkill === 'SKILL_A') {
+      // Brain Point: Scope
+      const heal = Math.round(caster.maxHp * 0.25);
+      caster.hp = Math.min(caster.maxHp, caster.hp + heal);
+      floatingTexts.push({
+        id: `chopper_heal_${caster.instanceId}_${now}`,
+        x: caster.currentPosX,
+        y: caster.currentPosY,
+        value: `+${heal}`,
+        type: 'HEAL',
+        color: '#10B981',
+        timestamp: now,
+      });
+      attackEffects.push({
+        id: `chopper_scope_${caster.instanceId}_${now}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: primaryTarget.currentPosX,
+        toY: primaryTarget.currentPosY,
+        type: 'SKILL_IMPACT',
+        color: '#F472B6',
+        skillName: 'Brain Point: Scope',
+        timestamp: now,
+        durationMs: 500,
+      });
+      return;
+    } else {
+      // Heavy Point: Arm Smash
+      const baseDmg = 280 * (caster.stars === 1 ? 1 : 1.6);
+      const skillDamage = Math.round(baseDmg + caster.ad * 1.3);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts);
+      primaryTarget.isStunned = true;
+      primaryTarget.stunDuration = 1.0;
+      attackEffects.push({
+        id: `chopper_heavy_${caster.instanceId}_${now}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: primaryTarget.currentPosX,
+        toY: primaryTarget.currentPosY,
+        type: 'SKILL_IMPACT',
+        color: '#EA580C',
+        skillName: 'Heavy Point: Arm Smash',
+        timestamp: now,
+        durationMs: 500,
+      });
+      return;
+    }
+  } else if (caster.unitId === 'sanji') {
+    if (isOrbSpecial) {
+      // Diable Jambe: Flambage Shot (Ultimate Kick - True Haki Damage)
+      const skillDamage = Math.round(620 * (caster.stars === 1 ? 1 : 1.8) + caster.ad * 2.0);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'TRUE_HAKI', true, floatingTexts);
+      attackEffects.push({
+        id: `sanji_flambage_${caster.instanceId}_${now}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: primaryTarget.currentPosX,
+        toY: primaryTarget.currentPosY,
+        type: 'SKILL_IMPACT',
+        color: '#F97316',
+        skillName: 'Diable Jambe: Flambage Shot',
+        timestamp: now,
+        durationMs: 700,
+      });
+    } else {
+      // Concassé / Mouton Shot
+      const skillDamage = Math.round(280 * (caster.stars === 1 ? 1 : 1.5) + caster.ad * 1.2);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts);
+      attackEffects.push({
+        id: `sanji_concasser_${caster.instanceId}_${now}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: primaryTarget.currentPosX,
+        toY: primaryTarget.currentPosY,
+        type: 'SKILL_IMPACT',
+        color: '#F59E0B',
+        skillName: 'Diable Jambe: Concassé',
+        timestamp: now,
+        durationMs: 500,
+      });
+    }
+    return;
+  } else if (caster.unitId === 'crocodile') {
+    if (isOrbSpecial) {
+      // Ground Secco: Drena HP de todos os inimigos e atordoa
+      const skillDamage = Math.round(480 * (caster.stars === 1 ? 1 : 1.8) + caster.ap * 1.5);
+      for (const enemy of allLiving) {
+        if (enemy.isEnemy !== caster.isEnemy && enemy.hp > 0 && !enemy.isDefeated) {
+          applyDamageToTarget(caster, enemy, skillDamage, 'MAGICAL', true, floatingTexts);
+          enemy.isStunned = true;
+          enemy.stunDuration = 1.2;
+        }
+      }
+      attackEffects.push({
+        id: `croc_ground_secco_${caster.instanceId}_${now}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: primaryTarget.currentPosX,
+        toY: primaryTarget.currentPosY,
+        type: 'SKILL_IMPACT',
+        color: '#D97706',
+        skillName: 'Ground Secco (Tempestade de Areia)',
+        timestamp: now,
+        durationMs: 800,
+      });
+    } else {
+      // Desert Spada (CrocodileATK)
+      const skillDamage = Math.round(260 * (caster.stars === 1 ? 1 : 1.6) + caster.ad * 1.2);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts);
+      attackEffects.push({
+        id: `croc_spada_${caster.instanceId}_${now}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: primaryTarget.currentPosX,
+        toY: primaryTarget.currentPosY,
+        type: 'MELEE_SLASH',
+        color: '#B45309',
+        skillName: 'Desert Spada (CrocodileATK)',
+        timestamp: now,
+        durationMs: 500,
+      });
+    }
+    return;
   } else if (caster.unitId.startsWith('marine_recruit')) {
     // Marine Recruit Mosquete / Cutelo
     const skillDamage = Math.round(140 + caster.ad * 0.5);
