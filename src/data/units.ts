@@ -19,6 +19,7 @@ export const CHAMPION_DATABASE: Record<string, UnitBaseData> = {
     baseAp: 10,
     attackSpeed: 0.75,
     avatarUrl: '👒',
+    height: 1.74,
     color: '#EF4444',
     accentColor: '#DC2626',
     skillA: {
@@ -65,6 +66,7 @@ export const CHAMPION_DATABASE: Record<string, UnitBaseData> = {
     baseAp: 45,
     attackSpeed: 0.65,
     avatarUrl: '🍊',
+    height: 1.70,
     color: '#F97316',
     accentColor: '#EA580C',
     skillA: {
@@ -111,6 +113,7 @@ export const CHAMPION_DATABASE: Record<string, UnitBaseData> = {
     baseAp: 20,
     attackSpeed: 0.70,
     avatarUrl: '🎯',
+    height: 1.76,
     color: '#EAB308',
     accentColor: '#CA8A04',
     skillA: {
@@ -157,6 +160,7 @@ export const CHAMPION_DATABASE: Record<string, UnitBaseData> = {
     baseAp: 15,
     attackSpeed: 0.70,
     avatarUrl: '🎪',
+    height: 1.92,
     color: '#06B6D4',
     accentColor: '#0891B2',
     skillA: {
@@ -203,6 +207,7 @@ export const CHAMPION_DATABASE: Record<string, UnitBaseData> = {
     baseAp: 0,
     attackSpeed: 0.80,
     avatarUrl: '🌸',
+    height: 1.70,
     color: '#EC4899',
     accentColor: '#DB2777',
     skillA: {
@@ -249,6 +254,7 @@ export const CHAMPION_DATABASE: Record<string, UnitBaseData> = {
     baseAp: 0,
     attackSpeed: 0.80,
     avatarUrl: '⚔️',
+    height: 1.81,
     color: '#10B981',
     accentColor: '#059669',
     skillA: {
@@ -295,6 +301,7 @@ export const CHAMPION_DATABASE: Record<string, UnitBaseData> = {
     baseAp: 40,
     attackSpeed: 0.70,
     avatarUrl: '💨',
+    height: 2.09,
     color: '#64748B',
     accentColor: '#475569',
     skillA: {
@@ -341,6 +348,7 @@ export const CHAMPION_DATABASE: Record<string, UnitBaseData> = {
     baseAp: 30,
     attackSpeed: 0.85,
     avatarUrl: '🦵',
+    height: 1.80,
     color: '#F59E0B',
     accentColor: '#D97706',
     skillA: {
@@ -387,6 +395,7 @@ export const CHAMPION_DATABASE: Record<string, UnitBaseData> = {
     baseAp: 60,
     attackSpeed: 0.70,
     avatarUrl: '🦌',
+    height: 1.00,
     color: '#3B82F6',
     accentColor: '#2563EB',
     skillA: {
@@ -433,6 +442,7 @@ export const CHAMPION_DATABASE: Record<string, UnitBaseData> = {
     baseAp: 80,
     attackSpeed: 0.65,
     avatarUrl: '🐊',
+    height: 2.53,
     color: '#854D0E',
     accentColor: '#713F12',
     skillA: {
@@ -479,6 +489,7 @@ export const CHAMPION_DATABASE: Record<string, UnitBaseData> = {
     baseAp: 95,
     attackSpeed: 0.80,
     avatarUrl: '🐍',
+    height: 1.91,
     color: '#D946EF',
     accentColor: '#C026D3',
     skillA: {
@@ -525,6 +536,7 @@ export const CHAMPION_DATABASE: Record<string, UnitBaseData> = {
     baseAp: 40,
     attackSpeed: 0.85,
     avatarUrl: '🦅',
+    height: 1.98,
     visualAssets: {
       portrait: './champions/portraits/mihawk.png',
       battleSprite: './champions/portraits/mihawk.png',
@@ -576,6 +588,7 @@ export const CHAMPION_DATABASE: Record<string, UnitBaseData> = {
     baseAp: 100,
     attackSpeed: 0.90,
     avatarUrl: '🗡️',
+    height: 1.99,
     color: '#DC2626',
     accentColor: '#991B1B',
     skillA: {
@@ -623,6 +636,7 @@ export const CHAMPION_DATABASE: Record<string, UnitBaseData> = {
     baseAp: 0,
     attackSpeed: 0.50,
     avatarUrl: './champions/portraits/marine.png',
+    height: 1.80,
     visualAssets: {
       portrait: './champions/portraits/marine.png',
       battleSprite: './champions/portraits/marine.png',
@@ -675,6 +689,7 @@ export const CHAMPION_DATABASE: Record<string, UnitBaseData> = {
     baseAp: 0,
     attackSpeed: 0.50,
     avatarUrl: './champions/portraits/marine.png',
+    height: 1.80,
     visualAssets: {
       portrait: './champions/portraits/marine.png',
       battleSprite: './champions/portraits/marine.png',

@@ -6,6 +6,7 @@ import { createProceduralMannequin, ProceduralMannequin } from '../utils/procedu
 import { enrichMixamoModelIfNeeded } from '../utils/mixamoBodyEnricher';
 import { createBuggyBaraBaraController, BuggyBaraBaraController } from '../utils/buggyBaraBaraController';
 import { attachChampionWeapons } from '../utils/championWeapons';
+import { getChampionLoreHeightMeters } from '../utils/gameUtils';
 
 interface Champion3DModelProps {
   unitId: string;
@@ -13,8 +14,11 @@ interface Champion3DModelProps {
   isEnemy?: boolean;
   isStunned?: boolean;
   isCasting?: boolean;
+  isTransformed?: boolean;
+  transformationPhase?: 'NONE' | 'INVOKING' | 'TRANSFORMED' | 'UNCONSCIOUS';
+  isUnconscious?: boolean;
   stars?: number;
-  animationName?: 'idle' | 'walk' | 'punch' | 'punch1' | 'punch2' | 'punch3' | 'punch4' | 'kick' | 'kick1' | 'kick2' | 'kick3' | 'attack' | 'turnLeft' | 'turnRight' | 'death';
+  animationName?: 'idle' | 'walk' | 'punch' | 'punch1' | 'punch2' | 'punch3' | 'punch4' | 'kick' | 'kick1' | 'kick2' | 'kick3' | 'attack' | 'turnLeft' | 'turnRight' | 'death' | 'monster_invoke';
   lastAttackTimestamp?: number;
   currentPos?: { x: number; y: number } | null;
   targetPos?: { x: number; y: number } | null;
@@ -79,6 +83,9 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
   isEnemy = false,
   isStunned = false,
   isCasting = false,
+  isTransformed = false,
+  transformationPhase = 'NONE',
+  isUnconscious = false,
   stars = 1,
   animationName = 'idle',
   lastAttackTimestamp,
@@ -117,6 +124,9 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
 
   // Determine active action key
   const getActionKey = (): string => {
+    if (animationName === 'monster_invoke' || transformationPhase === 'INVOKING') {
+      return 'monster_invoke';
+    }
     if (isNami) {
       // Nami currently has no attack animation: stays in idle/rest pose during attacks
       if (animationName === 'walk') return 'walk';
@@ -240,9 +250,21 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     // 50° FOV provides real 3D depth, perspective foreshortening and character volume
     const fov = 50;
     const camera = new THREE.PerspectiveCamera(fov, width / height, 0.1, 100);
-    // Elevated Y and distanced Z camera creating tactical 45°-48° top-down isometric angle looking at champion's center
-    camera.position.set(0, 2.25, 1.75);
-    camera.lookAt(0, 0.55, 0);
+
+    // Dynamic isometric camera framing matched to canonical character height
+    const normId = unitId?.toLowerCase() || '';
+    const isMonster = normId === 'chopper' && Boolean(isTransformed);
+    const loreHeight = getChampionLoreHeightMeters(unitId, isTransformed);
+    const targetHeight = (loreHeight / 1.74) * 1.45;
+
+    // Tactical top-down isometric angle (~48°) scaled to the character's proportional height
+    // Monster Chopper is 2x2 with tall antlers and horns: provide expansive camera framing so he is NEVER cut off
+    const yCenter = isMonster ? targetHeight * 0.38 : targetHeight * 0.52;
+    const camDist = (isMonster ? 1.85 : 1.35) * Math.max(1.15, targetHeight);
+    const camY = yCenter + camDist * 0.7431; // sin(48°)
+    const camZ = camDist * 0.6691;          // cos(48°)
+    camera.position.set(0, camY, camZ);
+    camera.lookAt(0, yCenter, 0);
 
     const renderer = new THREE.WebGLRenderer({
       alpha: true,
@@ -258,8 +280,22 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
-    // Soft subtle grounding shadow disc under feet
-    const shadowGeo = new THREE.PlaneGeometry(0.85, 0.85);
+    // Responsive dynamic resize observer to maintain aspect ratio during transformations and screen changes
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width: newW, height: newH } = entry.contentRect;
+        if (newW > 0 && newH > 0) {
+          camera.aspect = newW / newH;
+          camera.updateProjectionMatrix();
+          renderer.setSize(newW, newH);
+        }
+      }
+    });
+    resizeObserver.observe(container);
+
+    // Soft subtle grounding shadow disc under feet scaled to champion size
+    const shadowRadius = Math.max(0.65, Math.min(2.0, 0.85 * (targetHeight / 1.45)));
+    const shadowGeo = new THREE.PlaneGeometry(shadowRadius, shadowRadius);
     const canvas = document.createElement('canvas');
     canvas.width = 64;
     canvas.height = 64;
@@ -304,10 +340,10 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     let animFrameId: number;
     let lastTime = performance.now();
 
-    // Load Modular Rig, Champion Skin (e.g. SkinBuggy.glb) and Custom Attack (e.g. BuggyATK.glb) in parallel
+    // Load Modular Rig, Champion Skin (e.g. SkinChopperMonster.glb) and Custom Attack in parallel
     Promise.all([
       loadChampionModularRig(),
-      loadChampionSkinModel(unitId).catch(() => null),
+      loadChampionSkinModel(unitId, isTransformed).catch(() => null),
       loadChampionAttackAnimation(unitId).catch(() => null),
     ])
       .then(([rigData, customSkin, customAttackClip]) => {
@@ -451,17 +487,22 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
             const punch3Action = customAttackAction || getRetargetedAction(rigData.animations.punch3);
             const punch4Action = customAttackAction || getRetargetedAction(rigData.animations.punch4);
 
-            // Nami and Usopp STRICTLY have no kicks: only their unique attack clip (customAttackAction) or punch, never rigData.animations.kick
+            // Dedicated Sanji kicks or modular rig kicks
+            const sanjiKick1Action = getRetargetedAction(customSkin?.customAnimations?.kick1);
+            const sanjiKick2Action = getRetargetedAction(customSkin?.customAnimations?.kick2);
+            const sanjiKick3Action = getRetargetedAction(customSkin?.customAnimations?.kick3);
+
+            // Nami and Usopp STRICTLY have no kicks: only their unique attack clip (customAttackAction) or punch
             const isNoKickChampion = isNami || isUsopp;
             const kickAction = isNoKickChampion
               ? (customAttackAction || punchAction)
-              : (customAttackAction || getRetargetedAction(rigData.animations.kick || rigData.animations.kick1));
+              : (sanjiKick1Action || getRetargetedAction(rigData.animations.kick1 || rigData.animations.kick) || customAttackAction);
             const kick2Action = isNoKickChampion
               ? (customAttackAction || punchAction)
-              : (customAttackAction || getRetargetedAction(rigData.animations.kick2));
+              : (sanjiKick2Action || getRetargetedAction(rigData.animations.kick2) || kickAction);
             const kick3Action = isNoKickChampion
               ? (customAttackAction || punchAction)
-              : (customAttackAction || getRetargetedAction(rigData.animations.kick3));
+              : (sanjiKick3Action || getRetargetedAction(rigData.animations.kick3) || kickAction);
             const turnLeftAction = getRetargetedAction(rigData.animations.turnLeft) || walkAction;
             const turnRightAction = getRetargetedAction(rigData.animations.turnRight) || walkAction;
             const deathAction = getRetargetedAction(rigData.animations.death);
@@ -483,6 +524,24 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
                 actions['kick1'] = uniqueCharAttack;
                 actions['kick2'] = uniqueCharAttack;
                 actions['kick3'] = uniqueCharAttack;
+              }
+            } else if (normId === 'sanji') {
+              // Sanji: 100% kick combat style with all 3 distinct kicks (Kick1, SanjiKick1, SanjiKick2)
+              if (kickAction) {
+                actions['kick'] = kickAction;
+                actions['kick1'] = kickAction;
+                actions['punch'] = kickAction;
+                actions['punch1'] = kickAction;
+                actions['attack'] = kickAction;
+              }
+              if (kick2Action) {
+                actions['kick2'] = kick2Action;
+                actions['punch2'] = kick2Action;
+              }
+              if (kick3Action) {
+                actions['kick3'] = kick3Action;
+                actions['punch3'] = kick3Action;
+                actions['punch4'] = kick3Action;
               }
             } else {
               if (punchAction) {
@@ -507,6 +566,12 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
             if (turnRightAction) actions['turnRight'] = turnRightAction;
             if (deathAction) actions['death'] = deathAction;
 
+            const invokeAction = getRetargetedAction(customSkin?.customAnimations?.invoke);
+            if (invokeAction) {
+              actions['monster_invoke'] = invokeAction;
+              actions['invoke'] = invokeAction;
+            }
+
             actionsRef.current = actions;
 
             // Start default idle animation if action exists
@@ -521,30 +586,17 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
             mixer.update(0.01);
           }
 
-          // 6. Compute exact model height and apply proportional scaling
+          // 6. Compute exact model height and apply proportional scaling based on canonical lore meters
           clonedRig.updateMatrixWorld(true);
-          const isMihawk = normId === 'mihawk';
-          const isShanks = normId === 'shanks';
-          const isSmoke = normId.includes('smoke');
-          const isChopper = normId === 'chopper';
-          
-          const targetHeight = normId === 'luffy'
-            ? 1.48
-            : normId === 'zoro'
-            ? 1.52
-            : isMihawk
-            ? 1.56
-            : isShanks || isSmoke
-            ? 1.50
-            : isChopper
-            ? 1.18
-            : normId === 'tashigi'
-            ? 1.38
-            : normId === 'nami' || normId === 'usopp'
-            ? 1.36
-            : normId === 'buggy'
-            ? 1.42
-            : 1.45;
+          const loreHeight = getChampionLoreHeightMeters(unitId, isTransformed);
+          // Baseline Luffy (1.74m) is rendered at targetHeight = 1.45:
+          // Chopper (1.0m) -> 0.833
+          // Luffy (1.74m) -> 1.450
+          // Zoro (1.81m) -> 1.508
+          // Smoker (2.09m) -> 1.741 (>2m, taller than 1.60m/1.85m)
+          // Crocodile (2.53m) -> 2.108
+          // Monster Chopper (3.80m) -> 3.165
+          const targetHeight = (loreHeight / 1.74) * 1.45;
 
           const measuredBox = new THREE.Box3().setFromObject(clonedRig);
           const measuredSize = new THREE.Vector3();
@@ -714,12 +766,13 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
         }
       }
 
-      // Dynamic Form Transformation for Chopper (Brain Point <-> Monster Point during Special)
-      if (unitId.toLowerCase() === 'chopper' && modelGroupRef.current) {
-        const targetScale = isCasting ? 2.1 : 1.0;
-        const curScale = modelGroupRef.current.scale.x;
-        const newScale = THREE.MathUtils.lerp(curScale, targetScale, Math.min(delta * 5, 1.0));
-        modelGroupRef.current.scale.setScalar(newScale);
+      // Unconscious state after Monster Point: Chopper faints / tilts down
+      if (modelGroupRef.current) {
+        if (isUnconscious || transformationPhase === 'UNCONSCIOUS') {
+          modelGroupRef.current.rotation.z = lerpAngle(modelGroupRef.current.rotation.z, 0.45, Math.min(delta * 6, 1.0));
+        } else {
+          modelGroupRef.current.rotation.z = lerpAngle(modelGroupRef.current.rotation.z, 0, Math.min(delta * 6, 1.0));
+        }
       }
 
       // Smooth directional rotation
@@ -737,6 +790,7 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     return () => {
       isMounted = false;
       cancelAnimationFrame(animFrameId);
+      resizeObserver.disconnect();
       if (mixerRef.current) {
         mixerRef.current.stopAllAction();
         mixerRef.current = null;
@@ -753,7 +807,7 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
         container.innerHTML = '';
       }
     };
-  }, [unitId, unitColor, isEnemy, stars]);
+  }, [unitId, unitColor, isEnemy, stars, isTransformed]);
 
   return (
     <div

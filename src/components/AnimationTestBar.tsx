@@ -44,6 +44,7 @@ export const AnimationTestBar: React.FC<AnimationTestBarProps> = ({
   const isZoro = selectedUnit.unitId === 'zoro';
   const isNami = selectedUnit.unitId === 'nami';
   const isUsopp = selectedUnit.unitId === 'usopp';
+  const isSanji = selectedUnit.unitId === 'sanji';
   const hasSake = selectedUnit.items?.includes('garrafa_sake');
 
   const animButtons = isZoro
@@ -54,6 +55,17 @@ export const AnimationTestBar: React.FC<AnimationTestBarProps> = ({
         { id: 'punch1', label: '⚔️ Golpe 1', desc: 'Slash1' },
         { id: 'punch2', label: '⚔️ Golpe 2', desc: 'Slash1' },
         { id: 'kick1', label: '⚔️ Golpe Forte', desc: 'Slash1' },
+        { id: 'turnLeft', label: '↪️ Girar Esq.', desc: 'Curva esquerda' },
+        { id: 'turnRight', label: '↩️ Girar Dir.', desc: 'Curva direita' },
+        { id: 'death', label: '💀 Morte', desc: 'Derrota' },
+      ]
+    : isSanji
+    ? [
+        { id: 'idle', label: '🧍 Idle Sanji', desc: 'Idle.glb' },
+        { id: 'walk', label: '🚶 Caminhar', desc: 'Walk.glb' },
+        { id: 'kick1', label: '🦶 Chute 1', desc: 'Kick1.glb (Mouton Shot)' },
+        { id: 'kick2', label: '🌪️ Chute 2', desc: 'SanjiKick1.glb (Premier Haché)' },
+        { id: 'kick3', label: '🔥 Chute 3', desc: 'SanjiKick2.glb (Flambage Shot)' },
         { id: 'turnLeft', label: '↪️ Girar Esq.', desc: 'Curva esquerda' },
         { id: 'turnRight', label: '↩️ Girar Dir.', desc: 'Curva direita' },
         { id: 'death', label: '💀 Morte', desc: 'Derrota' },

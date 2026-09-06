@@ -53,6 +53,7 @@ export interface UnitBaseData {
   baseAp: number;
   attackSpeed: number; // attacks per second
   avatarUrl: string; // Emoji fallback or direct image
+  height?: number; // Altura canônica oficial em metros (ex: Chopper: 1.0, Luffy: 1.74, Smoker: 2.09)
   visualAssets?: UnitVisualAssets;
   color: string;
   accentColor: string;
@@ -92,6 +93,7 @@ export interface UnitInstance {
   hasSpecialItem: boolean;
   
   avatarUrl: string;
+  height?: number;
   visualAssets?: UnitVisualAssets;
   color: string;
   accentColor: string;

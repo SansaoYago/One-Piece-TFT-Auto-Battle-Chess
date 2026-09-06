@@ -36,6 +36,140 @@ export const SHOP_ODDS_BY_LEVEL: Record<number, number[]> = {
   8: [15, 20, 35, 25, 5],
 };
 
+/**
+ * Alturas oficiais de One Piece (em metros).
+ * Chopper: 1.00m (Brain Point / rena pequena, proporcional a Luffy 1.74m)
+ * Luffy: 1.74m
+ * Nami / Tashigi: 1.70m
+ * Usopp: 1.76m
+ * Sanji / Marines: 1.80m
+ * Zoro: 1.81m
+ * Boa Hancock: 1.91m
+ * Buggy: 1.92m
+ * Mihawk: 1.98m
+ * Shanks: 1.99m
+ * Smoker: 2.09m (>2m, visivelmente mais alto que 1.74m / 1.85m)
+ * Crocodile: 2.53m (grande e imponente Shichibukai)
+ * Chopper Monster Point: 3.80m (colosso colossal despertado)
+ */
+export const CHAMPION_CANONICAL_HEIGHTS: Record<string, number> = {
+  chopper: 1.00,
+  nami: 1.70,
+  tashigi: 1.70,
+  luffy: 1.74,
+  usopp: 1.76,
+  sanji: 1.80,
+  marine_recruit_1: 1.80,
+  marine_recruit_2: 1.80,
+  marine: 1.80,
+  zoro: 1.81,
+  boa_hancock: 1.91,
+  buggy: 1.92,
+  mihawk: 1.98,
+  shanks: 1.99,
+  smoker: 2.09,
+  smoke: 2.09,
+  crocodile: 2.53,
+  chopper_monster: 3.80,
+};
+
+export function getChampionLoreHeightMeters(unitId: string, isTransformed?: boolean): number {
+  const normId = (unitId || '').toLowerCase();
+  if (normId === 'chopper' && isTransformed) {
+    return 3.80;
+  }
+  return CHAMPION_CANONICAL_HEIGHTS[normId] ?? (normId.startsWith('marine') ? 1.80 : 1.75);
+}
+
+/**
+ * Raio físico real do corpo do campeão no grid contínuo da arena tática.
+ * Em vez de tratar o personagem como um "bloco quadrado de 1 tile", cada campeão
+ * ocupa o espaço de suas dimensões físicas corporais reais, permitindo que os
+ * personagens se aproximem até o contato corpo a corpo real e acertem o corpo
+ * do adversário de forma física e precisa (socos, chutes e combos conectando diretamente).
+ */
+export function getChampionPhysicalRadius(unitId: string, isTransformed?: boolean): number {
+  const normId = (unitId || '').toLowerCase();
+  if (normId === 'chopper' && isTransformed) {
+    return 0.72; // Monster Chopper ocupa 2x2 com sua silhueta imponente
+  }
+  if (normId === 'chopper') {
+    return 0.18; // Brain Point: rena pequena e ágil
+  }
+  if (normId === 'crocodile') {
+    return 0.36; // Shichibukai grande e volumoso com casaco de pele
+  }
+  if (normId === 'smoker' || normId === 'smoke') {
+    return 0.32; // Capitão naval forte (>2.00m)
+  }
+  if (normId === 'mihawk' || normId === 'shanks' || normId === 'boa_hancock' || normId === 'buggy') {
+    return 0.28;
+  }
+  if (normId === 'zoro') {
+    return 0.27; // Espadachim musculoso
+  }
+  if (normId === 'sanji') {
+    return 0.26; // Silhueta atlética e ágil
+  }
+  if (normId === 'luffy' || normId === 'usopp') {
+    return 0.25;
+  }
+  if (normId === 'nami' || normId === 'tashigi') {
+    return 0.23;
+  }
+  return 0.25;
+}
+
+/**
+ * Calcula dimensões proporcionais para a exibição 3D do personagem e posicionamento
+ * dinâmico da barra de HP na arena tática, com ampla margem de viewport para que
+ * chutes, giros de artes marciais, golpes aéreos e armas nunca sofram corte em nenhum container.
+ */
+export function getChampionTokenDimensions(unitId: string, isTransformed?: boolean) {
+  const normId = unitId?.toLowerCase() || '';
+  const isMonster = normId === 'chopper' && Boolean(isTransformed);
+  const meters = getChampionLoreHeightMeters(unitId, isTransformed);
+  const ratio = meters / 1.74; // Razão proporcional referente a Luffy (1.74m)
+
+  if (isMonster) {
+    // 2x2 Monster Chopper: Canvas amplo cobrindo o bloco 2x2 sem nenhum corte
+    return {
+      meters,
+      ratio,
+      is2x2: true,
+      widthBase: 320,
+      heightBase: 360,
+      widthSm: 370,
+      heightSm: 410,
+      widthLg: 420,
+      heightLg: 460,
+      hudBottomBase: 250,
+      hudBottomSm: 290,
+      hudBottomLg: 330,
+    };
+  }
+
+  // Baseline Luffy (1.74m):
+  // Viewport amplo (200px+ de largura e altura) com margem lateral e superior generosa,
+  // permitindo chutes altos, pernas estendidas e giros sem limites de container.
+  const widthFactor = Math.max(0.85, Math.min(1.5, Math.pow(ratio, 0.5)));
+
+  return {
+    meters,
+    ratio,
+    is2x2: false,
+    widthBase: Math.round(180 * widthFactor),
+    heightBase: Math.round(180 * Math.max(0.85, ratio)),
+    widthSm: Math.round(210 * widthFactor),
+    heightSm: Math.round(210 * Math.max(0.85, ratio)),
+    widthLg: Math.round(240 * widthFactor),
+    heightLg: Math.round(240 * Math.max(0.85, ratio)),
+    hudBottomBase: Math.round(124 * ratio),
+    hudBottomSm: Math.round(146 * ratio),
+    hudBottomLg: Math.round(168 * ratio),
+  };
+}
+
 export function createUnitInstance(
   unitId: string,
   stars: StarLevel = 1,
@@ -81,6 +215,7 @@ export function createUnitInstance(
     hasSpecialItem: false,
     
     avatarUrl: base.avatarUrl,
+    height: base.height || getChampionLoreHeightMeters(base.id),
     color: base.color,
     accentColor: base.accentColor,
     

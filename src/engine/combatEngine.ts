@@ -24,6 +24,132 @@ export const COMBO_STRIKES: Record<string, ComboStrikeConfig> = {
   kick3: { id: 'kick3', name: 'Chute 3 (Impacto Final)', type: 'KICK', basePoints: 28, icon: '🔥' },
 };
 
+const BOARD_COLS = 8;
+const BOARD_ROWS = 6;
+
+/**
+ * Empurra unidades adjacentes ou sobrepostas para abrir espaço de 2x2 para o Monster Chopper.
+ */
+export function pushUnitsAwayFromMonsterChopper(
+  chopper: CombatUnitState,
+  allUnits: CombatUnitState[],
+  floatingTexts: FloatingText[],
+  attackEffects: AttackEffect[],
+  now: number
+) {
+  // Limites do bloco 2x2 no tabuleiro (8 cols x 6 rows)
+  const rootX = Math.min(BOARD_COLS - 2, Math.max(0, Math.round(chopper.currentPosX - 0.5)));
+  const rootY = Math.min(BOARD_ROWS - 2, Math.max(0, Math.round(chopper.currentPosY - 0.5)));
+  const centerX = rootX + 0.5;
+  const centerY = rootY + 0.5;
+
+  // Encaixa o Monster Chopper exatamente no centro das 4 células (2x2)
+  chopper.currentPosX = centerX;
+  chopper.currentPosY = centerY;
+  chopper.gridX = rootX;
+  chopper.gridY = rootY;
+
+  const isInsideMonsterFootprint = (x: number, y: number) => {
+    return x >= rootX - 0.25 && x <= rootX + 1.25 && y >= rootY - 0.25 && y <= rootY + 1.25;
+  };
+
+  allUnits.forEach((other) => {
+    if (other.instanceId === chopper.instanceId || other.hp <= 0 || other.isDefeated) return;
+
+    const dist = Math.hypot(other.currentPosX - centerX, other.currentPosY - centerY);
+    const mustPush = isInsideMonsterFootprint(other.currentPosX, other.currentPosY) || dist < 1.45;
+
+    if (mustPush) {
+      let dirX = other.currentPosX - centerX;
+      let dirY = other.currentPosY - centerY;
+      if (Math.hypot(dirX, dirY) < 0.2) {
+        dirX = other.isEnemy ? 1.5 : -1.5;
+        dirY = (Math.random() - 0.5) * 1.2;
+      }
+      const len = Math.hypot(dirX, dirY) || 1;
+      dirX /= len;
+      dirY /= len;
+
+      let targetX = Math.round(centerX + dirX * 2.1);
+      let targetY = Math.round(centerY + dirY * 1.9);
+
+      targetX = Math.min(BOARD_COLS - 1, Math.max(0, targetX));
+      targetY = Math.min(BOARD_ROWS - 1, Math.max(0, targetY));
+
+      if (isInsideMonsterFootprint(targetX, targetY)) {
+        if (dirX > 0) targetX = Math.min(BOARD_COLS - 1, rootX + 2);
+        else targetX = Math.max(0, rootX - 1);
+      }
+
+      const isTileBlocked = (tx: number, ty: number) => {
+        if (isInsideMonsterFootprint(tx, ty)) return true;
+        return allUnits.some(
+          (u) =>
+            u.instanceId !== other.instanceId &&
+            u.instanceId !== chopper.instanceId &&
+            !u.isDefeated &&
+            u.hp > 0 &&
+            Math.round(u.currentPosX) === tx &&
+            Math.round(u.currentPosY) === ty
+        );
+      };
+
+      if (isTileBlocked(targetX, targetY)) {
+        for (let r = 1; r < BOARD_COLS; r++) {
+          let found = false;
+          for (let dx = -r; dx <= r; dx++) {
+            for (let dy = -r; dy <= r; dy++) {
+              const cx = targetX + dx;
+              const cy = targetY + dy;
+              if (cx >= 0 && cx < BOARD_COLS && cy >= 0 && cy < BOARD_ROWS && !isTileBlocked(cx, cy)) {
+                targetX = cx;
+                targetY = cy;
+                found = true;
+                break;
+              }
+            }
+            if (found) break;
+          }
+          if (found) break;
+        }
+      }
+
+      const prevX = other.currentPosX;
+      const prevY = other.currentPosY;
+      other.currentPosX = targetX;
+      other.currentPosY = targetY;
+      other.gridX = targetX;
+      other.gridY = targetY;
+      other.isStunned = true;
+      other.stunDuration = Math.max(other.stunDuration || 0, 0.8);
+      other.moveCooldown = 0.8;
+
+      floatingTexts.push({
+        id: `push_${other.instanceId}_${now}_${Math.random().toString(36).slice(2, 6)}`,
+        x: targetX,
+        y: targetY - 0.6,
+        value: '💥 EMPURRADO (2x2)!',
+        type: 'CRIT',
+        color: '#F97316',
+        timestamp: now,
+      });
+
+      attackEffects.push({
+        id: `push_shock_${other.instanceId}_${now}_${Math.random().toString(36).slice(2, 6)}`,
+        fromX: prevX,
+        fromY: prevY,
+        toX: targetX,
+        toY: targetY,
+        type: 'SKILL_IMPACT',
+        color: '#EA580C',
+        skillName: 'Repulsão 2x2 Monster Chopper',
+        timestamp: now,
+        durationMs: 450,
+      });
+    }
+  });
+}
+
 export function initializeCombatUnits(boardUnits: UnitInstance[]): CombatUnitState[] {
   // Only include units actually on the board (gridX >= 0, gridY >= 0)
   const activeUnits = boardUnits.filter((u) => u.gridX >= 0 && u.gridY >= 0);
@@ -135,11 +261,20 @@ export function simulateCombatTick(
           unit.currentAnimation = 'idle';
           unit.isTransformed = true;
 
+          // Push any surrounding units away to guarantee a clear 2x2 area!
+          pushUnitsAwayFromMonsterChopper(
+            unit,
+            livingUnits,
+            newFloatingTexts,
+            newAttackEffects,
+            now
+          );
+
           newFloatingTexts.push({
             id: `chopper_monster_active_${unit.instanceId}_${now}`,
             x: unit.currentPosX,
             y: unit.currentPosY - 0.7,
-            value: '🔥 MONSTER CHOPPER ATIVO (3m)!',
+            value: '🔥 MONSTER CHOPPER 2x2 ATIVO!',
             type: 'CRIT',
             color: '#EF4444',
             timestamp: now,
@@ -161,7 +296,7 @@ export function simulateCombatTick(
         continue; // Cannot attack or move while invoking
       } else if (unit.transformationPhase === 'TRANSFORMED') {
         if (unit.transformationTimer <= 0) {
-          // 3 seconds finished! Revert to normal Chopper and become unconscious for 3 seconds!
+          // 3 seconds finished! Revert to normal Chopper (1x1 space) and become unconscious for 3 seconds!
           unit.isTransformed = false;
           unit.transformationPhase = 'UNCONSCIOUS';
           unit.transformationTimer = 3.0; // 3 seconds unconscious
@@ -169,6 +304,12 @@ export function simulateCombatTick(
           unit.stunDuration = 3.0;
           unit.isUnconscious = true;
           unit.currentAnimation = 'idle';
+
+          // Snap back to occupying a single normal 1x1 grid cell
+          unit.currentPosX = Math.min(BOARD_COLS - 1, Math.max(0, Math.round(unit.currentPosX)));
+          unit.currentPosY = Math.min(BOARD_ROWS - 1, Math.max(0, Math.round(unit.currentPosY)));
+          unit.gridX = Math.round(unit.currentPosX);
+          unit.gridY = Math.round(unit.currentPosY);
 
           newFloatingTexts.push({
             id: `chopper_unconscious_${unit.instanceId}_${now}`,
@@ -189,6 +330,12 @@ export function simulateCombatTick(
           unit.isStunned = false;
           unit.isUnconscious = false;
           unit.stunDuration = 0;
+
+          // Maintain standard 1x1 grid tile
+          unit.currentPosX = Math.min(BOARD_COLS - 1, Math.max(0, Math.round(unit.currentPosX)));
+          unit.currentPosY = Math.min(BOARD_ROWS - 1, Math.max(0, Math.round(unit.currentPosY)));
+          unit.gridX = Math.round(unit.currentPosX);
+          unit.gridY = Math.round(unit.currentPosY);
 
           newFloatingTexts.push({
             id: `chopper_wakeup_${unit.instanceId}_${now}`,
@@ -337,13 +484,13 @@ export function simulateCombatTick(
           const candY = Math.max(0, Math.min(5, unit.currentPosY + Math.sin(testAngle) * stepSize));
 
           // Check if candidate position collides with any other living unit (defeated units do NOT block)
-          const collides = livingUnits.some(
-            (other) =>
-              other.instanceId !== unit.instanceId &&
-              other.hp > 0 &&
-              !other.isDefeated &&
-              Math.hypot(other.currentPosX - candX, other.currentPosY - candY) < 0.44
-          );
+          const isCurrentMonster = unit.unitId === 'chopper' && unit.isTransformed;
+          const collides = livingUnits.some((other) => {
+            if (other.instanceId === unit.instanceId || other.hp <= 0 || other.isDefeated) return false;
+            const isOtherMonster = other.unitId === 'chopper' && other.isTransformed;
+            const requiredDistance = isCurrentMonster || isOtherMonster ? 1.25 : 0.44;
+            return Math.hypot(other.currentPosX - candX, other.currentPosY - candY) < requiredDistance;
+          });
 
           if (!collides) {
             // Distance from candidate step to target
@@ -1010,6 +1157,15 @@ function executeSkillCast(
       caster.isCasting = true;
       caster.castProgress = 0;
       caster.castingSkillName = 'Monster Point (Invocação)';
+
+      // Immediately push nearby characters away so Chopper has an open 2x2 footprint!
+      pushUnitsAwayFromMonsterChopper(
+        caster,
+        allLiving,
+        floatingTexts,
+        attackEffects,
+        now
+      );
 
       floatingTexts.push({
         id: `chopper_invoke_${caster.instanceId}_${now}`,

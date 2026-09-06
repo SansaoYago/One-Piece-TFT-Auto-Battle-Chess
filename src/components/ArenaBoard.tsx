@@ -8,6 +8,7 @@ import { ITEM_DATABASE } from '../data/items';
 import { ChampionVisual } from './ChampionVisual';
 import { Champion3DModel } from './Champion3DModel';
 import { Commander } from '../types/game';
+import { getChampionTokenDimensions } from '../utils/gameUtils';
 
 interface ArenaBoardProps {
   boardUnits: UnitInstance[];
@@ -178,6 +179,8 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
         : { x: unit.gridX + 4, y: unit.gridY + 0.2 };
     }
 
+    const tokenDims = getChampionTokenDimensions(unit.unitId, combatState?.isTransformed);
+
     return (
       <div
         key={unit.instanceId}
@@ -329,13 +332,17 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
           </div>
         )}
 
-        {/* 3D Global Mannequin Body with Fallback & Clean View */}
+        {/* 3D Model Body with Proportional Canonical Scaling & Height-Adjusted HP Bar */}
         <div
-          className={`${
-            combatState?.isTransformed
-              ? 'w-36 h-48 sm:w-44 sm:h-56 lg:w-52 lg:h-64'
-              : 'w-24 h-32 sm:w-30 sm:h-38 lg:w-36 lg:h-44'
-          } flex items-end justify-center relative transition-all duration-300 ${
+          style={{
+            ['--token-w-base' as any]: `${tokenDims.widthBase}px`,
+            ['--token-h-base' as any]: `${tokenDims.heightBase}px`,
+            ['--token-w-sm' as any]: `${tokenDims.widthSm}px`,
+            ['--token-h-sm' as any]: `${tokenDims.heightSm}px`,
+            ['--token-w-lg' as any]: `${tokenDims.widthLg}px`,
+            ['--token-h-lg' as any]: `${tokenDims.heightLg}px`,
+          }}
+          className={`w-[var(--token-w-base)] h-[var(--token-h-base)] sm:w-[var(--token-w-sm)] sm:h-[var(--token-h-sm)] lg:w-[var(--token-w-lg)] lg:h-[var(--token-h-lg)] flex items-end justify-center relative transition-all duration-300 ${
             isSelected ? 'scale-105 drop-shadow-[0_0_16px_rgba(245,158,11,1)]' : ''
           }`}
         >
@@ -591,6 +598,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                   return true;
                 })
                 .map((cUnit) => {
+                const isMonster2x2 = cUnit.unitId === 'chopper' && Boolean(cUnit.isTransformed);
                 // Precise continuous percentage position inside the 8x6 grid
                 const leftPercent = ((cUnit.currentPosX + 0.5) / BOARD_COLS) * 100;
                 const topPercent = ((cUnit.currentPosY + 0.5) / BOARD_ROWS) * 100;
@@ -604,13 +612,15 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                       top: `${topPercent}%`,
                       transform: 'translate(-50%, -82%)',
                       transformStyle: 'preserve-3d',
-                      zIndex: Math.round(cUnit.currentPosY) * 10 + Math.round(cUnit.currentPosX) + 10,
+                      zIndex: (Math.round(cUnit.currentPosY) * 10 + Math.round(cUnit.currentPosX) + 10) + (isMonster2x2 ? 15 : 0),
                     }}
                   >
-                    {/* Floor Shadow Disc underneath the combatant feet */}
+                    {/* Floor Shadow Disc underneath the combatant feet (2x2 expanded for Monster Chopper) */}
                     {!cUnit.isDefeated && cUnit.hp > 0 && (
                       <div
-                        className="absolute left-1/2 top-[82%] -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/70 blur-[4px] pointer-events-none transition-opacity duration-300"
+                        className={`absolute left-1/2 top-[82%] -translate-x-1/2 -translate-y-1/2 ${
+                          isMonster2x2 ? 'w-28 h-28 bg-black/85 blur-[6px]' : 'w-12 h-12 bg-black/70 blur-[4px]'
+                        } rounded-full pointer-events-none transition-all duration-300`}
                         style={{ transform: 'translateZ(2px)' }}
                       />
                     )}

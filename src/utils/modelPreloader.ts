@@ -72,6 +72,19 @@ export const REQUIRED_3D_ASSETS = [
   { url: './models/SkinUsopp.glb', label: 'Skin Usopp (SkinUsopp.glb)' },
   { url: './models/UsoppAtk.glb', label: 'Ataque Usopp (UsoppAtk.glb)' },
   { url: './models/SkinTashigi.glb', label: 'Skin Tashigi (SkinTashigi.glb)' },
+  { url: './models/SkinChopper.glb', label: 'Skin Chopper (SkinChopper.glb)' },
+  { url: './models/SkinChopperMonster.glb', label: 'Skin Monster Chopper (SkinChopperMonster.glb)' },
+  { url: './models/ChopperMonsterActive.glb', label: 'Invocação Chopper Monster (ChopperMonsterActive.glb)' },
+  { url: './models/SkinCrocodile.glb', label: 'Skin Crocodile (SkinCrocodile.glb)' },
+  { url: './models/CrocodileATK.glb', label: 'Ataque Crocodile (CrocodileATK.glb)' },
+  { url: './models/SkinBuggy.glb', label: 'Skin Buggy (SkinBuggy.glb)' },
+  { url: './models/SkinSanji.glb', label: 'Skin Sanji (SkinSanji.glb)' },
+  { url: './models/SanjiKick1.glb', label: 'Chute Sanji 1 (SanjiKick1.glb)' },
+  { url: './models/SanjiKick2.glb', label: 'Chute Sanji 2 (SanjiKick2.glb)' },
+  { url: './models/SkinMihawk.glb', label: 'Skin Mihawk (SkinMihawk.glb)' },
+  { url: './models/SkinSmoker.glb', label: 'Skin Smoker (SkinSmoker.glb)' },
+  { url: './models/SkinShanks.glb', label: 'Skin Shanks (SkinShanks.glb)' },
+  { url: './models/SkinBoaHancock.glb', label: 'Skin Boa Hancock (SkinBoaHancock.glb)' },
   { url: './models/Idle.glb', label: 'Postura Base (Idle.glb)' },
   { url: './models/Walk.glb', label: 'Caminhada (Walk.glb)' },
   { url: './models/Punch1.glb', label: 'Soco 1 (Punch1.glb)' },
@@ -273,19 +286,31 @@ export function retargetClipToModel(
     }
 
     // Discard position tracks for non-Hips bones to avoid mesh stretching,
-    // but preserve Hips position so root elevation and stance height are faithfully maintained.
+    // and for Hips, lock horizontal root displacement (X and Z) to the base pose to enforce in-place
+    // combat animation (avoiding models sliding 3 steps forward into canvas bounds/containers),
+    // while faithfully preserving vertical Y dynamics (jumps, squats, stomps, stance elevation).
     if (propName === '.position') {
       const isHips = matchedName.toLowerCase().includes('hips');
       if (!isHips) {
         continue;
       }
+
+      const cloned = track.clone() as THREE.VectorKeyframeTrack;
+      cloned.name = matchedName + propName;
+      const values = cloned.values;
+      if (values && values.length >= 3) {
+        const baseRootX = values[0];
+        const baseRootZ = values[2];
+        const numKeys = cloned.times.length;
+        for (let i = 0; i < numKeys; i++) {
+          values[i * 3 + 0] = baseRootX;
+          // values[i * 3 + 1] (Y: vertical elevation, jump, stomp) is 100% preserved
+          values[i * 3 + 2] = baseRootZ;
+        }
+      }
+      newTracks.push(cloned);
+      continue;
     }
-
-    const cloned = track.clone();
-    cloned.name = matchedName + propName;
-
-    // Keep natural rotation
-    newTracks.push(cloned);
   }
 
   return new THREE.AnimationClip(clip.name, clip.duration, newTracks);
@@ -844,6 +869,8 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
       punch2Data,
       punch3Data,
       kick1Data,
+      kick2Data,
+      kick3Data,
       turnLeftData,
       turnRightData,
     ] = await Promise.all([
@@ -864,6 +891,12 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
         .catch(() => null),
       loadModelCached('./models/Kick1.glb')
         .catch(() => loadModelCached('/models/Kick1.glb'))
+        .catch(() => null),
+      loadModelCached('./models/SanjiKick1.glb')
+        .catch(() => loadModelCached('/models/SanjiKick1.glb'))
+        .catch(() => null),
+      loadModelCached('./models/SanjiKick2.glb')
+        .catch(() => loadModelCached('/models/SanjiKick2.glb'))
         .catch(() => null),
       loadModelCached('./models/TurnLeftt.glb')
         .catch(() => loadModelCached('/models/TurnLeftt.glb'))
@@ -886,6 +919,8 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
     let punch2Clip = punch2Data?.animations?.[0];
     let punch3Clip = punch3Data?.animations?.[0];
     let kick1Clip = kick1Data?.animations?.[0];
+    let kick2Clip = kick2Data?.animations?.[0] || kick1Clip;
+    let kick3Clip = kick3Data?.animations?.[0] || kick1Clip;
     let turnLeftClip = turnLeftData?.animations?.[0];
     let turnRightClip = turnRightData?.animations?.[0];
 
@@ -895,6 +930,8 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
     if (punch2Clip) punch2Clip.name = 'punch2';
     if (punch3Clip) punch3Clip.name = 'punch3';
     if (kick1Clip) kick1Clip.name = 'kick1';
+    if (kick2Clip) kick2Clip.name = 'kick2';
+    if (kick3Clip) kick3Clip.name = 'kick3';
     if (turnLeftClip) turnLeftClip.name = 'turnLeft';
     if (turnRightClip) turnRightClip.name = 'turnRight';
 
@@ -912,8 +949,8 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
         punch4: punch3Clip,
         kick: kick1Clip,
         kick1: kick1Clip,
-        kick2: kick1Clip,
-        kick3: kick1Clip,
+        kick2: kick2Clip,
+        kick3: kick3Clip,
         turnLeft: turnLeftClip,
         turnRight: turnRightClip,
         death: undefined,
