@@ -39,14 +39,14 @@ export function generateIndividualBotState(commanderId: string, totalRound: numb
   const boardUnits: UnitInstance[] = [];
   const benchUnits: (UnitInstance | null)[] = Array(8).fill(null);
 
-  // Position board units on the player side (columns 0..3, rows 0..5)
+  // Position board units on the player side (columns 0..3, rows 0..4)
   const startPositions = [
     { x: 1, y: 2 },
     { x: 2, y: 1 },
-    { x: 1, y: 4 },
+    { x: 1, y: 3 },
     { x: 2, y: 4 },
     { x: 0, y: 2 },
-    { x: 0, y: 4 },
+    { x: 0, y: 0 },
   ];
 
   for (let i = 0; i < boardCount; i++) {

@@ -25,7 +25,7 @@ export const COMBO_STRIKES: Record<string, ComboStrikeConfig> = {
 };
 
 const BOARD_COLS = 8;
-const BOARD_ROWS = 6;
+const BOARD_ROWS = 5;
 
 /**
  * Empurra unidades adjacentes ou sobrepostas para abrir espaço de 2x2 para o Monster Chopper.
@@ -37,7 +37,7 @@ export function pushUnitsAwayFromMonsterChopper(
   attackEffects: AttackEffect[],
   now: number
 ) {
-  // Limites do bloco 2x2 no tabuleiro (8 cols x 6 rows)
+  // Limites do bloco 2x2 no tabuleiro (8 cols x 5 rows)
   const rootX = Math.min(BOARD_COLS - 2, Math.max(0, Math.round(chopper.currentPosX - 0.5)));
   const rootY = Math.min(BOARD_ROWS - 2, Math.max(0, Math.round(chopper.currentPosY - 0.5)));
   const centerX = rootX + 0.5;
@@ -415,10 +415,20 @@ export function simulateCombatTick(
       target.currentPosY - unit.currentPosY
     );
 
-    // 3. Attack Range Check: unit.range (1 is melee ~1.55 tiles, ranged is 2..4 tiles)
-    const effectiveRange = unit.range === 1 ? 1.55 : unit.range + 0.35;
+    // 3. Attack Range Check: unit.range (1 is melee ~1.65 tiles for comfortable punch margin, ranged is 2..4 tiles)
+    const effectiveRange = unit.range === 1 ? 1.65 : unit.range + 0.35;
 
     if (distanceToTarget <= effectiveRange) {
+      // If two melee units are too close (< 1.20 tiles), gently separate them towards punch margin (1.35 tiles)
+      if (unit.range === 1 && distanceToTarget < 1.20 && distanceToTarget > 0.01) {
+        const pushBack = 0.05 * speedMultiplier;
+        const pushAngle = Math.atan2(unit.currentPosY - target.currentPosY, unit.currentPosX - target.currentPosX);
+        unit.currentPosX = Math.max(0, Math.min(7, unit.currentPosX + Math.cos(pushAngle) * pushBack));
+        unit.currentPosY = Math.max(0, Math.min(4, unit.currentPosY + Math.sin(pushAngle) * pushBack));
+        unit.gridX = Math.round(unit.currentPosX);
+        unit.gridY = Math.round(unit.currentPosY);
+      }
+
       // In range: Check if ready to cast Orb Special (250 pts), or regular active skill (100 mana), or basic attack
       const hasOrb = unit.hasSpecialItem;
       const canCastOrbSpecial = hasOrb && (unit.orbMana || 0) >= (unit.maxOrbMana || 250);
@@ -458,8 +468,9 @@ export function simulateCombatTick(
         const dy = target.currentPosY - unit.currentPosY;
         const baseAngle = Math.atan2(dy, dx);
 
-        // Sub-tile step size
-        const stepSize = Math.min(0.38 * speedMultiplier, Math.max(0.12, distanceToTarget - (unit.range === 1 ? 1.05 : unit.range)));
+        // Sub-tile step size stopping at a punch margin for melee (~1.38 tiles distance)
+        const stopDistance = unit.range === 1 ? 1.38 : unit.range;
+        const stepSize = Math.min(0.35 * speedMultiplier, Math.max(0.08, distanceToTarget - stopDistance));
 
         // Multi-angle candidate offsets for surrounding and obstacle avoidance:
         // Direct -> slight flanking (shoulders) -> wide flank (sides) -> deep wrap (back)
@@ -481,14 +492,20 @@ export function simulateCombatTick(
         for (const offset of angleOffsets) {
           const testAngle = baseAngle + offset;
           const candX = Math.max(0, Math.min(7, unit.currentPosX + Math.cos(testAngle) * stepSize));
-          const candY = Math.max(0, Math.min(5, unit.currentPosY + Math.sin(testAngle) * stepSize));
+          const candY = Math.max(0, Math.min(4, unit.currentPosY + Math.sin(testAngle) * stepSize));
 
           // Check if candidate position collides with any other living unit (defeated units do NOT block)
           const isCurrentMonster = unit.unitId === 'chopper' && unit.isTransformed;
           const collides = livingUnits.some((other) => {
             if (other.instanceId === unit.instanceId || other.hp <= 0 || other.isDefeated) return false;
             const isOtherMonster = other.unitId === 'chopper' && other.isTransformed;
-            const requiredDistance = isCurrentMonster || isOtherMonster ? 1.25 : 0.44;
+            // Generous spacing: Monster requires 1.45, direct target requires 1.28 (punch margin), other units require 0.85
+            const isDirectTarget = other.instanceId === target.instanceId;
+            const requiredDistance = isCurrentMonster || isOtherMonster
+              ? 1.45
+              : isDirectTarget
+              ? 1.28
+              : 0.85;
             return Math.hypot(other.currentPosX - candX, other.currentPosY - candY) < requiredDistance;
           });
 

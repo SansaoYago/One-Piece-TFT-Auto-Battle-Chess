@@ -43,7 +43,7 @@ interface ArenaBoardProps {
 }
 
 const BOARD_COLS = 8; // 0..7
-const BOARD_ROWS = 6; // 0..5
+const BOARD_ROWS = 5; // 0..4 (Reduzido para 5 frentes de batalha mantendo o tamanho da arena)
 const PLAYER_MAX_COL = 3; // 0..3 Player Territory (Left), 4..7 Enemy Territory (Right)
 
 // Helper to get clean display name (e.g., "Monkey D. Luffy" -> "Luffy", "Roronoa Zoro" -> "Zoro", "Sir Crocodile" -> "Crocodile")
@@ -187,6 +187,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
         draggable={isDraggingAllowed}
         onDragStart={(e) => {
           setIsHoldingUnit(true);
+          e.dataTransfer.effectAllowed = 'move';
           onDragStartUnit(e, unit);
         }}
         onDragEnd={() => {
@@ -194,15 +195,18 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
           if (onDragEnd) onDragEnd();
         }}
         onDragOver={(e) => {
-          if (!isCombat) {
+          if (!isCombatPhase && !isViewingOpponentArena && unit.gridX >= 0 && unit.gridY >= 0) {
             e.preventDefault();
-            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'move';
+            setHoveredTile({ x: unit.gridX, y: unit.gridY });
+            onDragOverTile(e, unit.gridX, unit.gridY);
           }
         }}
         onDrop={(e) => {
-          if (!isCombat && unit.gridX >= 0 && unit.gridY >= 0) {
+          if (!isCombatPhase && !isViewingOpponentArena && unit.gridX >= 0 && unit.gridY >= 0) {
             e.preventDefault();
             e.stopPropagation();
+            setHoveredTile(null);
             onDropOnTile(e, unit.gridX, unit.gridY);
           }
         }}
@@ -210,7 +214,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
           e.stopPropagation();
           onUnitSelect(unit);
         }}
-        className={`relative flex flex-col items-center justify-end transition-all duration-300 ${
+        className={`relative flex flex-col items-center justify-end transition-all duration-300 select-none ${
           isDraggingAllowed ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
         } ${
           isDead
@@ -428,7 +432,17 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
       <div className="relative transform-gpu transition-transform duration-500 ease-out [perspective:1400px] flex items-center justify-center -translate-y-8 sm:-translate-y-12 lg:-translate-y-14 mt-4 mb-auto scale-95 lg:scale-100">
         {/* 3D Arena Stadium Floor */}
         <div
-          className="relative grid grid-cols-8 gap-2.5 p-7 rounded-[2.5rem] bg-gradient-to-b from-slate-950/95 via-slate-900/90 to-slate-950/95 border-[3px] border-amber-500/30 shadow-[0_30px_70px_-15px_rgba(0,0,0,0.95),0_0_60px_rgba(245,158,11,0.12)] backdrop-blur-2xl ring-1 ring-white/5"
+          onDragOver={(e) => {
+            e.preventDefault();
+          }}
+          onDrop={(e) => {
+            if (!isCombatPhase && !isViewingOpponentArena && hoveredTile) {
+              e.preventDefault();
+              onDropOnTile(e, hoveredTile.x, hoveredTile.y);
+              setHoveredTile(null);
+            }
+          }}
+          className="relative grid grid-cols-8 gap-2 sm:gap-2.5 p-6 sm:p-7 rounded-[2.5rem] bg-gradient-to-b from-slate-950/95 via-slate-900/90 to-slate-950/95 border-[3px] border-amber-500/30 shadow-[0_30px_70px_-15px_rgba(0,0,0,0.95),0_0_60px_rgba(245,158,11,0.12)] backdrop-blur-2xl ring-1 ring-white/5 select-none"
           style={{
             transform: 'rotateX(55deg) rotateZ(-30deg)',
             transformStyle: 'preserve-3d',
@@ -437,7 +451,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
           {/* Transverse / Vertical Clash Dividing Line */}
           <div className="absolute top-4 bottom-4 left-1/2 -translate-x-1/2 w-1 bg-gradient-to-b from-rose-500/40 via-amber-400/90 to-blue-500/40 pointer-events-none z-0 shadow-[0_0_15px_rgba(245,158,11,0.7)] rounded-full" />
 
-          {/* Grid Cells (8 Cols x 6 Rows = 48 Tiles) */}
+          {/* Grid Cells (8 Cols x 5 Rows = 40 Tiles - 5 Frentes de batalha) */}
           {Array.from({ length: BOARD_ROWS }).map((_, row) =>
             Array.from({ length: BOARD_COLS }).map((_, col) => {
               const isPlayerHalf = col <= PLAYER_MAX_COL;
@@ -458,7 +472,9 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                     setHoveredTile(null);
                   }}
                   onClick={() => {
-                    if (prepUnit) {
+                    if (!isCombatPhase && !isViewingOpponentArena && selectedUnitId) {
+                      onTileClick(col, row);
+                    } else if (prepUnit) {
                       onUnitSelect(prepUnit);
                     } else if (!isViewingOpponentArena) {
                       onTileClick(col, row);
@@ -472,10 +488,14 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                     }
                   }}
                   onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     setHoveredTile(null);
-                    if (!isCombatPhase && !isViewingOpponentArena) onDropOnTile(e, col, row);
+                    if (!isCombatPhase && !isViewingOpponentArena) {
+                      onDropOnTile(e, col, row);
+                    }
                   }}
-                  className={`w-14 h-14 sm:w-16 sm:h-16 lg:w-[72px] lg:h-[72px] rounded-2xl relative flex items-center justify-center transition-all duration-200 ${
+                  className={`w-[66px] h-[66px] sm:w-[78px] sm:h-[78px] lg:w-[88px] lg:h-[88px] rounded-2xl relative flex items-center justify-center transition-all duration-150 ${
                     isCombatPhase || isViewingOpponentArena
                       ? 'cursor-default'
                       : isDraggingActive
@@ -486,7 +506,13 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                   } border ${
                     isPlayerHalf
                       ? isHighlightActive
-                        ? 'bg-amber-950/90 border-amber-400 shadow-[0_0_24px_rgba(245,158,11,0.85)] scale-[1.05]'
+                        ? prepUnit
+                          ? 'bg-cyan-950/90 border-cyan-400 shadow-[0_0_26px_rgba(34,211,238,0.85)] scale-[1.06] z-20'
+                          : 'bg-amber-950/90 border-amber-400 shadow-[0_0_26px_rgba(245,158,11,0.9)] scale-[1.06] z-20'
+                        : isDraggingActive
+                        ? prepUnit
+                          ? 'bg-slate-900/95 border-amber-500/50 shadow-inner ring-1 ring-amber-400/20'
+                          : 'bg-slate-900/85 border-amber-500/35 hover:border-amber-400/70 ring-1 ring-amber-400/20'
                         : prepUnit
                         ? 'bg-slate-900/95 border-amber-500/40 shadow-inner'
                         : 'bg-slate-900/80 border-slate-800/90 hover:border-slate-700/60'
@@ -500,17 +526,24 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                     transformStyle: 'preserve-3d',
                   }}
                 >
+                  {/* Floating Action Badge when hovering while dragging */}
+                  {isHighlightActive && isPlayerHalf && (
+                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-cyan-500 text-slate-950 font-black text-[9px] uppercase tracking-wider shadow-lg pointer-events-none whitespace-nowrap z-50 flex items-center gap-1 border border-cyan-300 animate-pulse">
+                      <span>{prepUnit ? '⇄ Trocar Posição' : '+ Posicionar Aqui'}</span>
+                    </div>
+                  )}
+
                   {/* Fractional Arena Grid Pedestal Inset Disc */}
                   <div
-                    className={`w-11 h-11 sm:w-12 sm:h-12 lg:w-13 lg:h-13 rounded-full border transition-all pointer-events-none flex items-center justify-center ${
+                    className={`w-12 h-12 sm:w-14 sm:h-14 lg:w-16 lg:h-16 rounded-full border transition-all pointer-events-none flex items-center justify-center ${
                       prepUnit
                         ? isPlayerHalf
                           ? 'border-amber-400/60 bg-amber-500/15 shadow-[0_0_12px_rgba(245,158,11,0.35)]'
                           : 'border-rose-400/60 bg-rose-500/15 shadow-[0_0_12px_rgba(244,63,94,0.35)]'
                         : isPlayerHalf
                         ? isHighlightActive
-                          ? 'border-amber-400 bg-amber-500/25 shadow-[0_0_16px_rgba(245,158,11,0.6)]'
-                          : 'border-amber-500/20 bg-slate-950/60'
+                          ? 'border-amber-400 bg-amber-500/30 shadow-[0_0_18px_rgba(245,158,11,0.7)]'
+                          : 'border-amber-500/25 bg-slate-950/60'
                         : isHighlightActive
                         ? 'border-rose-400 bg-rose-500/25 shadow-[0_0_16px_rgba(244,63,94,0.6)]'
                         : 'border-rose-500/15 bg-slate-950/60'
@@ -518,10 +551,10 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                   >
                     {/* Inner core tactile spot */}
                     <div
-                      className={`w-3.5 h-3.5 rounded-full transition-opacity ${
+                      className={`w-4 h-4 sm:w-4.5 sm:h-4.5 lg:w-5 lg:h-5 rounded-full transition-opacity ${
                         isPlayerHalf
-                          ? prepUnit ? 'bg-amber-400/40' : 'bg-amber-500/15'
-                          : prepUnit ? 'bg-rose-400/40' : 'bg-rose-500/15'
+                          ? prepUnit ? 'bg-amber-400/50' : isHighlightActive ? 'bg-amber-400/60' : 'bg-amber-500/20'
+                          : prepUnit ? 'bg-rose-400/50' : 'bg-rose-500/20'
                       }`}
                     />
                   </div>
@@ -529,8 +562,8 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                   {/* Subtle Hex / Diamond Tile Accent Border */}
                   <div
                     className={`absolute inset-1 rounded-xl border border-dashed transition-opacity pointer-events-none ${
-                      isPlayerHalf ? 'border-amber-500/25' : 'border-rose-500/20'
-                    } ${isHighlightActive ? 'opacity-100' : 'opacity-25'}`}
+                      isPlayerHalf ? 'border-amber-500/30' : 'border-rose-500/20'
+                    } ${isHighlightActive ? 'opacity-100' : isDraggingActive && isPlayerHalf ? 'opacity-50' : 'opacity-25'}`}
                   />
 
                   {/* Floor Contact Shadow Disc */}
@@ -545,22 +578,25 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
             })
           )}
 
-          {/* PREPARATION PHASE: DEDICATED CONTINUOUS OVERLAY LAYER (Rendered above ALL 48 floor tiles so tiles never overlap models) */}
+          {/* PREPARATION PHASE: DEDICATED CONTINUOUS OVERLAY LAYER */}
           {!isCombatPhase && (
             <div
-              className="absolute inset-7 pointer-events-none z-30"
+              className="absolute inset-6 sm:inset-7 pointer-events-none z-30"
               style={{ transformStyle: 'preserve-3d' }}
             >
               {boardUnits.map((pUnit) => {
                 if (pUnit.gridX < 0 || pUnit.gridY < 0) return null;
-                // Precise continuous percentage position inside the 8x6 grid
+                const isBeingDragged = draggedUnit?.instanceId === pUnit.instanceId;
+                // Precise continuous percentage position inside the 8x5 grid
                 const leftPercent = ((pUnit.gridX + 0.5) / BOARD_COLS) * 100;
                 const topPercent = ((pUnit.gridY + 0.5) / BOARD_ROWS) * 100;
 
                 return (
                   <div
                     key={pUnit.instanceId}
-                    className="absolute pointer-events-auto transition-all duration-200 ease-out"
+                    className={`absolute transition-all duration-200 ease-out pointer-events-auto ${
+                      isBeingDragged ? 'opacity-30 scale-95 ring-2 ring-amber-400 rounded-2xl pointer-events-none' : ''
+                    }`}
                     style={{
                       left: `${leftPercent}%`,
                       top: `${topPercent}%`,
@@ -571,7 +607,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                   >
                     {/* Floor Shadow Disc underneath the champion feet */}
                     <div
-                      className="absolute left-1/2 top-[82%] -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/70 blur-[3px] pointer-events-none"
+                      className="absolute left-1/2 top-[82%] -translate-x-1/2 -translate-y-1/2 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-black/70 blur-[3px] pointer-events-none"
                       style={{ transform: 'translateZ(2px)' }}
                     />
 

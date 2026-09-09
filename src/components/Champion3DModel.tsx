@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import { loadChampionModularRig, loadChampionSkinModel, loadChampionAttackAnimation, retargetClipToModel, ChampionRigData, isFemaleChampion } from '../utils/modelPreloader';
+import { loadChampionModularRig, loadChampionSkinModel, loadChampionAttackAnimation, retargetClipToModel, sanitizeAnimationClip, ChampionRigData, isFemaleChampion } from '../utils/modelPreloader';
 import { createProceduralMannequin, ProceduralMannequin } from '../utils/proceduralMannequin';
 import { enrichMixamoModelIfNeeded } from '../utils/mixamoBodyEnricher';
 import { createBuggyBaraBaraController, BuggyBaraBaraController } from '../utils/buggyBaraBaraController';
@@ -447,7 +447,9 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
             // Retarget all animations to the active model
             const getRetargetedAction = (clip: THREE.AnimationClip | undefined) => {
               if (!clip) return undefined;
-              const directTrackCount = clip.tracks.filter((track) => {
+              // Clean clip: ensure no non-Hips bone has position/translation tracks that stretch limbs
+              const cleanClip = sanitizeAnimationClip(clip);
+              const directTrackCount = cleanClip.tracks.filter((track) => {
                 const dotIndex = track.name.lastIndexOf('.');
                 if (dotIndex < 0) return false;
                 return Boolean(clonedRig.getObjectByName(track.name.slice(0, dotIndex)));
@@ -455,20 +457,21 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
               // Skins use the same base skeleton. Keep the original clip so
               // Three.js resolves its tracks against the skin bones directly.
               // Retarget only clips exported with a different bone naming scheme.
-              const retargeted = directTrackCount > 0 ? undefined : retargetClipToModel(clip, clonedRig, unitId);
+              const retargeted = directTrackCount > 0 ? undefined : retargetClipToModel(cleanClip, clonedRig, unitId);
               const usableClip = directTrackCount > 0
-                ? clip
+                ? cleanClip
                 : retargeted && retargeted.tracks.length > 0
-                ? retargeted
-                : clip;
+                ? sanitizeAnimationClip(retargeted)
+                : cleanClip;
               return mixer!.clipAction(usableClip);
             };
 
             const actions: { [key: string]: THREE.AnimationAction } = {};
             const isFemale = isFemaleChampion(unitId);
 
-            // Idle stays on the skin's own bind/rest pose. Idle.glb is not used.
-            const idleClipToUse = customSkin?.animations?.[0];
+            // Idle stays on the skin's own bind/rest pose (POSE T). Zoro strictly has NO idle animation assigned,
+            // sitting in clean POSE T as his base pre-battle and default pose.
+            const idleClipToUse = isZoro ? undefined : (customSkin?.customAnimations?.idle || customSkin?.animations?.[0]);
 
             let walkClipToUse = isChopper
               ? undefined

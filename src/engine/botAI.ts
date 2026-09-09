@@ -121,7 +121,7 @@ export function generateEnemyBoardUnits(stage: number, roundInStage: number, tot
 
   const enemyUnits: UnitInstance[] = [];
   const startCols = [5, 6, 4, 7];
-  const startRows = [1, 2, 3, 4, 0, 5];
+  const startRows = [1, 2, 3, 0, 4];
 
   for (let i = 0; i < unitCount; i++) {
     const champKey = pool[(botIdx * 3 + i * 2) % pool.length] || 'luffy';

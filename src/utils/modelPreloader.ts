@@ -280,15 +280,19 @@ export function retargetClipToModel(
       continue;
     }
 
-    // Preserve bone position tracks because kicks, jumps and crouches often animate
-    // position rather than rotation. Only lock horizontal hips displacement so
-    // attacks stay in place without flattening the actual pose.
+    // Critical: Only the root/Hips bone should have position/translation keyframes.
+    // When translation tracks are applied to child bones (shoulders, arms, forearms, hands, legs),
+    // they override the model's natural bone lengths and cause arms/limbs to stretch unnaturally.
     if (propName === '.position' || propName === '.translation') {
       const isHips = matchedName.toLowerCase().includes('hips');
+      if (!isHips) {
+        // Discard translation for all non-hips bones to preserve natural limb proportions without stretching
+        continue;
+      }
       const cloned = track.clone() as THREE.VectorKeyframeTrack;
       cloned.name = matchedName + (propName === '.translation' ? '.position' : propName);
       const values = cloned.values;
-      if (isHips && values && values.length >= 3) {
+      if (values && values.length >= 3) {
         const baseRootX = values[0];
         const baseRootZ = values[2];
         const numKeys = cloned.times.length;
@@ -304,6 +308,36 @@ export function retargetClipToModel(
   }
 
   return new THREE.AnimationClip(clip.name, clip.duration, newTracks);
+}
+
+/**
+ * Strips position/translation tracks from all non-Hips bones to prevent limb stretching.
+ */
+export function sanitizeAnimationClip(clip: THREE.AnimationClip): THREE.AnimationClip {
+  const sanitizedTracks: THREE.KeyframeTrack[] = [];
+  for (const track of clip.tracks) {
+    const dotIndex = track.name.lastIndexOf('.');
+    if (dotIndex === -1) {
+      sanitizedTracks.push(track.clone());
+      continue;
+    }
+    const propName = track.name.substring(dotIndex);
+    const nodeName = track.name.substring(0, dotIndex).toLowerCase();
+
+    if (propName === '.scale' || propName === '.scaleXYZ') {
+      continue;
+    }
+
+    if (propName === '.position' || propName === '.translation') {
+      const isHips = nodeName.includes('hips') || nodeName.includes('root');
+      if (!isHips) {
+        // Skip child bone translation to avoid arm stretching
+        continue;
+      }
+    }
+    sanitizedTracks.push(track.clone());
+  }
+  return new THREE.AnimationClip(clip.name, clip.duration, sanitizedTracks);
 }
 
 export interface ChampionSkinResult extends CachedModelData {
@@ -366,7 +400,7 @@ export async function loadChampionSkinModel(
 ): Promise<ChampionSkinResult | null> {
   const normId = (unitId || '').toLowerCase();
 
-  // 1. Zoro Dedicated Rig & Custom Animations (SkinZoro, IdleZoro, ZoroWalk, Slash1)
+  // 1. Zoro Dedicated Rig & Custom Animations (SkinZoro base POSE T, ZoroWalk, Slash1)
   if (normId === 'zoro') {
     const candidateUrls = ['./models/SkinZoro.glb', '/models/SkinZoro.glb'];
     const res = await tryLoadCandidateModel(candidateUrls);
@@ -377,9 +411,11 @@ export async function loadChampionSkinModel(
       ]);
       return {
         ...res.data,
+        animations: [], // Explicitly clear any embedded idle animations so Zoro defaults to POSE T
         url: res.url,
         isDedicatedSkin: true,
         customAnimations: {
+          idle: undefined, // Strict POSE T as requested: SkinZoro is base pre-battle and default pose
           walk: walkClip || undefined,
           attack: slashClip || undefined,
           slash1: slashClip || undefined,

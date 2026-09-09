@@ -92,8 +92,16 @@ export const Bench: React.FC<BenchProps> = ({
           return (
             <div
               key={index}
-              onDragOver={(e) => !isViewingOpponentArena && onDragOver(e, index)}
-              onDrop={(e) => !isViewingOpponentArena && onDrop(e, index)}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (!isViewingOpponentArena) onDragOver(e, index);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!isViewingOpponentArena) onDrop(e, index);
+              }}
               onClick={() => {
                 if (unit) {
                   onUnitSelect(unit);
@@ -101,7 +109,7 @@ export const Bench: React.FC<BenchProps> = ({
                   onSlotClick(index);
                 }
               }}
-              className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl border relative flex flex-col items-center justify-between p-1 transition-all duration-200 ${
+              className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl border relative flex flex-col items-center justify-between p-1 transition-all duration-200 select-none ${
                 unit
                   ? isSelected
                     ? 'bg-amber-950/80 border-amber-400 ring-2 ring-amber-400/60 scale-105 shadow-xl cursor-grab active:cursor-grabbing'
@@ -109,11 +117,16 @@ export const Bench: React.FC<BenchProps> = ({
                   : 'bg-slate-950/30 border-slate-800/50 border-dashed hover:border-slate-700 justify-center cursor-default'
               }`}
               draggable={!isViewingOpponentArena && !!unit}
-              onDragStart={(e) => !isViewingOpponentArena && unit && onDragStart(e, unit)}
+              onDragStart={(e) => {
+                if (!isViewingOpponentArena && unit) {
+                  e.dataTransfer.effectAllowed = 'move';
+                  onDragStart(e, unit);
+                }
+              }}
               onDragEnd={() => onDragEnd && onDragEnd()}
             >
               {unit ? (
-                <>
+                <div className="w-full h-full flex flex-col items-center justify-between pointer-events-none">
                   {/* Top Bar: Gold Star in Top-Left and Cost Badge in Top-Right */}
                   <div className="w-full flex items-center justify-between z-10">
                     {/* Star Badge */}
@@ -175,9 +188,9 @@ export const Bench: React.FC<BenchProps> = ({
                       </span>
                     ))}
                   </div>
-                </>
+                </div>
               ) : (
-                <div className="flex flex-col items-center justify-center pointer-events-none">
+                <div className="flex flex-col items-center justify-center pointer-events-none select-none">
                   <span className="text-xs text-slate-600 font-mono font-bold">
                     {index + 1}
                   </span>

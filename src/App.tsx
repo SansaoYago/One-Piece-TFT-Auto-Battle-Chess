@@ -1188,12 +1188,15 @@ export default function App() {
   const handleDragStartUnit = (e: React.DragEvent, unit: UnitInstance) => {
     if (!isTestMode && unit.isEnemy) return;
     if (phase === 'COMBAT') return;
+    setSelectedUnit(null);
     setDraggedUnit(unit);
+    e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', unit.instanceId);
   };
 
   const handleDragOverTile = (e: React.DragEvent, x: number, y: number) => {
     e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
   };
 
   const handleDropOnTile = (e: React.DragEvent, x: number, y: number) => {
@@ -1223,11 +1226,14 @@ export default function App() {
 
     if (!activeUnit || phaseRef.current === 'COMBAT') return;
 
-    // Test Mode: Allow placing units anywhere on the 8x6 board (cols 0-3 ally, cols 4-7 enemy)
+    const targetX = Math.round(Number(x));
+    const targetY = Math.round(Number(y));
+
+    // Test Mode: Allow placing units anywhere on the 8x5 board (cols 0-3 ally, cols 4-7 enemy)
     if (isTestMode) {
-      const isEnemySide = x > 3;
+      const isEnemySide = targetX > 3;
       const newPlacedUnit: UnitInstance = {
-        ...createUnitInstance(activeUnit.unitId, activeUnit.stars || 1, x, y, -1, isEnemySide),
+        ...createUnitInstance(activeUnit.unitId, activeUnit.stars || 1, targetX, targetY, -1, isEnemySide),
         items: activeUnit.items ? [...activeUnit.items] : [],
         hasSpecialItem: activeUnit.hasSpecialItem || false,
       };
@@ -1235,85 +1241,144 @@ export default function App() {
       const currentBoard = boardUnitsRef.current;
       const nextBoard = currentBoard.filter(
         (u) =>
-          !(u.gridX === x && u.gridY === y) &&
+          !(u.gridX === targetX && u.gridY === targetY) &&
           (activeUnit.gridX < 0 || u.instanceId !== activeUnit.instanceId)
       );
       nextBoard.push(newPlacedUnit);
       setBoardUnits(nextBoard);
       boardUnitsRef.current = nextBoard;
-      setSelectedUnit(newPlacedUnit);
+      setSelectedUnit(null);
       setDraggedUnit(null);
       return;
     }
 
-    // Rule: Players can only position units on their transverse half (columns 0..3)
-    if (x > 3) {
-      alert('Você só pode posicionar unidades no seu campo (metade esquerda, colunas 0 a 3)!');
-      setDraggedUnit(null);
+    executePlaceOrMoveUnit(activeUnit, targetX, targetY);
+    setDraggedUnit(null);
+  };
+
+  const executePlaceOrMoveUnit = (unitToPlace: UnitInstance, x: number, y: number) => {
+    const targetX = Math.round(Number(x));
+    const targetY = Math.round(Number(y));
+
+    // Rule: Players can only position units on their transverse half (columns 0..3, rows 0..4)
+    if (targetX < 0 || targetX > 3 || targetY < 0 || targetY >= 5) {
+      if (!isTestMode) {
+        alert('Você só pode posicionar unidades no seu campo (metade esquerda, colunas 0 a 3, linhas 0 a 4)!');
+      }
       return;
     }
 
-    const currentBoard = boardUnitsRef.current;
-    const currentBench = benchSlotsRef.current;
-    const anyTargetUnit = currentBoard.find((u) => u.gridX === x && u.gridY === y);
-    const playerUnitsNow = currentBoard.filter((u) => !u.isEnemy && u.gridX >= 0 && u.gridY >= 0);
-    const maxSlots = LEVEL_MAX_SLOTS[levelRef.current] || 1;
+    const currentBoard = [...boardUnitsRef.current];
+    const currentBench = [...benchSlotsRef.current];
+
+    // Find any existing ally unit at target tile (excluding the unit being placed)
+    const anyTargetUnit = currentBoard.find(
+      (u) =>
+        !u.isEnemy &&
+        Math.round(u.gridX) === targetX &&
+        Math.round(u.gridY) === targetY &&
+        u.instanceId !== unitToPlace.instanceId
+    );
+
+    // Identify if unit came from bench and the originating slot
+    let benchIdx = currentBench.findIndex(
+      (b) => b !== null && b.instanceId === unitToPlace.instanceId
+    );
+    if (
+      benchIdx === -1 &&
+      typeof unitToPlace.benchIndex === 'number' &&
+      unitToPlace.benchIndex >= 0 &&
+      unitToPlace.benchIndex < currentBench.length
+    ) {
+      benchIdx = unitToPlace.benchIndex;
+    }
+
+    const isFromBench =
+      benchIdx !== -1 ||
+      unitToPlace.gridX < 0 ||
+      (typeof unitToPlace.benchIndex === 'number' && unitToPlace.benchIndex >= 0);
 
     // Case 1: Unit came from bench
-    if (activeUnit.benchIndex !== null) {
+    if (isFromBench) {
+      if (benchIdx === -1) {
+        const emptyIdx = currentBench.findIndex((b) => b === null);
+        benchIdx = emptyIdx !== -1 ? emptyIdx : 0;
+      }
+
+      const playerUnitsNow = currentBoard.filter((u) => !u.isEnemy && u.gridX >= 0 && u.gridY >= 0);
+      const maxSlots = LEVEL_MAX_SLOTS[levelRef.current] || 1;
+
       if (!anyTargetUnit && playerUnitsNow.length >= maxSlots) {
-        alert(`Limite de unidades atingido (${playerUnitsNow.length}/${maxSlots})! Aumente o nível para colocar mais campeões.`);
-        setDraggedUnit(null);
+        alert(
+          `Limite de unidades atingido (${playerUnitsNow.length}/${maxSlots})! Aumente o nível para colocar mais campeões.`
+        );
         return;
       }
 
-      // Remove from bench
-      const nextBench = [...currentBench];
-      nextBench[activeUnit.benchIndex] = null;
-
       // Place onto board
       const updatedUnit: UnitInstance = {
-        ...activeUnit,
-        gridX: x,
-        gridY: y,
+        ...unitToPlace,
+        gridX: targetX,
+        gridY: targetY,
         benchIndex: null,
       };
 
+      const nextBench = [...currentBench];
+
       if (anyTargetUnit) {
-        // Swap target unit to bench
+        // Swap target unit from board to bench slot
         const swappedUnit: UnitInstance = {
           ...anyTargetUnit,
           gridX: -1,
           gridY: -1,
-          benchIndex: activeUnit.benchIndex,
+          benchIndex: benchIdx,
         };
-        nextBench[activeUnit.benchIndex] = swappedUnit;
+        nextBench[benchIdx] = swappedUnit;
+
+        // Replace anyTargetUnit on the board with updatedUnit
+        const filteredBoard = currentBoard.filter(
+          (u) => u.instanceId !== anyTargetUnit.instanceId && u.instanceId !== unitToPlace.instanceId
+        );
+        const nextBoard = [...filteredBoard, updatedUnit];
+
         setBenchSlots(nextBench);
         benchSlotsRef.current = nextBench;
-
-        const nextBoard = currentBoard.map((u) =>
-          u.instanceId === anyTargetUnit.instanceId ? updatedUnit : u
-        );
         setBoardUnits(nextBoard);
         boardUnitsRef.current = nextBoard;
       } else {
+        // Vacate bench slot and add unit to board
+        nextBench[benchIdx] = null;
+
+        const filteredBoard = currentBoard.filter((u) => u.instanceId !== unitToPlace.instanceId);
+        const nextBoard = [...filteredBoard, updatedUnit];
+
         setBenchSlots(nextBench);
         benchSlotsRef.current = nextBench;
-
-        const nextBoard = [...currentBoard, updatedUnit];
         setBoardUnits(nextBoard);
         boardUnitsRef.current = nextBoard;
       }
+
+      // Bug 1 Fix: Do not open unit info modal upon placing/adding to field
+      setSelectedUnit(null);
     } else {
       // Case 2: Unit moved from one board tile to another
+      const prevX = Math.round(unitToPlace.gridX);
+      const prevY = Math.round(unitToPlace.gridY);
+
+      // Dropped on its own tile: keep unit
+      if (prevX === targetX && prevY === targetY) {
+        setSelectedUnit(null);
+        return;
+      }
+
       if (anyTargetUnit) {
-        // Swap positions
+        // Swap positions reliably between two board units
         const nextBoard = currentBoard.map((u) => {
-          if (u.instanceId === activeUnit.instanceId) {
-            return { ...u, gridX: x, gridY: y };
+          if (u.instanceId === unitToPlace.instanceId) {
+            return { ...u, gridX: targetX, gridY: targetY };
           }
           if (u.instanceId === anyTargetUnit.instanceId) {
-            return { ...u, gridX: activeUnit.gridX, gridY: activeUnit.gridY };
+            return { ...u, gridX: prevX, gridY: prevY };
           }
           return u;
         });
@@ -1321,14 +1386,15 @@ export default function App() {
         boardUnitsRef.current = nextBoard;
       } else {
         const nextBoard = currentBoard.map((u) =>
-          u.instanceId === activeUnit.instanceId ? { ...u, gridX: x, gridY: y } : u
+          u.instanceId === unitToPlace.instanceId ? { ...u, gridX: targetX, gridY: targetY } : u
         );
         setBoardUnits(nextBoard);
         boardUnitsRef.current = nextBoard;
       }
-    }
 
-    setDraggedUnit(null);
+      // Bug 1 Fix: Do not open unit info modal upon moving on field
+      setSelectedUnit(null);
+    }
   };
 
   const handleDropOnBench = (e: React.DragEvent, slotIdx: number) => {
@@ -1361,7 +1427,8 @@ export default function App() {
     const existingBenchUnit = currentBench[slotIdx];
 
     // Case 1: Dragged unit came from board
-    if (activeUnit.benchIndex === null) {
+    const isFromBoard = activeUnit.gridX >= 0 && activeUnit.gridY >= 0;
+    if (isFromBoard || activeUnit.benchIndex === null) {
       const movedUnit: UnitInstance = {
         ...activeUnit,
         gridX: -1,
@@ -1378,8 +1445,8 @@ export default function App() {
         // Move existing bench unit to old board slot
         const swappedUnit: UnitInstance = {
           ...existingBenchUnit,
-          gridX: activeUnit.gridX,
-          gridY: activeUnit.gridY,
+          gridX: activeUnit.gridX >= 0 ? activeUnit.gridX : 0,
+          gridY: activeUnit.gridY >= 0 ? activeUnit.gridY : 0,
           benchIndex: null,
         };
         const nextBoard = currentBoard.map((u) =>
@@ -1394,15 +1461,23 @@ export default function App() {
       }
     } else {
       // Case 2: Reordering bench slots
+      const prevBenchIdx =
+        typeof activeUnit.benchIndex === 'number' && activeUnit.benchIndex >= 0
+          ? activeUnit.benchIndex
+          : currentBench.findIndex((b) => b?.instanceId === activeUnit.instanceId);
+
       const nextBench = [...currentBench];
-      nextBench[activeUnit.benchIndex] = existingBenchUnit
-        ? { ...existingBenchUnit, benchIndex: activeUnit.benchIndex }
-        : null;
+      if (prevBenchIdx >= 0 && prevBenchIdx < nextBench.length) {
+        nextBench[prevBenchIdx] = existingBenchUnit
+          ? { ...existingBenchUnit, benchIndex: prevBenchIdx }
+          : null;
+      }
       nextBench[slotIdx] = { ...activeUnit, benchIndex: slotIdx };
       setBenchSlots(nextBench);
       benchSlotsRef.current = nextBench;
     }
 
+    setSelectedUnit(null);
     setDraggedUnit(null);
   };
 
@@ -1899,7 +1974,20 @@ export default function App() {
                 }
               } else {
                 const u = displayedBoardUnits.find((unit) => unit.gridX === x && unit.gridY === y);
-                if (u) {
+                if (
+                  selectedUnit &&
+                  !selectedUnit.isEnemy &&
+                  !isViewingOpponentArena &&
+                  x <= 3 &&
+                  y >= 0 &&
+                  y < 5
+                ) {
+                  if (u && u.instanceId === selectedUnit.instanceId) {
+                    setSelectedUnit(null);
+                  } else {
+                    executePlaceOrMoveUnit(selectedUnit, x, y);
+                  }
+                } else if (u) {
                   setSelectedUnit(u);
                   setTestAnimationOverride(null);
                 }
