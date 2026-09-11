@@ -54,6 +54,9 @@ export interface CombatUnitState extends UnitInstance {
   transformationPhase?: 'NONE' | 'INVOKING' | 'TRANSFORMED' | 'UNCONSCIOUS';
   transformationTimer?: number;
   isUnconscious?: boolean;
+  // Obstacle avoidance and smooth flanking
+  flankBias?: number; // 1 (turn clockwise/down) or -1 (turn counter-clockwise/up)
+  stuckTimer?: number; // seconds stuck without progress towards target
 }
 
 export interface TheftEvent {

@@ -42,6 +42,8 @@ export const Bench: React.FC<BenchProps> = ({
   xp = 0,
   xpNeeded = 2,
 }) => {
+  const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null);
+
   return (
     <div className={`flex items-center gap-2 px-3 py-1.5 backdrop-blur-md rounded-2xl border shadow-2xl transition-all ${
       isViewingOpponentArena
@@ -92,14 +94,30 @@ export const Bench: React.FC<BenchProps> = ({
           return (
             <div
               key={index}
+              onDragEnter={(e) => {
+                e.preventDefault();
+                if (!isViewingOpponentArena) {
+                  setHoveredIndex(index);
+                }
+              }}
               onDragOver={(e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'move';
-                if (!isViewingOpponentArena) onDragOver(e, index);
+                if (!isViewingOpponentArena) {
+                  if (hoveredIndex !== index) setHoveredIndex(index);
+                  onDragOver(e, index);
+                }
+              }}
+              onDragLeave={(e) => {
+                if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                if (hoveredIndex === index) {
+                  setHoveredIndex(null);
+                }
               }}
               onDrop={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                setHoveredIndex(null);
                 if (!isViewingOpponentArena) onDrop(e, index);
               }}
               onClick={() => {
@@ -110,7 +128,11 @@ export const Bench: React.FC<BenchProps> = ({
                 }
               }}
               className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl border relative flex flex-col items-center justify-between p-1 transition-all duration-200 select-none ${
-                unit
+                hoveredIndex === index
+                  ? unit
+                    ? 'bg-cyan-950/90 border-cyan-400 ring-2 ring-cyan-400/80 scale-105 shadow-[0_0_20px_rgba(34,211,238,0.7)]'
+                    : 'bg-amber-950/90 border-amber-400 ring-2 ring-amber-400/80 scale-105 shadow-[0_0_20px_rgba(245,158,11,0.7)]'
+                  : unit
                   ? isSelected
                     ? 'bg-amber-950/80 border-amber-400 ring-2 ring-amber-400/60 scale-105 shadow-xl cursor-grab active:cursor-grabbing'
                     : 'bg-slate-900/60 border-slate-700/80 hover:border-amber-500/80 hover:scale-105 shadow-md backdrop-blur-sm cursor-grab active:cursor-grabbing'
@@ -123,8 +145,18 @@ export const Bench: React.FC<BenchProps> = ({
                   onDragStart(e, unit);
                 }
               }}
-              onDragEnd={() => onDragEnd && onDragEnd()}
+              onDragEnd={() => {
+                setHoveredIndex(null);
+                if (onDragEnd) onDragEnd();
+              }}
             >
+              {hoveredIndex === index && (
+                <div className="absolute inset-0 flex items-center justify-center bg-slate-950/85 rounded-xl pointer-events-none z-30 animate-pulse">
+                  <span className="text-[9px] font-black tracking-wide text-amber-300">
+                    {unit ? '⇄ Trocar' : '+ Banco'}
+                  </span>
+                </div>
+              )}
               {unit ? (
                 <div className="w-full h-full flex flex-col items-center justify-between pointer-events-none">
                   {/* Top Bar: Gold Star in Top-Left and Cost Badge in Top-Right */}

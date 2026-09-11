@@ -5,6 +5,8 @@ import {
   ItemData,
   UnitBaseData,
   UnitInstance,
+  GameDifficulty,
+  DIFFICULTY_CONFIGS,
 } from './types/game';
 import { AttackEffect, CombatUnitState, FloatingText, TheftEvent } from './types/combat';
 import { CHAMPION_DATABASE } from './data/units';
@@ -31,6 +33,7 @@ import { UnitInspector } from './components/UnitInspector';
 import { AnimationTestBar } from './components/AnimationTestBar';
 import { ItemDraftModal } from './components/ItemDraftModal';
 import { GameOverModal } from './components/GameOverModal';
+import { DifficultyModal } from './components/DifficultyModal';
 import { LoadingScreen } from './components/LoadingScreen';
 import { OrientationGuard } from './components/OrientationGuard';
 import { TheftBannerNotification } from './components/TheftBannerNotification';
@@ -75,9 +78,28 @@ export default function App() {
   });
 
   // === Player Economy & Progress State ===
+  // === Game Difficulty State ===
+  const [difficulty, setDifficulty] = useState<GameDifficulty>('medium');
+  const difficultyRef = useRef<GameDifficulty>('medium');
+  const [isDifficultyLocked, setIsDifficultyLocked] = useState<boolean>(false);
+  const [isDifficultyModalOpen, setIsDifficultyModalOpen] = useState<boolean>(false);
+
+  const handleSelectDifficulty = (newDiff: GameDifficulty) => {
+    if (isDifficultyLocked) return;
+    setDifficulty(newDiff);
+    difficultyRef.current = newDiff;
+    // In initial preparation round 1-1, adjust starting gold to match difficulty config
+    if (stageRef.current === 1 && roundInStageRef.current === 1 && phaseRef.current === 'PREPARATION') {
+      const startGold = DIFFICULTY_CONFIGS[newDiff].initialGold;
+      setGold(startGold);
+      goldRef.current = startGold;
+    }
+  };
+
   const [gold, setGold] = useState<number>(4); // Initial starting budget
   const [level, setLevel] = useState<number>(1);
   const [xp, setXp] = useState<number>(0);
+  const [lastRoundXp, setLastRoundXp] = useState<number>(2);
   const [commanders, setCommanders] = useState<Commander[]>(INITIAL_COMMANDERS);
   const [playerItems, setPlayerItems] = useState<string[]>([]); // Starts with 0 items
 
@@ -98,7 +120,7 @@ export default function App() {
   const [boardUnits, setBoardUnits] = useState<UnitInstance[]>(() => {
     // Arena do jogador inicia totalmente vazia.
     // Lado inimigo na 1ª rodada inicia apenas com os 2 marinheiros iniciais
-    const pveEnemies = generateEnemyBoardUnits(1, 1, 1);
+    const pveEnemies = generateEnemyBoardUnits(1, 1, 1, 'medium');
     return [...pveEnemies];
   });
 
@@ -154,6 +176,8 @@ export default function App() {
   // Drag-and-Drop Active Transfer State
   const [draggedUnit, setDraggedUnit] = useState<UnitInstance | null>(null);
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
+  const draggedUnitRef = useRef<UnitInstance | null>(null);
+  const draggedItemIdRef = useRef<string | null>(null);
 
   // Keep live references to state to prevent stale closures during timer and animation callbacks
   const boardUnitsRef = useRef(boardUnits);
@@ -191,7 +215,7 @@ export default function App() {
     const states: Record<string, BotPlayerData> = {};
     commanders.forEach((cmd) => {
       if (!cmd.isHuman) {
-        states[cmd.id] = generateIndividualBotState(cmd.id, totalRound);
+        states[cmd.id] = generateIndividualBotState(cmd.id, totalRound, difficultyRef.current || 'medium');
       }
     });
     setBotPlayerStates(states);
@@ -411,13 +435,25 @@ export default function App() {
     const existingEnemies = combatBoardUnits.filter((u) => u.isEnemy && u.gridX >= 0 && u.gridY >= 0);
 
     if (existingEnemies.length === 0) {
-      const generatedEnemies = generateEnemyBoardUnits(stageRef.current, roundInStageRef.current, totalRoundRef.current);
+      const generatedEnemies = generateEnemyBoardUnits(
+        stageRef.current,
+        roundInStageRef.current,
+        totalRoundRef.current,
+        difficultyRef.current || 'medium'
+      );
       combatBoardUnits = [...combatBoardUnits, ...generatedEnemies];
     }
 
-    // Initialize units for battle (captures all active combatants)
+    // Lock difficulty once combat begins
+    setIsDifficultyLocked(true);
+
+    // Initialize units for battle (captures all active combatants with difficulty scaling)
     const activeBoardUnits = combatBoardUnits.filter((u) => u.gridX >= 0 && u.gridY >= 0);
-    const initialCombat = initializeCombatUnits(activeBoardUnits);
+    const diffConfig = DIFFICULTY_CONFIGS[difficultyRef.current || 'medium'];
+    const initialCombat = initializeCombatUnits(activeBoardUnits, {
+      hp: diffConfig.enemyHpMultiplier,
+      ad: diffConfig.enemyAdMultiplier,
+    });
     setCombatUnits(initialCombat);
 
     // Mark all living commanders as 'FIGHTING'
@@ -551,15 +587,16 @@ export default function App() {
     }
 
     // Calculate Economy (Pokemon Auto Chess & TFT Competitive Balance):
-    // 1. Base income: +5
-    const baseIncome = 5;
+    const currentDiffConfig = DIFFICULTY_CONFIGS[difficultyRef.current || 'medium'];
+    // 1. Base income: scaled by difficulty
+    const baseIncome = currentDiffConfig.baseIncome;
     // 2. Interest: +1 per 10 gold stored (max +3 at 30 gold)
     const interestIncome = Math.min(3, Math.floor(goldRef.current / 10));
     // 3. Streak bonus: 2 streak = +1, 3-4 streak = +2, 5+ streak = +3
     const activeStreakCount = isWin ? currentWinStreak : currentLossStreak;
     const streakBonus = activeStreakCount >= 5 ? 3 : activeStreakCount >= 3 ? 2 : activeStreakCount >= 2 ? 1 : 0;
-    // 4. Win round bonus: +1 instant gold
-    const winBonus = isWin ? 1 : 0;
+    // 4. Win round bonus: scaled by difficulty
+    const winBonus = isWin ? currentDiffConfig.winBonus : 0;
 
     const totalIncome = baseIncome + interestIncome + streakBonus + winBonus;
     setLastRoundIncome({
@@ -572,10 +609,12 @@ export default function App() {
 
     setGold((prev) => prev + totalIncome);
 
-    // Auto-gain +4 XP per round
+    // Auto-gain XP per round based on difficulty (standard: +2 XP)
+    const xpReward = currentDiffConfig.xpPerRound || 2;
+    setLastRoundXp(xpReward);
     setXp((prevXp) => {
       const curLvl = levelRef.current;
-      const nextXp = prevXp + 4;
+      const nextXp = prevXp + xpReward;
       const req = LEVEL_XP_REQUIREMENTS[curLvl] || 999;
       if (nextXp >= req && curLvl < 8) {
         const nextLvl = curLvl + 1;
@@ -606,11 +645,12 @@ export default function App() {
     if (isDraw) {
       // Tie at timeout: both players lose half of full round damage
       const fullDamage = stageRef.current * 2 + 4;
-      dmgTaken = Math.max(1, Math.round(fullDamage / 2));
+      dmgTaken = Math.max(1, Math.round((fullDamage / 2) * currentDiffConfig.playerLossDamageMultiplier));
       setRoundDamageTaken(dmgTaken);
     } else if (!isWin) {
       const survivingEnemies = combatUnits.filter((u) => u.isEnemy && u.hp > 0).length;
-      dmgTaken = stageRef.current * 2 + Math.max(1, survivingEnemies * 2);
+      const baseDmg = stageRef.current * 2 + Math.max(1, survivingEnemies * 2);
+      dmgTaken = Math.max(1, Math.round(baseDmg * currentDiffConfig.playerLossDamageMultiplier));
       setRoundDamageTaken(dmgTaken);
     }
 
@@ -737,8 +777,10 @@ export default function App() {
     setRoundTitle('PvE: 2 Recrutas da Marinha');
     setWinStreak(0);
     setLossStreak(0);
-    setGold(4);
-    goldRef.current = 4;
+    setIsDifficultyLocked(false);
+    const startGold = DIFFICULTY_CONFIGS[difficultyRef.current || 'medium'].initialGold;
+    setGold(startGold);
+    goldRef.current = startGold;
     setLevel(1);
     levelRef.current = 1;
     setXp(0);
@@ -762,7 +804,7 @@ export default function App() {
     setSelectedUnit(null);
     setChangedSkillUnitIdThisRound(null);
 
-    const pveEnemies = generateEnemyBoardUnits(1, 1, 1);
+    const pveEnemies = generateEnemyBoardUnits(1, 1, 1, difficultyRef.current || 'medium');
     setBoardUnits([...pveEnemies]);
     boardUnitsRef.current = [...pveEnemies];
 
@@ -863,7 +905,12 @@ export default function App() {
 
     // Pre-position enemies on board ONLY if it is a PvE Boss round or Round 1 (Rule: Point 1)
     if (isPvEBossRound(nextTotalRound)) {
-      const newEnemies = generateEnemyBoardUnits(nextStage, nextRoundInStage, nextTotalRound);
+      const newEnemies = generateEnemyBoardUnits(
+        nextStage,
+        nextRoundInStage,
+        nextTotalRound,
+        difficultyRef.current || 'medium'
+      );
       const nextBoard = [...restoredPlayerUnits, ...newEnemies];
       setBoardUnits(nextBoard);
       boardUnitsRef.current = nextBoard;
@@ -915,6 +962,7 @@ export default function App() {
 
         const enemyCommander = commanders.find((c) => c.id !== 'p1_human' && !c.isEliminated);
         const currentEnemyGold = enemyCommander ? enemyCommander.gold : 12;
+        const enemySynergies = calculateActiveSynergies(currentUnits, true);
 
         const tickResult = simulateCombatTick(
           currentUnits,
@@ -923,7 +971,8 @@ export default function App() {
           deltaSeconds,
           theftTrackerRef.current,
           gold,
-          currentEnemyGold
+          currentEnemyGold,
+          enemySynergies
         );
 
         // Process theft events if triggered
@@ -1190,8 +1239,21 @@ export default function App() {
     if (phase === 'COMBAT') return;
     setSelectedUnit(null);
     setDraggedUnit(unit);
+    draggedUnitRef.current = unit;
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', unit.instanceId);
+    try {
+      e.dataTransfer.setData('text/plain', unit.instanceId);
+    } catch (_) {}
+  };
+
+  const handleDragEnd = () => {
+    // Delay clearing refs so any onDrop handler can read them safely
+    setTimeout(() => {
+      setDraggedUnit(null);
+      draggedUnitRef.current = null;
+      setDraggedItemId(null);
+      draggedItemIdRef.current = null;
+    }, 60);
   };
 
   const handleDragOverTile = (e: React.DragEvent, x: number, y: number) => {
@@ -1205,17 +1267,18 @@ export default function App() {
     const transferData = e.dataTransfer.getData('text/plain');
     const targetUnit = boardUnitsRef.current.find((u) => u.gridX === x && u.gridY === y && !u.isEnemy);
 
-    if (draggedItemId || transferData.startsWith('item:')) {
-      const itId = draggedItemId || transferData.replace('item:', '');
+    if (draggedItemIdRef.current || draggedItemId || transferData.startsWith('item:')) {
+      const itId = draggedItemIdRef.current || draggedItemId || transferData.replace('item:', '');
       if (targetUnit) {
         handleEquipItemToUnit(itId, targetUnit);
       }
       setDraggedItemId(null);
+      draggedItemIdRef.current = null;
       return;
     }
 
-    // Resolve active unit by state or instanceId transfer
-    let activeUnit = draggedUnit;
+    // Resolve active unit by ref, state, or instanceId transfer
+    let activeUnit = draggedUnitRef.current || draggedUnit;
     if (!activeUnit && transferData) {
       activeUnit =
         (isTestMode ? allTestChampions.find((b) => b.instanceId === transferData) : null) ||
@@ -1248,11 +1311,13 @@ export default function App() {
       setBoardUnits(nextBoard);
       boardUnitsRef.current = nextBoard;
       setSelectedUnit(null);
+      draggedUnitRef.current = null;
       setDraggedUnit(null);
       return;
     }
 
     executePlaceOrMoveUnit(activeUnit, targetX, targetY);
+    draggedUnitRef.current = null;
     setDraggedUnit(null);
   };
 
@@ -1280,26 +1345,28 @@ export default function App() {
         u.instanceId !== unitToPlace.instanceId
     );
 
-    // Identify if unit came from bench and the originating slot
-    let benchIdx = currentBench.findIndex(
-      (b) => b !== null && b.instanceId === unitToPlace.instanceId
+    // Identify if unit actually came from bench vs already being on the board
+    const existingBoardUnit = currentBoard.find((u) => u.instanceId === unitToPlace.instanceId);
+    const isAlreadyOnBoard = Boolean(
+      existingBoardUnit ||
+      (typeof unitToPlace.gridX === 'number' && unitToPlace.gridX >= 0 && typeof unitToPlace.gridY === 'number' && unitToPlace.gridY >= 0)
     );
-    if (
-      benchIdx === -1 &&
-      typeof unitToPlace.benchIndex === 'number' &&
-      unitToPlace.benchIndex >= 0 &&
-      unitToPlace.benchIndex < currentBench.length
-    ) {
-      benchIdx = unitToPlace.benchIndex;
-    }
 
-    const isFromBench =
-      benchIdx !== -1 ||
-      unitToPlace.gridX < 0 ||
-      (typeof unitToPlace.benchIndex === 'number' && unitToPlace.benchIndex >= 0);
+    const isFromBench = !isAlreadyOnBoard;
 
     // Case 1: Unit came from bench
     if (isFromBench) {
+      let benchIdx = currentBench.findIndex(
+        (b) => b !== null && b.instanceId === unitToPlace.instanceId
+      );
+      if (
+        benchIdx === -1 &&
+        typeof unitToPlace.benchIndex === 'number' &&
+        unitToPlace.benchIndex >= 0 &&
+        unitToPlace.benchIndex < currentBench.length
+      ) {
+        benchIdx = unitToPlace.benchIndex;
+      }
       if (benchIdx === -1) {
         const emptyIdx = currentBench.findIndex((b) => b === null);
         benchIdx = emptyIdx !== -1 ? emptyIdx : 0;
@@ -1358,12 +1425,12 @@ export default function App() {
         boardUnitsRef.current = nextBoard;
       }
 
-      // Bug 1 Fix: Do not open unit info modal upon placing/adding to field
+      // Do not open unit info modal upon placing/adding to field
       setSelectedUnit(null);
     } else {
       // Case 2: Unit moved from one board tile to another
-      const prevX = Math.round(unitToPlace.gridX);
-      const prevY = Math.round(unitToPlace.gridY);
+      const prevX = existingBoardUnit ? Math.round(existingBoardUnit.gridX) : Math.round(unitToPlace.gridX);
+      const prevY = existingBoardUnit ? Math.round(existingBoardUnit.gridY) : Math.round(unitToPlace.gridY);
 
       // Dropped on its own tile: keep unit
       if (prevX === targetX && prevY === targetY) {
@@ -1375,10 +1442,10 @@ export default function App() {
         // Swap positions reliably between two board units
         const nextBoard = currentBoard.map((u) => {
           if (u.instanceId === unitToPlace.instanceId) {
-            return { ...u, gridX: targetX, gridY: targetY };
+            return { ...u, gridX: targetX, gridY: targetY, benchIndex: null };
           }
           if (u.instanceId === anyTargetUnit.instanceId) {
-            return { ...u, gridX: prevX, gridY: prevY };
+            return { ...u, gridX: prevX, gridY: prevY, benchIndex: null };
           }
           return u;
         });
@@ -1386,13 +1453,13 @@ export default function App() {
         boardUnitsRef.current = nextBoard;
       } else {
         const nextBoard = currentBoard.map((u) =>
-          u.instanceId === unitToPlace.instanceId ? { ...u, gridX: targetX, gridY: targetY } : u
+          u.instanceId === unitToPlace.instanceId ? { ...u, gridX: targetX, gridY: targetY, benchIndex: null } : u
         );
         setBoardUnits(nextBoard);
         boardUnitsRef.current = nextBoard;
       }
 
-      // Bug 1 Fix: Do not open unit info modal upon moving on field
+      // Do not open unit info modal upon moving on field
       setSelectedUnit(null);
     }
   };
@@ -1401,20 +1468,21 @@ export default function App() {
     e.preventDefault();
 
     const transferData = e.dataTransfer.getData('text/plain');
-    const currentBench = benchSlotsRef.current;
-    const currentBoard = boardUnitsRef.current;
-    const targetBenchUnit = currentBench[slotIdx];
+    const currentBench = [...benchSlotsRef.current];
+    const currentBoard = [...boardUnitsRef.current];
+    const existingBenchUnit = currentBench[slotIdx];
 
-    if (draggedItemId || transferData.startsWith('item:')) {
-      const itId = draggedItemId || transferData.replace('item:', '');
-      if (targetBenchUnit) {
-        handleEquipItemToUnit(itId, targetBenchUnit);
+    if (draggedItemIdRef.current || draggedItemId || transferData.startsWith('item:')) {
+      const itId = draggedItemIdRef.current || draggedItemId || transferData.replace('item:', '');
+      if (existingBenchUnit) {
+        handleEquipItemToUnit(itId, existingBenchUnit);
       }
       setDraggedItemId(null);
+      draggedItemIdRef.current = null;
       return;
     }
 
-    let activeUnit = draggedUnit;
+    let activeUnit = draggedUnitRef.current || draggedUnit;
     if (!activeUnit && transferData) {
       activeUnit =
         currentBench.find((b) => b?.instanceId === transferData) ||
@@ -1424,13 +1492,16 @@ export default function App() {
 
     if (!activeUnit || phaseRef.current === 'COMBAT') return;
 
-    const existingBenchUnit = currentBench[slotIdx];
+    // Check if activeUnit is on the board
+    const boardMatch = currentBoard.find((u) => u.instanceId === activeUnit!.instanceId);
+    const isFromBoard = Boolean(boardMatch || (activeUnit.gridX >= 0 && activeUnit.gridY >= 0));
 
-    // Case 1: Dragged unit came from board
-    const isFromBoard = activeUnit.gridX >= 0 && activeUnit.gridY >= 0;
-    if (isFromBoard || activeUnit.benchIndex === null) {
+    if (isFromBoard) {
+      const unitBoardX = boardMatch ? boardMatch.gridX : activeUnit.gridX;
+      const unitBoardY = boardMatch ? boardMatch.gridY : activeUnit.gridY;
+
       const movedUnit: UnitInstance = {
-        ...activeUnit,
+        ...(boardMatch || activeUnit),
         gridX: -1,
         gridY: -1,
         benchIndex: slotIdx,
@@ -1442,29 +1513,32 @@ export default function App() {
       benchSlotsRef.current = nextBench;
 
       if (existingBenchUnit) {
-        // Move existing bench unit to old board slot
+        // SWAP: Existing bench unit moves to the board at the unit's previous coordinate
         const swappedUnit: UnitInstance = {
           ...existingBenchUnit,
-          gridX: activeUnit.gridX >= 0 ? activeUnit.gridX : 0,
-          gridY: activeUnit.gridY >= 0 ? activeUnit.gridY : 0,
+          gridX: unitBoardX >= 0 ? unitBoardX : 0,
+          gridY: unitBoardY >= 0 ? unitBoardY : 0,
           benchIndex: null,
         };
         const nextBoard = currentBoard.map((u) =>
-          u.instanceId === activeUnit.instanceId ? swappedUnit : u
+          u.instanceId === activeUnit!.instanceId ? swappedUnit : u
         );
+        if (!nextBoard.some((u) => u.instanceId === swappedUnit.instanceId)) {
+          nextBoard.push(swappedUnit);
+        }
         setBoardUnits(nextBoard);
         boardUnitsRef.current = nextBoard;
       } else {
-        const nextBoard = currentBoard.filter((u) => u.instanceId !== activeUnit.instanceId);
+        // Remove unit from board
+        const nextBoard = currentBoard.filter((u) => u.instanceId !== activeUnit!.instanceId);
         setBoardUnits(nextBoard);
         boardUnitsRef.current = nextBoard;
       }
     } else {
-      // Case 2: Reordering bench slots
-      const prevBenchIdx =
-        typeof activeUnit.benchIndex === 'number' && activeUnit.benchIndex >= 0
-          ? activeUnit.benchIndex
-          : currentBench.findIndex((b) => b?.instanceId === activeUnit.instanceId);
+      // Reordering bench slots
+      const prevBenchIdx = currentBench.findIndex(
+        (b) => b !== null && b.instanceId === activeUnit!.instanceId
+      );
 
       const nextBench = [...currentBench];
       if (prevBenchIdx >= 0 && prevBenchIdx < nextBench.length) {
@@ -1478,6 +1552,7 @@ export default function App() {
     }
 
     setSelectedUnit(null);
+    draggedUnitRef.current = null;
     setDraggedUnit(null);
   };
 
@@ -1896,6 +1971,9 @@ export default function App() {
         isViewingOpponentArena={isViewingOpponentArena}
         opponentName={viewingCommander.name}
         isTestMode={isTestMode}
+        difficulty={difficulty}
+        isDifficultyLocked={isDifficultyLocked}
+        onOpenDifficultyModal={() => setIsDifficultyModalOpen(true)}
         onTogglePause={() => setIsTimerPaused((prev) => !prev)}
         onResetTimer={() => setCountdown(30)}
         onTogglePhase={
@@ -1994,10 +2072,7 @@ export default function App() {
               }
             }}
             onDragStartUnit={handleDragStartUnit}
-            onDragEnd={() => {
-              setDraggedUnit(null);
-              setDraggedItemId(null);
-            }}
+            onDragEnd={handleDragEnd}
             onDragOverTile={handleDragOverTile}
             onDropOnTile={handleDropOnTile}
           />
@@ -2015,10 +2090,7 @@ export default function App() {
               setTestAnimationOverride(null);
             }}
             onDragStart={handleDragStartUnit}
-            onDragEnd={() => {
-              setDraggedUnit(null);
-              setDraggedItemId(null);
-            }}
+            onDragEnd={handleDragEnd}
             onDragOver={(e, idx) => e.preventDefault()}
             onDrop={handleDropOnBench}
             isViewingOpponentArena={isViewingOpponentArena}
@@ -2161,6 +2233,7 @@ export default function App() {
         roundTitle={roundTitle}
         income={lastRoundIncome}
         damageTaken={roundDamageTaken}
+        xpGained={lastRoundXp}
         commanders={commanders}
         isAllBattlesFinished={commanders
           .filter((c) => !c.isEliminated)
@@ -2173,6 +2246,16 @@ export default function App() {
         roundNumber={draftRoundNumber}
         isBossReward={isBossDraft}
         onSelectItem={handleSelectDraftItem}
+      />
+
+      {/* Game Difficulty Selection Modal */}
+      <DifficultyModal
+        isOpen={isDifficultyModalOpen}
+        currentDifficulty={difficulty}
+        isLocked={isDifficultyLocked}
+        onSelectDifficulty={handleSelectDifficulty}
+        onClose={() => setIsDifficultyModalOpen(false)}
+        onRestartGame={handleRestartGame}
       />
 
       {/* Game Over Modal with Blur Arena & Spectate / Return options */}

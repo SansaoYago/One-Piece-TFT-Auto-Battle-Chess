@@ -278,6 +278,8 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     renderer.shadowMap.enabled = false;
 
     container.innerHTML = '';
+    renderer.domElement.style.pointerEvents = 'none';
+    renderer.domElement.style.userSelect = 'none';
     container.appendChild(renderer.domElement);
 
     // Responsive dynamic resize observer to maintain aspect ratio during transformations and screen changes

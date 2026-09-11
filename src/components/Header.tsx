@@ -1,6 +1,6 @@
 import React from 'react';
-import { GamePhase } from '../types/game';
-import { Shield, Swords, RefreshCw, Play, Pause, AlertTriangle, Eye, FlaskConical, RotateCcw, Trash2, Zap } from 'lucide-react';
+import { GamePhase, GameDifficulty, DIFFICULTY_CONFIGS } from '../types/game';
+import { Shield, Swords, RefreshCw, Play, Pause, AlertTriangle, Eye, FlaskConical, RotateCcw, Trash2, Zap, Lock, ChevronDown } from 'lucide-react';
 
 interface HeaderProps {
   phase: GamePhase;
@@ -13,6 +13,9 @@ interface HeaderProps {
   isViewingOpponentArena?: boolean;
   opponentName?: string;
   isTestMode?: boolean;
+  difficulty?: GameDifficulty;
+  isDifficultyLocked?: boolean;
+  onOpenDifficultyModal?: () => void;
   onTogglePause: () => void;
   onResetTimer: () => void;
   onTogglePhase: () => void;
@@ -32,6 +35,9 @@ export const Header: React.FC<HeaderProps> = ({
   isViewingOpponentArena = false,
   opponentName = 'Oponente',
   isTestMode = false,
+  difficulty = 'medium',
+  isDifficultyLocked = false,
+  onOpenDifficultyModal,
   onTogglePause,
   onResetTimer,
   onTogglePhase,
@@ -40,6 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
   onQuickDuel,
 }) => {
   const isOvertime = countdown <= 15 && phase === 'COMBAT';
+  const diffConfig = DIFFICULTY_CONFIGS[difficulty];
   const formatTime = (secs: number) => {
     const mins = Math.floor(secs / 60);
     const remainingSecs = secs % 60;
@@ -51,18 +58,53 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
         
         {/* Left Side */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3">
           {!isTestMode ? (
-            /* Game Mode: Clock & Battle Number Only (1, 2, 3...) */
-            <div className="flex items-center gap-2.5 bg-slate-900/90 border border-amber-500/30 rounded-xl px-3 py-1.5 shadow-inner">
-              <span className="text-xs font-mono text-amber-400 font-semibold tracking-wider">
-                {formatTime(totalTime)}
-              </span>
-              <div className="w-px h-4 bg-slate-700" />
-              <span className="text-xs font-black text-amber-300 uppercase tracking-wide">
-                Batalha {roundNumber}
-              </span>
-            </div>
+            /* Game Mode: Clock, Battle Number & Difficulty Badge */
+            <>
+              <div className="flex items-center gap-2.5 bg-slate-900/90 border border-amber-500/30 rounded-xl px-3 py-1.5 shadow-inner">
+                <span className="text-xs font-mono text-amber-400 font-semibold tracking-wider">
+                  {formatTime(totalTime)}
+                </span>
+                <div className="w-px h-4 bg-slate-700" />
+                <span className="text-xs font-black text-amber-300 uppercase tracking-wide">
+                  Batalha {roundNumber}
+                </span>
+              </div>
+
+              {/* Interactive Difficulty Indicator / Button */}
+              {onOpenDifficultyModal && (
+                <button
+                  id="header-difficulty-btn"
+                  onClick={onOpenDifficultyModal}
+                  title={
+                    isDifficultyLocked
+                      ? `Dificuldade: ${diffConfig.name} (Bloqueada nesta partida - clique para ver detalhes ou reiniciar)`
+                      : `Dificuldade: ${diffConfig.name} (Clique para alterar antes das batalhas)`
+                  }
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-md cursor-pointer hover:scale-105 ${
+                    difficulty === 'easy'
+                      ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300 hover:border-emerald-400'
+                      : difficulty === 'hard'
+                      ? 'bg-rose-950/80 border-rose-500/50 text-rose-300 hover:border-rose-400'
+                      : 'bg-amber-950/80 border-amber-500/50 text-amber-300 hover:border-amber-400'
+                  }`}
+                >
+                  {isDifficultyLocked ? (
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  ) : (
+                    <Shield className="w-3.5 h-3.5 text-amber-400" />
+                  )}
+                  <span className="hidden sm:inline text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+                    Dif:
+                  </span>
+                  <span className="font-black text-xs">{diffConfig.name}</span>
+                  {!isDifficultyLocked ? (
+                    <ChevronDown className="w-3 h-3 opacity-70" />
+                  ) : null}
+                </button>
+              )}
+            </>
           ) : (
             /* Test Mode Badge & Return Button */
             <div className="flex items-center gap-2">

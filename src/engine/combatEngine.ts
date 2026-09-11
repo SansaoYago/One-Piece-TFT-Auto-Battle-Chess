@@ -2,6 +2,7 @@ import { ActiveSynergy, DamageType, UnitInstance } from '../types/game';
 import { AttackEffect, CombatTickResult, CombatUnitState, FloatingText, TheftEvent } from '../types/combat';
 import { CHAMPION_DATABASE } from '../data/units';
 import { ITEM_DATABASE } from '../data/items';
+import { calculateActiveSynergies } from '../utils/gameUtils';
 
 export interface ComboStrikeConfig {
   id: 'punch1' | 'punch2' | 'punch3' | 'punch4' | 'kick1' | 'kick2' | 'kick3';
@@ -150,34 +151,77 @@ export function pushUnitsAwayFromMonsterChopper(
   });
 }
 
-export function initializeCombatUnits(boardUnits: UnitInstance[]): CombatUnitState[] {
+export function initializeCombatUnits(
+  boardUnits: UnitInstance[],
+  difficultyMultiplier?: { hp: number; ad: number }
+): CombatUnitState[] {
   // Only include units actually on the board (gridX >= 0, gridY >= 0)
   const activeUnits = boardUnits.filter((u) => u.gridX >= 0 && u.gridY >= 0);
 
-  return activeUnits.map((unit) => ({
-    ...unit,
-    orbMana: unit.hasSpecialItem ? (unit.orbMana || 0) : 0,
-    maxOrbMana: 250,
-    currentPosX: unit.gridX,
-    currentPosY: unit.gridY,
-    targetInstanceId: null,
-    attackCooldown: Math.random() * 0.35 + 0.1, // Slight stagger on start
-    moveCooldown: 0,
-    isCasting: false,
-    castProgress: 0,
-    isStunned: false,
-    stunDuration: 0,
-    isKnockedBack: false,
-    lastHitTimestamp: 0,
-    comboStep: 0, // Always starts at 0 (1st punch)
-    currentAnimation: 'idle',
-    attackAnimTimer: 0,
-    lastAttackTimestamp: 0,
-    lastStrikeName: '',
-    lastStrikePoints: 0,
-    isDefeated: false,
-    deathTimestamp: undefined,
-  }));
+  // Calculate pre-battle synergies for innate stat boosts (Navy armor, Paramecia mana, etc.)
+  const playerSynergies = calculateActiveSynergies(activeUnits, false);
+  const enemySynergies = calculateActiveSynergies(activeUnits, true);
+
+  const playerNavyActive = playerSynergies.some((s) => s.trait.id === 'marinha' && s.activeTierIndex >= 0);
+  const enemyNavyActive = enemySynergies.some((s) => s.trait.id === 'marinha' && s.activeTierIndex >= 0);
+
+  const playerParameciaActive = playerSynergies.some((s) => s.trait.id === 'paramecia' && s.activeTierIndex >= 0);
+  const enemyParameciaActive = enemySynergies.some((s) => s.trait.id === 'paramecia' && s.activeTierIndex >= 0);
+
+  return activeUnits.map((unit) => {
+    let finalHp = unit.hp;
+    let finalMaxHp = unit.maxHp;
+    let finalAd = unit.ad;
+
+    if (unit.isEnemy && difficultyMultiplier) {
+      finalHp = Math.round(unit.hp * difficultyMultiplier.hp);
+      finalMaxHp = Math.round(unit.maxHp * difficultyMultiplier.hp);
+      finalAd = Math.round(unit.ad * difficultyMultiplier.ad);
+    }
+
+    // Marinha bonus: +30 Armor and +30 MR to all units on that team
+    const teamNavy = unit.isEnemy ? enemyNavyActive : playerNavyActive;
+    const finalArmor = unit.armor + (teamNavy ? 30 : 0);
+    const finalMr = unit.mr + (teamNavy ? 30 : 0);
+
+    // Paramecia bonus: +20 Start Mana
+    const teamParamecia = unit.isEnemy ? enemyParameciaActive : playerParameciaActive;
+    const bonusStartMana = teamParamecia && unit.traits.includes('paramecia') ? 20 : 0;
+    const finalMana = Math.min(unit.maxMana, unit.mana + bonusStartMana);
+
+    return {
+      ...unit,
+      hp: finalHp,
+      maxHp: finalMaxHp,
+      ad: finalAd,
+      armor: finalArmor,
+      mr: finalMr,
+      mana: finalMana,
+      orbMana: unit.hasSpecialItem ? (unit.orbMana || 0) : 0,
+      maxOrbMana: 250,
+      currentPosX: unit.gridX,
+      currentPosY: unit.gridY,
+      targetInstanceId: null,
+      attackCooldown: Math.random() * 0.35 + 0.1, // Slight stagger on start
+      moveCooldown: 0,
+      isCasting: false,
+      castProgress: 0,
+      isStunned: false,
+      stunDuration: 0,
+      isKnockedBack: false,
+      lastHitTimestamp: 0,
+      comboStep: 0, // Always starts at 0 (1st punch)
+      currentAnimation: 'idle',
+      attackAnimTimer: 0,
+      lastAttackTimestamp: 0,
+      lastStrikeName: '',
+      lastStrikePoints: 0,
+      isDefeated: false,
+      deathTimestamp: undefined,
+      flankBias: 0,
+      stuckTimer: 0,
+    };
+  });
 }
 
 export function simulateCombatTick(
@@ -187,7 +231,8 @@ export function simulateCombatTick(
   deltaSeconds: number,
   theftTracker?: { player: boolean; enemy: boolean },
   playerGold: number = 10,
-  enemyGold: number = 10
+  enemyGold: number = 10,
+  enemyActiveSynergies: ActiveSynergy[] = []
 ): CombatTickResult {
   const newFloatingTexts: FloatingText[] = [];
   const newAttackEffects: AttackEffect[] = [];
@@ -234,12 +279,16 @@ export function simulateCombatTick(
     };
   }
 
-  // Synergy bonus helpers
-  const brigaoTier = activeSynergies.find((s) => s.trait.id === 'brigao')?.activeTierIndex ?? -1;
-  const lifestealPercent = brigaoTier >= 1 ? 0.5 : brigaoTier >= 0 ? 0.25 : 0;
+  // Synergy bonus helpers for both Player and Enemy Bot teams
+  const playerBrigaoTier = activeSynergies.find((s) => s.trait.id === 'brigao')?.activeTierIndex ?? -1;
+  const playerLifesteal = playerBrigaoTier >= 1 ? 0.5 : playerBrigaoTier >= 0 ? 0.25 : 0;
+  const playerEspadachimTier = activeSynergies.find((s) => s.trait.id === 'espadachim')?.activeTierIndex ?? -1;
+  const playerDoubleAttack = playerEspadachimTier >= 1 ? 0.5 : playerEspadachimTier >= 0 ? 0.25 : 0;
 
-  const espadachimTier = activeSynergies.find((s) => s.trait.id === 'espadachim')?.activeTierIndex ?? -1;
-  const doubleAttackChance = espadachimTier >= 1 ? 0.5 : espadachimTier >= 0 ? 0.25 : 0;
+  const enemyBrigaoTier = enemyActiveSynergies.find((s) => s.trait.id === 'brigao')?.activeTierIndex ?? -1;
+  const enemyLifesteal = enemyBrigaoTier >= 1 ? 0.5 : enemyBrigaoTier >= 0 ? 0.25 : 0;
+  const enemyEspadachimTier = enemyActiveSynergies.find((s) => s.trait.id === 'espadachim')?.activeTierIndex ?? -1;
+  const enemyDoubleAttack = enemyEspadachimTier >= 1 ? 0.5 : enemyEspadachimTier >= 0 ? 0.25 : 0;
 
   // Process each living unit
   for (const unit of livingUnits) {
@@ -391,6 +440,30 @@ export function simulateCombatTick(
 
     let target = validOpponents.find((op) => op.instanceId === unit.targetInstanceId);
 
+    // Dynamic opportunistic targeting for melee units (range 1):
+    // If current target is beyond melee reach (> 1.85 tiles) but another enemy is already adjacent (<= 1.85),
+    // switch immediately to the adjacent enemy so the melee unit attacks the front-line foe directly in front of them!
+    if (unit.range === 1) {
+      const currentTargetDist = target
+        ? Math.hypot(target.currentPosX - unit.currentPosX, target.currentPosY - unit.currentPosY)
+        : Infinity;
+      if (currentTargetDist > 1.85) {
+        let closestAdjacent: CombatUnitState | null = null;
+        let closestDist = Infinity;
+        for (const op of validOpponents) {
+          const d = Math.hypot(op.currentPosX - unit.currentPosX, op.currentPosY - unit.currentPosY);
+          if (d <= 1.85 && d < closestDist) {
+            closestDist = d;
+            closestAdjacent = op;
+          }
+        }
+        if (closestAdjacent) {
+          target = closestAdjacent;
+          unit.targetInstanceId = target.instanceId;
+        }
+      }
+    }
+
     if (!target) {
       // Pick closest living opponent by Euclidean distance
       let minDistance = Infinity;
@@ -415,19 +488,13 @@ export function simulateCombatTick(
       target.currentPosY - unit.currentPosY
     );
 
-    // 3. Attack Range Check: unit.range (1 is melee ~1.65 tiles for comfortable punch margin, ranged is 2..4 tiles)
-    const effectiveRange = unit.range === 1 ? 1.65 : unit.range + 0.35;
+    // 3. Attack Range Check: unit.range (1 is melee ~1.85 tiles for full adjacent diagonal reach & frontline engagement)
+    const effectiveRange = unit.range === 1 ? 1.85 : unit.range + 0.35;
 
     if (distanceToTarget <= effectiveRange) {
-      // If two melee units are too close (< 1.20 tiles), gently separate them towards punch margin (1.35 tiles)
-      if (unit.range === 1 && distanceToTarget < 1.20 && distanceToTarget > 0.01) {
-        const pushBack = 0.05 * speedMultiplier;
-        const pushAngle = Math.atan2(unit.currentPosY - target.currentPosY, unit.currentPosX - target.currentPosX);
-        unit.currentPosX = Math.max(0, Math.min(7, unit.currentPosX + Math.cos(pushAngle) * pushBack));
-        unit.currentPosY = Math.max(0, Math.min(4, unit.currentPosY + Math.sin(pushAngle) * pushBack));
-        unit.gridX = Math.round(unit.currentPosX);
-        unit.gridY = Math.round(unit.currentPosY);
-      }
+      // In range: Unit stands ground in combat stance and engages
+      unit.moveCooldown = 0;
+      unit.stuckTimer = 0;
 
       // In range: Check if ready to cast Orb Special (250 pts), or regular active skill (100 mana), or basic attack
       const hasOrb = unit.hasSpecialItem;
@@ -442,6 +509,9 @@ export function simulateCombatTick(
         executeSkillCast(unit, target, livingUnits, newFloatingTexts, newAttackEffects, now, false);
       } else if (unit.attackCooldown <= 0) {
         // --- EXECUTE BASIC ATTACK ---
+        const unitLifesteal = unit.isEnemy ? enemyLifesteal : playerLifesteal;
+        const unitDoubleAttack = unit.isEnemy ? enemyDoubleAttack : playerDoubleAttack;
+
         executeBasicAttack(
           unit,
           target,
@@ -452,8 +522,8 @@ export function simulateCombatTick(
           theftTracker,
           playerGold,
           enemyGold,
-          lifestealPercent,
-          doubleAttackChance,
+          unitLifesteal,
+          unitDoubleAttack,
           now
         );
         unit.attackCooldown = (1 / Math.max(0.2, unit.attackSpeed)) * (1 / speedMultiplier);
@@ -462,65 +532,75 @@ export function simulateCombatTick(
       }
     } else {
       // Out of range: Move towards target using multi-angle flanking pathfinding
-      unit.currentAnimation = 'walk';
       if (unit.moveCooldown <= 0) {
         const dx = target.currentPosX - unit.currentPosX;
         const dy = target.currentPosY - unit.currentPosY;
         const baseAngle = Math.atan2(dy, dx);
 
-        // Sub-tile step size stopping at a punch margin for melee (~1.38 tiles distance)
-        const stopDistance = unit.range === 1 ? 1.38 : unit.range;
-        const stepSize = Math.min(0.35 * speedMultiplier, Math.max(0.08, distanceToTarget - stopDistance));
+        // Sub-tile step size stopping at a comfortable attack distance (~1.20 tiles for melee)
+        const stopDistance = unit.range === 1 ? 1.20 : unit.range;
+        const maxStep = 0.36 * speedMultiplier;
+        const desiredStep = Math.max(0.08, distanceToTarget - stopDistance);
+        const baseStepSize = Math.min(maxStep, desiredStep);
 
         // Multi-angle candidate offsets for surrounding and obstacle avoidance:
-        // Direct -> slight flanking (shoulders) -> wide flank (sides) -> deep wrap (back)
+        const bias = unit.flankBias || 0;
         const angleOffsets = [
           0,
-          Math.PI / 4,     // +45 deg
-          -Math.PI / 4,    // -45 deg
-          Math.PI / 2.5,   // +72 deg
-          -Math.PI / 2.5,  // -72 deg
-          Math.PI / 1.8,   // +100 deg
-          -Math.PI / 1.8,  // -100 deg
-          Math.PI / 1.4,   // +128 deg
-          -Math.PI / 1.4,  // -128 deg
+          bias !== 0 ? bias * (Math.PI / 6) : Math.PI / 6,
+          bias !== 0 ? -bias * (Math.PI / 6) : -Math.PI / 6,
+          bias !== 0 ? bias * (Math.PI / 3) : Math.PI / 3,
+          bias !== 0 ? -bias * (Math.PI / 3) : -Math.PI / 3,
+          bias !== 0 ? bias * (Math.PI / 2.1) : Math.PI / 2.1,
+          bias !== 0 ? -bias * (Math.PI / 2.1) : -Math.PI / 2.1,
+          bias !== 0 ? bias * (Math.PI / 1.5) : Math.PI / 1.5,
+          bias !== 0 ? -bias * (Math.PI / 1.5) : -Math.PI / 1.5,
+          bias !== 0 ? bias * (Math.PI / 1.25) : Math.PI / 1.25,
+          bias !== 0 ? -bias * (Math.PI / 1.25) : -Math.PI / 1.25,
         ];
 
-        let bestMove: { x: number; y: number } | null = null;
+        let bestMove: { x: number; y: number; offset: number } | null = null;
         let bestScore = Infinity;
 
-        for (const offset of angleOffsets) {
-          const testAngle = baseAngle + offset;
-          const candX = Math.max(0, Math.min(7, unit.currentPosX + Math.cos(testAngle) * stepSize));
-          const candY = Math.max(0, Math.min(4, unit.currentPosY + Math.sin(testAngle) * stepSize));
+        // Try both normal step and micro step to squeeze around corners and adjacent allies
+        const testSteps = [baseStepSize, baseStepSize * 0.6];
 
-          // Check if candidate position collides with any other living unit (defeated units do NOT block)
-          const isCurrentMonster = unit.unitId === 'chopper' && unit.isTransformed;
-          const collides = livingUnits.some((other) => {
-            if (other.instanceId === unit.instanceId || other.hp <= 0 || other.isDefeated) return false;
-            const isOtherMonster = other.unitId === 'chopper' && other.isTransformed;
-            // Generous spacing: Monster requires 1.45, direct target requires 1.28 (punch margin), other units require 0.85
-            const isDirectTarget = other.instanceId === target.instanceId;
-            const requiredDistance = isCurrentMonster || isOtherMonster
-              ? 1.45
-              : isDirectTarget
-              ? 1.28
-              : 0.85;
-            return Math.hypot(other.currentPosX - candX, other.currentPosY - candY) < requiredDistance;
-          });
+        stepLoop: for (const step of testSteps) {
+          for (const offset of angleOffsets) {
+            const testAngle = baseAngle + offset;
+            const candX = Math.max(0, Math.min(7, unit.currentPosX + Math.cos(testAngle) * step));
+            const candY = Math.max(0, Math.min(4, unit.currentPosY + Math.sin(testAngle) * step));
 
-          if (!collides) {
-            // Distance from candidate step to target
-            const candDistToTarget = Math.hypot(target.currentPosX - candX, target.currentPosY - candY);
-            // Prefer moves that get closer to target, with a small penalty for sharp detours
-            const score = candDistToTarget + Math.abs(offset) * 0.28;
+            // Check if candidate position collides with any other living unit
+            // Direct target: Only collide if overlapping closely (< 0.35), so attackers can freely step forward!
+            // Other units: 0.38 lets champions navigate through 1.0 tile spaces between allies
+            // Monster Chopper: 0.85
+            const isCurrentMonster = unit.unitId === 'chopper' && unit.isTransformed;
+            const collides = livingUnits.some((other) => {
+              if (other.instanceId === unit.instanceId || other.hp <= 0 || other.isDefeated) return false;
+              const isOtherMonster = other.unitId === 'chopper' && other.isTransformed;
+              const isDirectTarget = other.instanceId === target.instanceId;
+              const requiredDistance = isCurrentMonster || isOtherMonster
+                ? 0.85
+                : isDirectTarget
+                ? 0.35
+                : 0.38;
+              return Math.hypot(other.currentPosX - candX, other.currentPosY - candY) < requiredDistance;
+            });
 
-            if (score < bestScore) {
-              bestScore = score;
-              bestMove = { x: candX, y: candY };
-              // If direct path is completely clear, use it immediately
-              if (offset === 0 && candDistToTarget < distanceToTarget) {
-                break;
+            if (!collides) {
+              const candDistToTarget = Math.hypot(target.currentPosX - candX, target.currentPosY - candY);
+              // Continuity bonus: small reward for maintaining the same turning side
+              const continuityBonus = bias !== 0 && Math.sign(offset) === bias ? -0.15 : 0;
+              const score = candDistToTarget + Math.abs(offset) * 0.20 + continuityBonus;
+
+              if (score < bestScore) {
+                bestScore = score;
+                bestMove = { x: candX, y: candY, offset };
+                // Direct path at full step is completely clear -> take it immediately
+                if (offset === 0 && step === baseStepSize && candDistToTarget < distanceToTarget) {
+                  break stepLoop;
+                }
               }
             }
           }
@@ -531,42 +611,68 @@ export function simulateCombatTick(
           unit.currentPosY = bestMove.y;
           unit.gridX = Math.round(bestMove.x);
           unit.gridY = Math.round(bestMove.y);
-          unit.moveCooldown = 0.20 / speedMultiplier;
-        } else {
-          // If completely boxed in on current target, immediately retarget to another living enemy
-          const altOpponents = validOpponents
-            .filter((op) => op.instanceId !== target.instanceId)
-            .sort((a, b) => {
-              const dA = Math.hypot(a.currentPosX - unit.currentPosX, a.currentPosY - unit.currentPosY);
-              const dB = Math.hypot(b.currentPosX - unit.currentPosX, b.currentPosY - unit.currentPosY);
-              return dA - dB;
-            });
-
-          if (altOpponents.length > 0) {
-            unit.targetInstanceId = altOpponents[0].instanceId;
-            unit.moveCooldown = 0.08 / speedMultiplier;
+          unit.currentAnimation = 'walk';
+          unit.moveCooldown = 0.15 / speedMultiplier;
+          unit.stuckTimer = 0;
+          if (Math.abs(bestMove.offset) > 0.15) {
+            unit.flankBias = Math.sign(bestMove.offset);
           } else {
-            // No other enemy: if within 1.85 tiles of current target, allow melee reach attack over shoulder
-            if (unit.range === 1 && distanceToTarget <= 1.85) {
-              if (unit.attackCooldown <= 0) {
-                executeBasicAttack(
-                  unit,
-                  target,
-                  livingUnits,
-                  newFloatingTexts,
-                  newAttackEffects,
-                  newTheftEvents,
-                  theftTracker,
-                  playerGold,
-                  enemyGold,
-                  lifestealPercent,
-                  doubleAttackChance,
-                  now
-                );
-                unit.attackCooldown = (1 / Math.max(0.2, unit.attackSpeed)) * (1 / speedMultiplier);
+            unit.flankBias = 0;
+          }
+        } else {
+          // Blocked on direct path: Check if any other enemy is in melee reach right now
+          const nearbyOpponent = validOpponents.find((op) => {
+            const d = Math.hypot(op.currentPosX - unit.currentPosX, op.currentPosY - unit.currentPosY);
+            return d <= (unit.range === 1 ? 1.85 : unit.range);
+          });
+
+          if (nearbyOpponent) {
+            unit.targetInstanceId = nearbyOpponent.instanceId;
+            if (unit.attackCooldown <= 0) {
+              const unitLifesteal = unit.isEnemy ? enemyLifesteal : playerLifesteal;
+              const unitDoubleAttack = unit.isEnemy ? enemyDoubleAttack : playerDoubleAttack;
+
+              executeBasicAttack(
+                unit,
+                nearbyOpponent,
+                livingUnits,
+                newFloatingTexts,
+                newAttackEffects,
+                newTheftEvents,
+                theftTracker,
+                playerGold,
+                enemyGold,
+                unitLifesteal,
+                unitDoubleAttack,
+                now
+              );
+              unit.attackCooldown = (1 / Math.max(0.2, unit.attackSpeed)) * (1 / speedMultiplier);
+            } else {
+              unit.currentAnimation = 'idle';
+            }
+            unit.moveCooldown = 0.15 / speedMultiplier;
+            unit.stuckTimer = 0;
+          } else {
+            // Cannot advance and no target in melee reach:
+            // Stand in combat ready stance (idle), NEVER skate/walk in place!
+            unit.currentAnimation = 'idle';
+            unit.stuckTimer = (unit.stuckTimer || 0) + deltaSeconds;
+            if (unit.stuckTimer > 0.4) {
+              // Rapid unstick: switch to the closest alternate opponent
+              const altOpponents = validOpponents
+                .filter((op) => op.instanceId !== target.instanceId)
+                .sort((a, b) => {
+                  const dA = Math.hypot(a.currentPosX - unit.currentPosX, a.currentPosY - unit.currentPosY);
+                  const dB = Math.hypot(b.currentPosX - unit.currentPosX, b.currentPosY - unit.currentPosY);
+                  return dA - dB;
+                });
+              if (altOpponents.length > 0) {
+                unit.targetInstanceId = altOpponents[0].instanceId;
+                unit.stuckTimer = 0;
+                unit.flankBias = 0;
               }
             }
-            unit.moveCooldown = 0.25 / speedMultiplier;
+            unit.moveCooldown = 0.15 / speedMultiplier;
           }
         }
       }
@@ -892,8 +998,8 @@ function executeBasicAttack(
   // Apply Damage to Shield first, then HP
   applyDamageToTarget(attacker, target, finalDamage, attacker.attackType, isCrit, floatingTexts);
 
-  // Life Steal (Brigão Trait)
-  if (!attacker.isEnemy && lifestealPercent > 0 && attacker.attackType === 'PHYSICAL') {
+  // Life Steal (Brigão Trait - Active for any brawler with synergy)
+  if (lifestealPercent > 0 && attacker.attackType === 'PHYSICAL') {
     const healAmount = Math.round(finalDamage * lifestealPercent);
     attacker.hp = Math.min(attacker.maxHp, attacker.hp + healAmount);
     attacker.totalHealing += healAmount;
@@ -947,8 +1053,8 @@ function executeBasicAttack(
     now
   );
 
-  // Double Attack Synergy (Espadachim)
-  if (!attacker.isEnemy && Math.random() < doubleAttackChance) {
+  // Double Attack Synergy (Espadachim - Active for any swordsman with synergy)
+  if (doubleAttackChance > 0 && Math.random() < doubleAttackChance) {
     setTimeout(() => {
       if (attacker.hp > 0 && target.hp > 0) {
         applyDamageToTarget(attacker, target, Math.round(finalDamage * 0.7), attacker.attackType, false, floatingTexts);

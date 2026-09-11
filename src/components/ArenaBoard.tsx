@@ -137,8 +137,24 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
   onDragEnd,
 }) => {
   const [hoveredTile, setHoveredTile] = useState<{ x: number; y: number } | null>(null);
+  const hoveredTileRef = React.useRef<{ x: number; y: number } | null>(null);
   const showUnitHud = true;
   const [isHoldingUnit, setIsHoldingUnit] = useState(false);
+  const [isGlobalDragging, setIsGlobalDragging] = useState(false);
+
+  React.useEffect(() => {
+    const handleDragStart = () => setIsGlobalDragging(true);
+    const handleDragEnd = () => {
+      setIsGlobalDragging(false);
+      setIsHoldingUnit(false);
+    };
+    window.addEventListener('dragstart', handleDragStart);
+    window.addEventListener('dragend', handleDragEnd);
+    return () => {
+      window.removeEventListener('dragstart', handleDragStart);
+      window.removeEventListener('dragend', handleDragEnd);
+    };
+  }, []);
 
   // Helper to find unit at grid coordinates during preparation phase
   const getPrepUnitAt = (x: number, y: number) => {
@@ -184,46 +200,10 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
     return (
       <div
         key={unit.instanceId}
-        draggable={isDraggingAllowed}
-        onDragStart={(e) => {
-          setIsHoldingUnit(true);
-          e.dataTransfer.effectAllowed = 'move';
-          onDragStartUnit(e, unit);
-        }}
-        onDragEnd={() => {
-          setIsHoldingUnit(false);
-          if (onDragEnd) onDragEnd();
-        }}
-        onDragOver={(e) => {
-          if (!isCombatPhase && !isViewingOpponentArena && unit.gridX >= 0 && unit.gridY >= 0) {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            setHoveredTile({ x: unit.gridX, y: unit.gridY });
-            onDragOverTile(e, unit.gridX, unit.gridY);
-          }
-        }}
-        onDrop={(e) => {
-          if (!isCombatPhase && !isViewingOpponentArena && unit.gridX >= 0 && unit.gridY >= 0) {
-            e.preventDefault();
-            e.stopPropagation();
-            setHoveredTile(null);
-            onDropOnTile(e, unit.gridX, unit.gridY);
-          }
-        }}
-        onClick={(e) => {
-          e.stopPropagation();
-          onUnitSelect(unit);
-        }}
-        className={`relative flex flex-col items-center justify-end transition-all duration-300 select-none ${
-          isDraggingAllowed ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
-        } ${
-          isDead
-            ? 'pointer-events-none scale-0 opacity-0 blur-xs translate-y-3'
-            : 'opacity-100 scale-100'
-        } ${
+        className={`relative flex flex-col items-center justify-end transition-all duration-300 select-none pointer-events-none ${
           isSelected && !isDead
             ? 'scale-110 filter drop-shadow-[0_0_16px_rgba(245,158,11,0.95)]'
-            : isDead ? '' : 'hover:scale-105'
+            : isDead ? '' : ''
         }`}
         style={{
           transformOrigin: 'bottom center',
@@ -377,10 +357,8 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                 ? 'idle'
                 : isCasting
                 ? (unit.unitId === 'nami' || unit.unitId === 'usopp' ? 'attack' : 'kick1')
-                : combatState?.currentAnimation && combatState.currentAnimation !== 'idle'
+                : combatState?.currentAnimation
                 ? combatState.currentAnimation
-                : combatState?.moveCooldown && combatState.moveCooldown > 0
-                ? 'walk'
                 : 'idle'
             }
             className="w-full h-full"
@@ -402,7 +380,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
     );
   };
 
-  const isDraggingActive = Boolean(draggedUnit || isHoldingUnit);
+  const isDraggingActive = Boolean(draggedUnit || isHoldingUnit || isGlobalDragging);
 
   return (
     <div
@@ -434,12 +412,19 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
         <div
           onDragOver={(e) => {
             e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+          }}
+          onMouseLeave={() => {
+            setHoveredTile(null);
+            hoveredTileRef.current = null;
           }}
           onDrop={(e) => {
-            if (!isCombatPhase && !isViewingOpponentArena && hoveredTile) {
+            const target = hoveredTile || hoveredTileRef.current;
+            if (!isCombatPhase && !isViewingOpponentArena && target) {
               e.preventDefault();
-              onDropOnTile(e, hoveredTile.x, hoveredTile.y);
+              onDropOnTile(e, target.x, target.y);
               setHoveredTile(null);
+              hoveredTileRef.current = null;
             }
           }}
           className="relative grid grid-cols-8 gap-2 sm:gap-2.5 p-6 sm:p-7 rounded-[2.5rem] bg-gradient-to-b from-slate-950/95 via-slate-900/90 to-slate-950/95 border-[3px] border-amber-500/30 shadow-[0_30px_70px_-15px_rgba(0,0,0,0.95),0_0_60px_rgba(245,158,11,0.12)] backdrop-blur-2xl ring-1 ring-white/5 select-none"
@@ -463,13 +448,29 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
               return (
                 <div
                   key={`${col}-${row}`}
+                  draggable={Boolean(prepUnit && isPlayerHalf && !isCombatPhase && !isViewingOpponentArena)}
+                  onDragStart={(e) => {
+                    if (prepUnit && isPlayerHalf && !isCombatPhase && !isViewingOpponentArena) {
+                      setIsHoldingUnit(true);
+                      e.dataTransfer.effectAllowed = 'move';
+                      try {
+                        e.dataTransfer.setData('text/plain', prepUnit.instanceId);
+                      } catch (_) {}
+                      onDragStartUnit(e, prepUnit);
+                    }
+                  }}
+                  onDragEnd={() => {
+                    setIsHoldingUnit(false);
+                    if (onDragEnd) onDragEnd();
+                  }}
                   onMouseEnter={() => {
                     if (isDraggingActive && !isCombatPhase && !isViewingOpponentArena) {
                       setHoveredTile({ x: col, y: row });
+                      hoveredTileRef.current = { x: col, y: row };
                     }
                   }}
                   onMouseLeave={() => {
-                    setHoveredTile(null);
+                    // Do not eagerly clear so micro gaps between tiles do not break dragover/drop
                   }}
                   onClick={() => {
                     if (!isCombatPhase && !isViewingOpponentArena && selectedUnitId) {
@@ -480,10 +481,19 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                       onTileClick(col, row);
                     }
                   }}
-                  onDragOver={(e) => {
+                  onDragEnter={(e) => {
                     e.preventDefault();
                     if (!isCombatPhase && !isViewingOpponentArena) {
                       setHoveredTile({ x: col, y: row });
+                      hoveredTileRef.current = { x: col, y: row };
+                    }
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    if (!isCombatPhase && !isViewingOpponentArena) {
+                      setHoveredTile({ x: col, y: row });
+                      hoveredTileRef.current = { x: col, y: row };
                       onDragOverTile(e, col, row);
                     }
                   }}
@@ -491,6 +501,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                     e.preventDefault();
                     e.stopPropagation();
                     setHoveredTile(null);
+                    hoveredTileRef.current = null;
                     if (!isCombatPhase && !isViewingOpponentArena) {
                       onDropOnTile(e, col, row);
                     }
@@ -501,8 +512,10 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                       : isDraggingActive
                       ? 'cursor-grabbing'
                       : prepUnit
-                      ? 'cursor-grab'
-                      : 'cursor-default'
+                      ? 'cursor-grab active:cursor-grabbing hover:scale-105'
+                      : selectedUnitId
+                      ? 'cursor-pointer hover:scale-105'
+                      : 'cursor-pointer hover:border-slate-700/60'
                   } border ${
                     isPlayerHalf
                       ? isHighlightActive
@@ -594,8 +607,8 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                 return (
                   <div
                     key={pUnit.instanceId}
-                    className={`absolute transition-all duration-200 ease-out pointer-events-auto ${
-                      isBeingDragged ? 'opacity-30 scale-95 ring-2 ring-amber-400 rounded-2xl pointer-events-none' : ''
+                    className={`absolute transition-all duration-200 ease-out pointer-events-none ${
+                      isBeingDragged ? 'opacity-30 scale-95 ring-2 ring-amber-400 rounded-2xl' : ''
                     }`}
                     style={{
                       left: `${leftPercent}%`,

@@ -14,6 +14,7 @@ interface RoundOutcomeBannerProps {
     total: number;
   };
   damageTaken?: number;
+  xpGained?: number;
   commanders: Commander[];
   isAllBattlesFinished: boolean;
 }
@@ -24,6 +25,7 @@ export const RoundOutcomeBanner: React.FC<RoundOutcomeBannerProps> = ({
   roundTitle,
   income,
   damageTaken = 0,
+  xpGained = 2,
   commanders,
   isAllBattlesFinished,
 }) => {
@@ -92,7 +94,7 @@ export const RoundOutcomeBanner: React.FC<RoundOutcomeBannerProps> = ({
                 <Coins className="w-3.5 h-3.5 text-yellow-400" />
                 <span>+{income.total}฿</span>
                 <span className="text-slate-400 font-normal">|</span>
-                <span className="text-blue-300">+4 XP</span>
+                <span className="text-blue-300">+{xpGained} XP</span>
               </div>
             </div>
 

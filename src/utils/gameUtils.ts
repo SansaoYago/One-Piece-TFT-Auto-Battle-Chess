@@ -5,12 +5,12 @@ import { ActiveSynergy, StarLevel, TraitId, UnitInstance } from '../types/game';
 
 export const LEVEL_XP_REQUIREMENTS: Record<number, number> = {
   1: 2,
-  2: 2,
-  3: 6,
-  4: 10,
-  5: 20,
-  6: 36,
-  7: 56,
+  2: 4, // 2 rodadas completas de XP passivo (+2 XP/rd) para atingir Nv. 3
+  3: 10, // Exige 5 rodadas de XP passivo ou investimento de 4฿ para Nv. 4
+  4: 20, // Requer economia refinada para Nv. 5
+  5: 36, // Marco de meio de jogo
+  6: 54, // Fase avançada
+  7: 76, // Reta final
   8: 999, // Max level
 };
 
@@ -18,10 +18,10 @@ export const LEVEL_MAX_SLOTS: Record<number, number> = {
   1: 1,
   2: 2,
   3: 3,
-  4: 3, // Mantém 3 slots e concede 1º Orbe do Despertar
-  5: 4,
-  6: 5,
-  7: 6, // Teto máximo de 6 unidades
+  4: 4, // Concede 1º Orbe do Despertar
+  5: 5,
+  6: 6, // Teto máximo de 6 unidades no tabuleiro
+  7: 6, // Mantém 6 slots e melhora probabilidades de raros
   8: 6, // Mantém 6 slots e concede 2º Orbe do Despertar
 };
 
@@ -399,16 +399,16 @@ export function performStarUpgrades(
   };
 }
 
-export function calculateActiveSynergies(boardUnits: UnitInstance[]): ActiveSynergy[] {
-  // Only count friendly units on board (not enemy, not on bench)
-  const playerUnitsOnBoard = boardUnits.filter(u => !u.isEnemy && u.gridX >= 0 && u.gridY >= 0);
+export function calculateActiveSynergies(boardUnits: UnitInstance[], forEnemy: boolean = false): ActiveSynergy[] {
+  // Only count targeted units on board (not on bench)
+  const targetUnits = boardUnits.filter(u => (forEnemy ? u.isEnemy : !u.isEnemy) && u.gridX >= 0 && u.gridY >= 0);
   
   // Track unique champion IDs per trait (to avoid duplicates of same champion)
   const traitUnitMap = new Map<TraitId, Set<string>>();
   // Track extra bonus synergy points from equipped synergy chips (e.g. chip_luta, chip_espadachim)
   const traitBonusMap = new Map<TraitId, number>();
 
-  playerUnitsOnBoard.forEach(unit => {
+  targetUnits.forEach(unit => {
     // 1. Champion native / acquired traits
     unit.traits.forEach(trait => {
       if (!traitUnitMap.has(trait)) {

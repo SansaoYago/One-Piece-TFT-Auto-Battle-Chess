@@ -170,3 +170,82 @@ export interface ActiveSynergy {
   activeTierIndex: number; // -1 if no tier met
   units: string[]; // unit instance IDs
 }
+
+export type GameDifficulty = 'easy' | 'medium' | 'hard';
+
+export interface DifficultyConfig {
+  id: GameDifficulty;
+  name: string;
+  badge: string;
+  tag: string;
+  color: string;
+  borderColor: string;
+  bgColor: string;
+  description: string;
+  baseIncome: number;
+  initialGold: number;
+  winBonus: number;
+  xpPerRound: number;
+  enemyHpMultiplier: number;
+  enemyAdMultiplier: number;
+  playerLossDamageMultiplier: number;
+  summary: string;
+}
+
+export const DIFFICULTY_CONFIGS: Record<GameDifficulty, DifficultyConfig> = {
+  easy: {
+    id: 'easy',
+    name: 'Fácil',
+    badge: 'FÁCIL',
+    tag: 'Recreativo & Fartura',
+    color: 'text-emerald-400',
+    borderColor: 'border-emerald-500/50',
+    bgColor: 'bg-emerald-950/60',
+    description: 'Mais recursos para montar seu time dos sonhos com calma.',
+    baseIncome: 8,
+    initialGold: 6,
+    winBonus: 2,
+    xpPerRound: 2,
+    enemyHpMultiplier: 0.85,
+    enemyAdMultiplier: 0.80,
+    playerLossDamageMultiplier: 0.80,
+    summary: 'Renda base: +8฿ | Vitória: +2฿ | Inimigos: 85% Vida / 80% Dano (Bots Casuais)',
+  },
+  medium: {
+    id: 'medium',
+    name: 'Médio',
+    badge: 'MÉDIO',
+    tag: 'Tático Padrão',
+    color: 'text-amber-400',
+    borderColor: 'border-amber-500/50',
+    bgColor: 'bg-amber-950/60',
+    description: 'Jornada equilibrada e cadenciada (+2 XP/rodada). Exige gestão de economia e sinergias reais para vencer bots coordenados.',
+    baseIncome: 4,
+    initialGold: 4,
+    winBonus: 1,
+    xpPerRound: 2,
+    enemyHpMultiplier: 1.0,
+    enemyAdMultiplier: 1.0,
+    playerLossDamageMultiplier: 1.0,
+    summary: 'Renda: +4฿ | XP: +2/rd | Inimigos 100% (Bots com Sinergias e Posicionamento Tático)',
+  },
+  hard: {
+    id: 'hard',
+    name: 'Difícil',
+    badge: 'DIFÍCIL',
+    tag: 'Desafio do Grand Line',
+    color: 'text-rose-400',
+    borderColor: 'border-rose-500/50',
+    bgColor: 'bg-rose-950/60',
+    description: 'Bots Mestres com sinergias combinadas, estrelas aceleradas e itens. Derrotas causam alto dano.',
+    baseIncome: 5,
+    initialGold: 4,
+    winBonus: 2,
+    xpPerRound: 2,
+    enemyHpMultiplier: 1.30,
+    enemyAdMultiplier: 1.25,
+    playerLossDamageMultiplier: 1.35,
+    summary: 'Renda: +5฿ | XP: +2/rd | Inimigos: +30% HP / +25% Dano (Bots Especialistas com Sinergias & Itens)',
+  },
+};
+
