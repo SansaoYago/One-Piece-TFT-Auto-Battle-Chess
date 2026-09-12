@@ -206,7 +206,7 @@ Continue usando React/TypeScript/Three.js. A conversao para EXE e APK reaproveit
 
 ### P0 - Fazer antes de crescer o conteudo
 
-- [ ] Liberar espaco do disco e organizar ativos brutos.
+- [X] Liberar espaco do disco e organizar ativos brutos.
 - [ ] Rodar lint e corrigir apenas erros que bloqueiam o build.
 - [ ] Fechar regras conflitantes entre PRD e codigo.
 - [ ] Validar uma partida local completa.
