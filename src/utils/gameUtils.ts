@@ -150,20 +150,18 @@ export function getChampionTokenDimensions(unitId: string, isTransformed?: boole
   }
 
   // Baseline Luffy (1.74m):
-  // Viewport amplo (200px+ de largura e altura) com margem lateral e superior generosa,
-  // permitindo chutes altos, pernas estendidas e giros sem limites de container.
-  const widthFactor = Math.max(0.85, Math.min(1.5, Math.pow(ratio, 0.5)));
-
+  // Clean, uniform 1x1 isometric viewport. Since camera distance is anchored to the 1.74m baseline,
+  // characters render at their exact true physical proportions (Chopper 1.0m is 57% of Luffy).
   return {
     meters,
     ratio,
     is2x2: false,
-    widthBase: Math.round(180 * widthFactor),
-    heightBase: Math.round(180 * Math.max(0.85, ratio)),
-    widthSm: Math.round(210 * widthFactor),
-    heightSm: Math.round(210 * Math.max(0.85, ratio)),
-    widthLg: Math.round(240 * widthFactor),
-    heightLg: Math.round(240 * Math.max(0.85, ratio)),
+    widthBase: 180,
+    heightBase: 180,
+    widthSm: 210,
+    heightSm: 210,
+    widthLg: 240,
+    heightLg: 240,
     hudBottomBase: Math.round(124 * ratio),
     hudBottomSm: Math.round(146 * ratio),
     hudBottomLg: Math.round(168 * ratio),

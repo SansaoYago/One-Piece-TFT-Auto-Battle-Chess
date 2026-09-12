@@ -127,6 +127,7 @@ export const Bench: React.FC<BenchProps> = ({
                   onSlotClick(index);
                 }
               }}
+              data-unit-slot="true"
               className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl border relative flex flex-col items-center justify-between p-1 transition-all duration-200 select-none ${
                 hoveredIndex === index
                   ? unit

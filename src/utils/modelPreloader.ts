@@ -293,18 +293,41 @@ export function retargetClipToModel(
       cloned.name = matchedName + (propName === '.translation' ? '.position' : propName);
       const values = cloned.values;
       if (values && values.length >= 3) {
-        const baseRootX = values[0];
-        const baseRootZ = values[2];
+        const targetBone = modelBoneMap.get(matchedName);
+        const targetRestPos = targetBone ? targetBone.position : null;
+        const targetRestY = targetRestPos ? targetRestPos.y : values[1];
+        const animBaseY = values.length >= 2 ? values[1] : 1.0;
+        const heightScale = (animBaseY > 0.001 && targetRestY > 0.001) ? (targetRestY / animBaseY) : 1.0;
+
+        const baseRootX = targetRestPos ? targetRestPos.x : values[0];
+        const baseRootZ = targetRestPos ? targetRestPos.z : values[2];
         const numKeys = cloned.times.length;
         for (let i = 0; i < numKeys; i++) {
           values[i * 3 + 0] = baseRootX;
-          // values[i * 3 + 1] (Y: vertical elevation, jump, stomp) is 100% preserved
+          // Scale vertical elevation (steps, jumps, bobbing) relative to the model's actual rest hip height.
+          // This guarantees characters with short legs (e.g. Chopper 1m skin with 0.268m hips)
+          // never get their hips yanked up or legs stretched by adult animation keyframes.
+          const deltaY = values[i * 3 + 1] - animBaseY;
+          values[i * 3 + 1] = targetRestY + deltaY * heightScale;
           values[i * 3 + 2] = baseRootZ;
         }
       }
       newTracks.push(cloned);
       continue;
     }
+
+    // Preserve rotations & quaternions retargeted to matched bone
+    if (propName === '.quaternion' || propName === '.rotation') {
+      const cloned = track.clone();
+      cloned.name = matchedName + (propName === '.rotation' ? '.quaternion' : propName);
+      newTracks.push(cloned);
+      continue;
+    }
+
+    // Preserve any other property tracks
+    const cloned = track.clone();
+    cloned.name = matchedName + propName;
+    newTracks.push(cloned);
   }
 
   return new THREE.AnimationClip(clip.name, clip.duration, newTracks);
@@ -406,7 +429,7 @@ export async function loadChampionSkinModel(
     const res = await tryLoadCandidateModel(candidateUrls);
     if (res) {
       const [walkClip, slashClip] = await Promise.all([
-        tryLoadAnimationClip(['./models/ZoroWalk.glb', '/models/ZoroWalk.glb'], 'walk'),
+        tryLoadAnimationClip(['./models/Walk.glb', '/models/Walk.glb', './models/ZoroWalk.glb', '/models/ZoroWalk.glb'], 'walk'),
         tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1'),
       ]);
       return {
@@ -801,9 +824,17 @@ export async function loadChampionSkinModel(
       './models/Marine.glb',
       '/models/Marine.glb',
     ];
+    const slashClip = await tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1');
     const res = await tryLoadCandidateModel(candidateUrls);
     if (res) {
-      return { ...res.data, url: res.url, isDedicatedSkin: true };
+      return {
+        ...res.data,
+        url: res.url,
+        isDedicatedSkin: true,
+        customAnimations: {
+          slash1: slashClip || undefined,
+        },
+      };
     }
     return null;
   }
@@ -840,7 +871,7 @@ export async function loadChampionSkinModel(
 
 export async function loadChampionAttackAnimation(unitId: string): Promise<THREE.AnimationClip | null> {
   const normId = (unitId || '').toLowerCase();
-  if (normId === 'zoro' || normId === 'mihawk' || normId === 'shanks' || normId === 'tashigi') {
+  if (normId === 'zoro' || normId === 'mihawk' || normId === 'shanks' || normId === 'tashigi' || normId.startsWith('marine')) {
     return tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1');
   }
   if (normId === 'crocodile') {

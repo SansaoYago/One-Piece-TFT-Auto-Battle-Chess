@@ -214,17 +214,23 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
         // Non-attack transitions (walk, idle, turns)
         const prevAction = activeActionRef.current;
         
-        // Don't reset if already playing to avoid stutters/micro-freezes
-        if (!targetAction.isRunning()) {
+        targetAction.enabled = true;
+        targetAction.paused = false;
+        targetAction.setLoop(THREE.LoopRepeat, Infinity);
+        targetAction.clampWhenFinished = false;
+        targetAction.setEffectiveTimeScale(animationName === 'walk' ? 1.10 : 1.0);
+        targetAction.setEffectiveWeight(1);
+
+        // Only reset if it is not currently running or has finished, to avoid micro-freezes/stutters
+        if (!targetAction.isRunning() && targetAction.time === 0) {
           targetAction.reset();
         }
-        targetAction.setEffectiveTimeScale(1.1);
-        targetAction.setEffectiveWeight(1);
-        targetAction.fadeIn(0.12);
+
+        targetAction.fadeIn(0.10);
         targetAction.play();
 
         if (prevAction && prevAction !== targetAction) {
-          prevAction.fadeOut(0.12);
+          prevAction.fadeOut(0.10);
         }
         activeActionRef.current = targetAction;
       }
@@ -251,16 +257,21 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     const fov = 50;
     const camera = new THREE.PerspectiveCamera(fov, width / height, 0.1, 100);
 
-    // Dynamic isometric camera framing matched to canonical character height
+    // Dynamic isometric camera framing
+    const baselineHeight = 1.45; // Luffy 1.74m canonical baseline
     const normId = unitId?.toLowerCase() || '';
     const isMonster = normId === 'chopper' && Boolean(isTransformed);
     const loreHeight = getChampionLoreHeightMeters(unitId, isTransformed);
     const targetHeight = (loreHeight / 1.74) * 1.45;
 
-    // Tactical top-down isometric angle (~48°) scaled to the character's proportional height
-    // Monster Chopper is 2x2 with tall antlers and horns: provide expansive camera framing so he is NEVER cut off
-    const yCenter = isMonster ? targetHeight * 0.38 : targetHeight * 0.52;
-    const camDist = (isMonster ? 1.85 : 1.35) * Math.max(1.15, targetHeight);
+    // Tactical top-down isometric angle (~48°)
+    // For standard 1x1 champions, the camera distance is anchored to the common 1.74m baseline.
+    // This ensures a 1.0m character like Chopper visually appears at his true 1.0m canonical size (57% of Luffy),
+    // rather than having the camera zoom in and artificially magnifying him to adult size.
+    // Monster Chopper (2x2 giant) expands camera distance to accommodate his colossal 3.8m form.
+    const refHeight = isMonster ? targetHeight : baselineHeight;
+    const yCenter = isMonster ? targetHeight * 0.54 : baselineHeight * 0.52;
+    const camDist = (isMonster ? 1.40 : 1.35) * refHeight;
     const camY = yCenter + camDist * 0.7431; // sin(48°)
     const camZ = camDist * 0.6691;          // cos(48°)
     camera.position.set(0, camY, camZ);
@@ -451,18 +462,9 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
               if (!clip) return undefined;
               // Clean clip: ensure no non-Hips bone has position/translation tracks that stretch limbs
               const cleanClip = sanitizeAnimationClip(clip);
-              const directTrackCount = cleanClip.tracks.filter((track) => {
-                const dotIndex = track.name.lastIndexOf('.');
-                if (dotIndex < 0) return false;
-                return Boolean(clonedRig.getObjectByName(track.name.slice(0, dotIndex)));
-              }).length;
-              // Skins use the same base skeleton. Keep the original clip so
-              // Three.js resolves its tracks against the skin bones directly.
-              // Retarget only clips exported with a different bone naming scheme.
-              const retargeted = directTrackCount > 0 ? undefined : retargetClipToModel(cleanClip, clonedRig, unitId);
-              const usableClip = directTrackCount > 0
-                ? cleanClip
-                : retargeted && retargeted.tracks.length > 0
+              // Always retarget clip tracks so all bones match the target skeleton precisely
+              const retargeted = retargetClipToModel(cleanClip, clonedRig, unitId);
+              const usableClip = retargeted && retargeted.tracks.length > 0
                 ? sanitizeAnimationClip(retargeted)
                 : cleanClip;
               return mixer!.clipAction(usableClip);
@@ -475,29 +477,23 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
             // sitting in clean POSE T as his base pre-battle and default pose.
             const idleClipToUse = isZoro ? undefined : (customSkin?.customAnimations?.idle || customSkin?.animations?.[0]);
 
-            let walkClipToUse = isChopper
-              ? undefined
-              : isFemale
-              ? rigData.animations.femaleWalk || rigData.animations.walk
-              : rigData.animations.walk;
+            // Walk.glb is the standard male walk animation (26 frames)
+            const defaultMaleWalk = rigData.animations.walk;
+            let walkClipToUse = isFemale
+              ? (rigData.animations.femaleWalk || defaultMaleWalk)
+              : (defaultMaleWalk || customSkin?.customAnimations?.walk);
 
-            // Dedicated Zoro walk
-            if (isZoro && customSkin?.customAnimations?.walk) {
-              walkClipToUse = customSkin.customAnimations.walk;
-            }
-
-            // Dedicated walk clips take priority when a character has one.
-            if (customSkin?.customAnimations?.walk) {
+            // Dedicated walk clips take priority when a female character has one
+            if (isFemale && customSkin?.customAnimations?.walk) {
               walkClipToUse = customSkin.customAnimations.walk;
             }
 
             const idleAction = getRetargetedAction(idleClipToUse);
             const walkAction = getRetargetedAction(walkClipToUse);
 
-            // Dedicated attack clips for Zoro (Slash1), Nami (NamiAtk), or Usopp (UsoppAtk)
-            const championAttackClip = isChopper
-              ? undefined
-              : isZoro
+            // Dedicated attack clips for Zoro & Marines (Slash1), Nami (NamiAtk), or Usopp (UsoppAtk)
+            const isMarine = normId.startsWith('marine') || normId.includes('marine');
+            const championAttackClip = (isZoro || isMarine)
               ? (customSkin?.customAnimations?.slash1 || customSkin?.customAnimations?.attack || customAttackClip)
               : isNami
               ? (customSkin?.customAnimations?.attack || customAttackClip)
@@ -506,35 +502,29 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
               : customAttackClip;
             const customAttackAction = getRetargetedAction(championAttackClip || undefined);
 
-            const punchAction = isChopper ? undefined : customAttackAction || getRetargetedAction(rigData.animations.punch || rigData.animations.punch1);
-            const punch2Action = isChopper ? undefined : customAttackAction || getRetargetedAction(rigData.animations.punch2);
-            const punch3Action = isChopper ? undefined : customAttackAction || getRetargetedAction(rigData.animations.punch3);
-            const punch4Action = isChopper ? undefined : customAttackAction || getRetargetedAction(rigData.animations.punch4);
+            const punchAction = customAttackAction || getRetargetedAction(rigData.animations.punch || rigData.animations.punch1);
+            const punch2Action = customAttackAction || getRetargetedAction(rigData.animations.punch2);
+            const punch3Action = customAttackAction || getRetargetedAction(rigData.animations.punch3);
+            const punch4Action = customAttackAction || getRetargetedAction(rigData.animations.punch4);
 
             // Dedicated Sanji kicks or modular rig kicks
             const sanjiKick1Action = getRetargetedAction(customSkin?.customAnimations?.kick1);
             const sanjiKick2Action = getRetargetedAction(customSkin?.customAnimations?.kick2);
             const sanjiKick3Action = getRetargetedAction(customSkin?.customAnimations?.kick3);
 
-            // Nami and Usopp STRICTLY have no kicks: only their unique attack clip (customAttackAction) or punch
-            const isNoKickChampion = isNami || isUsopp;
-            const kickAction = isChopper
-              ? undefined
-              : isNoKickChampion
+            // Nami, Usopp and Chopper have no standard human high kicks: map to their unique attack/punch
+            const isNoKickChampion = isNami || isUsopp || isChopper;
+            const kickAction = isNoKickChampion
               ? (customAttackAction || punchAction)
               : (sanjiKick1Action || getRetargetedAction(rigData.animations.kick1 || rigData.animations.kick) || customAttackAction);
-            const kick2Action = isChopper
-              ? undefined
-              : isNoKickChampion
+            const kick2Action = isNoKickChampion
               ? (customAttackAction || punchAction)
               : (sanjiKick2Action || getRetargetedAction(rigData.animations.kick2) || kickAction);
-            const kick3Action = isChopper
-              ? undefined
-              : isNoKickChampion
+            const kick3Action = isNoKickChampion
               ? (customAttackAction || punchAction)
               : (sanjiKick3Action || getRetargetedAction(rigData.animations.kick3) || kickAction);
-            const turnLeftAction = isChopper ? undefined : getRetargetedAction(rigData.animations.turnLeft) || walkAction;
-            const turnRightAction = isChopper ? undefined : getRetargetedAction(rigData.animations.turnRight) || walkAction;
+            const turnLeftAction = getRetargetedAction(rigData.animations.turnLeft) || walkAction;
+            const turnRightAction = getRetargetedAction(rigData.animations.turnRight) || walkAction;
             const deathAction = getRetargetedAction(rigData.animations.death);
 
             if (idleAction) actions['idle'] = idleAction;
@@ -590,6 +580,18 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
               if (customAttackAction) {
                 actions['attack'] = customAttackAction;
                 actions['slash1'] = customAttackAction;
+                if (isMarine) {
+                  // Standard attack for all common marines is strictly Slash1
+                  actions['punch'] = customAttackAction;
+                  actions['punch1'] = customAttackAction;
+                  actions['punch2'] = customAttackAction;
+                  actions['punch3'] = customAttackAction;
+                  actions['punch4'] = customAttackAction;
+                  actions['kick'] = customAttackAction;
+                  actions['kick1'] = customAttackAction;
+                  actions['kick2'] = customAttackAction;
+                  actions['kick3'] = customAttackAction;
+                }
               }
             }
             if (turnLeftAction) actions['turnLeft'] = turnLeftAction;
@@ -616,11 +618,17 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
             mixer.update(0.01);
           }
 
-          // 6. Compute exact model height and apply proportional scaling based on canonical lore meters
-          clonedRig.updateMatrixWorld(true);
+          // 6. Compute exact model height strictly from the static rest pose of the SKIN.
+          // This guarantees the character's height is determined 100% by the SKIN geometry,
+          // completely independent of and never distorted by movement or animations.
+          const skinBox = new THREE.Box3().setFromObject(sourceModel);
+          const skinSize = new THREE.Vector3();
+          skinBox.getSize(skinSize);
+          const skinHeight = skinSize.y > 0.0001 ? skinSize.y : Math.max(skinSize.x, skinSize.z);
+
           const loreHeight = getChampionLoreHeightMeters(unitId, isTransformed);
           // Baseline Luffy (1.74m) is rendered at targetHeight = 1.45:
-          // Chopper (1.0m) -> 0.833
+          // Chopper (1.0m canonical skin) -> 0.8333
           // Luffy (1.74m) -> 1.450
           // Zoro (1.81m) -> 1.508
           // Smoker (2.09m) -> 1.741 (>2m, taller than 1.60m/1.85m)
@@ -628,21 +636,17 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
           // Monster Chopper (3.80m) -> 3.165
           const targetHeight = (loreHeight / 1.74) * 1.45;
 
-          const measuredBox = new THREE.Box3().setFromObject(clonedRig);
-          const measuredSize = new THREE.Vector3();
-          measuredBox.getSize(measuredSize);
-          const effectiveHeight = measuredSize.y > 0.0001 ? measuredSize.y : Math.max(measuredSize.x, measuredSize.z);
-          const scaleFactor = effectiveHeight > 0.0001 ? targetHeight / effectiveHeight : 1.0;
+          const scaleFactor = skinHeight > 0.0001 ? targetHeight / skinHeight : 1.0;
           clonedRig.scale.setScalar(scaleFactor);
           clonedRig.updateMatrixWorld(true);
 
           // 7. Center horizontally and place soles of feet cleanly at y = 0
-          const finalBox = new THREE.Box3().setFromObject(clonedRig);
-          const finalCenter = new THREE.Vector3();
-          finalBox.getCenter(finalCenter);
-          clonedRig.position.x = -finalCenter.x;
-          clonedRig.position.z = -finalCenter.z;
-          clonedRig.position.y = -finalBox.min.y;
+          // Measured from the static skin geometry scaled by scaleFactor
+          const skinCenter = new THREE.Vector3();
+          skinBox.getCenter(skinCenter);
+          clonedRig.position.x = -skinCenter.x * scaleFactor;
+          clonedRig.position.z = -skinCenter.z * scaleFactor;
+          clonedRig.position.y = -skinBox.min.y * scaleFactor;
           clonedRig.updateMatrixWorld(true);
 
           // Save baseline transforms for procedural combat dynamics

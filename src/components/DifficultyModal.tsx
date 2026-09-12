@@ -31,6 +31,7 @@ export const DifficultyModal: React.FC<DifficultyModalProps> = ({
     >
       <div
         id="difficulty-modal-card"
+        data-modal-container="true"
         onClick={(e) => e.stopPropagation()}
         className="relative w-full max-w-2xl rounded-3xl bg-slate-900/95 border-2 border-amber-500/40 p-6 sm:p-8 shadow-2xl text-slate-100 flex flex-col gap-6 ring-1 ring-white/10 max-h-[90vh] overflow-y-auto"
       >

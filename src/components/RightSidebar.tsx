@@ -25,6 +25,8 @@ interface RightSidebarProps {
   onEquipItemToUnit: (itemId: string, unit: UnitInstance) => void;
   onItemClick?: (item: ItemData) => void;
   onDragStartItem?: (e: React.DragEvent, itemId: string) => void;
+  selectedSynergyId?: string | null;
+  onSelectSynergyId?: (id: string | null) => void;
 }
 
 export const RightSidebar: React.FC<RightSidebarProps> = ({
@@ -36,6 +38,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   onEquipItemToUnit,
   onItemClick,
   onDragStartItem,
+  selectedSynergyId,
+  onSelectSynergyId,
 }) => {
   // On mobile / screens below tablet (< 1024px), keep closed by default (null)
   const [activeTab, setActiveTab] = useState<'SYNERGIES' | 'ITEMS' | 'DPS' | null>(() => {
@@ -44,7 +48,12 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     }
     return null;
   });
-  const [selectedSynergyId, setSelectedSynergyId] = useState<string | null>(null);
+  const [internalSelectedSynergyId, setInternalSelectedSynergyId] = useState<string | null>(null);
+  const activeSynergyId = selectedSynergyId !== undefined ? selectedSynergyId : internalSelectedSynergyId;
+  const setSynergyId = (id: string | null) => {
+    if (onSelectSynergyId) onSelectSynergyId(id);
+    else setInternalSelectedSynergyId(id);
+  };
   const [inspectedItem, setInspectedItem] = useState<ItemData | null>(null);
 
   // Friendly units on the board for DPS and synergy checks
@@ -85,11 +94,11 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   }, [activeSynergies]);
 
   // Selected synergy details for in-container modal view
-  const selectedSynergyData = selectedSynergyId
-    ? boardSynergiesList.find((s) => s.trait.id === selectedSynergyId) ||
-      (SYNERGY_DATABASE[selectedSynergyId]
+  const selectedSynergyData = activeSynergyId
+    ? boardSynergiesList.find((s) => s.trait.id === activeSynergyId) ||
+      (SYNERGY_DATABASE[activeSynergyId]
         ? {
-            trait: SYNERGY_DATABASE[selectedSynergyId],
+            trait: SYNERGY_DATABASE[activeSynergyId],
             count: 0,
             activeTierIndex: -1,
             units: [],
@@ -136,7 +145,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                 return (
                   <div
                     key={syn.trait.id}
-                    onClick={() => setSelectedSynergyId(syn.trait.id)}
+                    data-modal-toggle="true"
+                    onClick={() => setSynergyId(syn.trait.id)}
                     className={`group flex items-center justify-end gap-2.5 px-3 py-1.5 rounded-2xl transition-all duration-200 cursor-pointer ${
                       isActive
                         ? 'bg-slate-950/70 hover:bg-slate-900/90 border border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.2)] ring-1 ring-amber-400/30'
@@ -356,10 +366,11 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                             title={`Equipar em ${u.name}`}
                           >
                             <ChampionVisual
-                              unitId={u.id}
+                              unitId={u.unitId}
+                              avatarFallback={u.avatarUrl || '🏴‍☠️'}
                               visualAssets={u.visualAssets}
-                              fallbackAvatar={u.avatarUrl}
-                              unitColor={u.color}
+                              mode="portrait"
+                              alt={u.name}
                               className="w-6 h-6 rounded-lg text-xs"
                             />
                             <span className="text-[8px] font-bold text-slate-300 truncate w-full">
@@ -460,12 +471,15 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       </div>
 
       {/* 2. Vertical Icon-Only Mode Tabs Menu (Attached to the Far Right) */}
-      <div className="flex flex-col gap-1.5 p-1 bg-slate-950/60 backdrop-blur-md border border-slate-700/50 rounded-2xl shadow-xl">
+      <div
+        data-modal-toggle="true"
+        className="flex flex-col gap-1.5 p-1 bg-slate-950/60 backdrop-blur-md border border-slate-700/50 rounded-2xl shadow-xl"
+      >
         {/* Synergies Tab Button */}
         <button
           onClick={() => {
             setActiveTab((prev) => (prev === 'SYNERGIES' ? null : 'SYNERGIES'));
-            setSelectedSynergyId(null);
+            setSynergyId(null);
           }}
           className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 cursor-pointer ${
             activeTab === 'SYNERGIES'
@@ -481,7 +495,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         <button
           onClick={() => {
             setActiveTab((prev) => (prev === 'ITEMS' ? null : 'ITEMS'));
-            setSelectedSynergyId(null);
+            setSynergyId(null);
           }}
           className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 cursor-pointer relative ${
             activeTab === 'ITEMS'
@@ -502,7 +516,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         <button
           onClick={() => {
             setActiveTab((prev) => (prev === 'DPS' ? null : 'DPS'));
-            setSelectedSynergyId(null);
+            setSynergyId(null);
           }}
           className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 cursor-pointer ${
             activeTab === 'DPS'
@@ -517,8 +531,15 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
 
       {/* 3. Detailed Synergy Modal / Popover (Shows when user clicks a synergy row) */}
       {selectedSynergyData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm select-none">
-          <div className="relative w-full max-w-sm bg-slate-900 border-2 border-amber-500/80 rounded-2xl p-4 shadow-2xl space-y-3">
+        <div
+          onClick={() => setSynergyId(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm select-none"
+        >
+          <div
+            data-modal-container="true"
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-sm bg-slate-900 border-2 border-amber-500/80 rounded-2xl p-4 shadow-2xl space-y-3"
+          >
             
             {/* Header */}
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
@@ -543,7 +564,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               </div>
 
               <button
-                onClick={() => setSelectedSynergyId(null)}
+                onClick={() => setSynergyId(null)}
                 className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />

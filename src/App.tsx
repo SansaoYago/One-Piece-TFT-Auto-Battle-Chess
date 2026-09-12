@@ -152,6 +152,7 @@ export default function App() {
 
   // Selection & Inspector Modal
   const [selectedUnit, setSelectedUnit] = useState<UnitInstance | null>(null);
+  const [selectedSynergyId, setSelectedSynergyId] = useState<string | null>(null);
   const [changedSkillUnitIdThisRound, setChangedSkillUnitIdThisRound] = useState<string | null>(null);
 
   // === Character Animation Test Mode State ===
@@ -1160,6 +1161,46 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isShopOpen, gold, level, xp]);
 
+  // === Mechanic: Global Click-Outside Closes All Active Modals (Unit Inspector, Shop, Synergies, Difficulty) ===
+  useEffect(() => {
+    const handleGlobalClick = (event: MouseEvent) => {
+      // If no modal, drawer, or inspector is active, nothing to close
+      if (!selectedUnit && !isShopOpen && !selectedSynergyId && !isDifficultyModalOpen) {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+
+      // 1. If clicked inside any modal container, do not close
+      if (target.closest('[data-modal-container="true"]')) {
+        return;
+      }
+
+      // 2. If clicked on a designated modal toggle button (e.g. Shop toggle button, Synergy tab), do not close
+      if (target.closest('[data-modal-toggle="true"]')) {
+        return;
+      }
+
+      // 3. If clicked on a unit slot (bench or board unit), unit selection handles it
+      if (target.closest('[data-unit-slot="true"]') || target.closest('[data-unit-tile="true"]')) {
+        return;
+      }
+
+      // 4. Otherwise, user clicked outside any active modal (on the arena, canvas, background, etc.) -> close all modals!
+      setSelectedUnit(null);
+      setIsShopOpen(false);
+      setSelectedSynergyId(null);
+      setIsDifficultyModalOpen(false);
+    };
+
+    // Use capture phase to ensure clicks across the 3D canvas and document are caught
+    window.addEventListener('click', handleGlobalClick, true);
+    return () => {
+      window.removeEventListener('click', handleGlobalClick, true);
+    };
+  }, [selectedUnit, isShopOpen, selectedSynergyId, isDifficultyModalOpen]);
+
   // === Shop Actions ===
   const handleRerollShop = () => {
     if (gold < 2) return;
@@ -1658,16 +1699,28 @@ export default function App() {
       (id) => ITEM_DATABASE[id]?.isSpecialActivation
     );
 
+    const safeNotify = (msg: string) => {
+      try {
+        if (typeof window !== 'undefined' && window.alert) {
+          window.alert(msg);
+        } else {
+          console.warn(msg);
+        }
+      } catch {
+        console.warn(msg);
+      }
+    };
+
     // If it's a Special Item (e.g. Orbe do Despertar)
     if (itemData.isSpecialActivation) {
       if (currentSpecialItem) {
-        alert(
+        safeNotify(
           `A unidade ${targetUnit.name} já possui 1 Item Especial equipado no Slot Especial!`
         );
         return;
       }
       if (targetUnit.stars < 2) {
-        alert(
+        safeNotify(
           `O item "${itemData.name}" só pode ser equipado em campeões de 2★ ou 3★! Unidades de 1★ não possuem maturidade para despertar o Ataque Especial.`
         );
         return;
@@ -1675,7 +1728,7 @@ export default function App() {
     } else {
       // It's a Battle Item (max 2)
       if (currentBattleItems.length >= 2) {
-        alert(
+        safeNotify(
           `A unidade ${targetUnit.name} já atingiu o limite de 2 Itens de Batalha equipados!`
         );
         return;
@@ -1687,7 +1740,7 @@ export default function App() {
         itemData.applicableTraits?.includes(t)
       );
       if (!hasEligibleTrait) {
-        alert(
+        safeNotify(
           `O item ${itemData.name} só pode ser equipado em unidades com os traços: ${itemData.applicableTraits.join(', ')}!`
         );
         return;
@@ -1716,6 +1769,18 @@ export default function App() {
       bonusHp = 200;
     } else if (itemId === 'lente_clarividencia') {
       bonusAp = 35;
+    } else if (itemId === 'garrafa_sake') {
+      const isDrunkard = targetUnit.unitId === 'zoro' || targetUnit.unitId === 'shanks';
+      bonusAd = isDrunkard ? 40 : 20;
+      bonusHp = isDrunkard ? 300 : 150;
+      bonusAs = isDrunkard ? 0.30 : 0.15;
+    } else if (itemId === 'frasco_rum') {
+      bonusAs = 0.20;
+    } else if (itemId === 'capa_almirante') {
+      bonusHp = 400;
+    } else if (itemId === 'canhao_flutuante') {
+      bonusAd = 35;
+      bonusAp = 20;
     }
 
     const updatedUnit: UnitInstance = {
@@ -1793,6 +1858,18 @@ export default function App() {
         baseHp += 200;
       } else if (itId === 'lente_clarividencia') {
         baseAp += 35;
+      } else if (itId === 'garrafa_sake') {
+        const isDrunkard = targetUnit.unitId === 'zoro' || targetUnit.unitId === 'shanks';
+        baseAd += isDrunkard ? 40 : 20;
+        baseHp += isDrunkard ? 300 : 150;
+        baseAs += isDrunkard ? 0.30 : 0.15;
+      } else if (itId === 'frasco_rum') {
+        baseAs += 0.20;
+      } else if (itId === 'capa_almirante') {
+        baseHp += 400;
+      } else if (itId === 'canhao_flutuante') {
+        baseAd += 35;
+        baseAp += 20;
       }
     });
 
@@ -2137,6 +2214,8 @@ export default function App() {
                 benchUnits={displayedBenchSlots}
                 playerItems={playerItems}
                 selectedUnit={selectedUnit}
+                selectedSynergyId={selectedSynergyId}
+                onSelectSynergyId={setSelectedSynergyId}
                 onEquipItemToUnit={handleEquipItemToUnit}
                 onDragStartItem={(e, itemId) => {
                   setDraggedItemId(itemId);

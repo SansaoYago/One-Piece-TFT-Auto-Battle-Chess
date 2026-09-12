@@ -4,8 +4,8 @@ import { UnitVisualAssets } from '../types/game';
 export type VisualMode = 'portrait' | 'battle' | 'dragging';
 
 interface ChampionVisualProps {
-  unitId: string;
-  avatarFallback: string;
+  unitId?: string;
+  avatarFallback?: string;
   visualAssets?: UnitVisualAssets;
   customSrc?: string;
   mode?: VisualMode;
@@ -16,8 +16,8 @@ interface ChampionVisualProps {
 }
 
 export const ChampionVisual: React.FC<ChampionVisualProps> = ({
-  unitId,
-  avatarFallback,
+  unitId = '',
+  avatarFallback = '🏴‍☠️',
   visualAssets,
   customSrc,
   mode = 'portrait',
@@ -29,7 +29,8 @@ export const ChampionVisual: React.FC<ChampionVisualProps> = ({
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Normalize unit ID for common aliases and variants
-  const getNormalizedId = (id: string): string => {
+  const getNormalizedId = (id?: string): string => {
+    if (!id || typeof id !== 'string') return '';
     const lower = id.toLowerCase();
     if (lower.startsWith('marine')) return 'marine';
     if (lower === 'smoker') return 'smoke';
@@ -40,6 +41,7 @@ export const ChampionVisual: React.FC<ChampionVisualProps> = ({
   // Build ordered candidate URLs to try sequentially
   const getCandidateUrls = (): string[] => {
     if (customSrc) return [customSrc];
+    if (!unitId) return [];
 
     const candidates: string[] = [];
     const normId = getNormalizedId(unitId);
@@ -104,11 +106,13 @@ export const ChampionVisual: React.FC<ChampionVisualProps> = ({
 
   const hasExhaustedAll = attemptIndex >= candidates.length || !currentSrc;
 
+  const safeFallback = avatarFallback || '🏴‍☠️';
   const isFallbackAnUrl =
-    avatarFallback.startsWith('http://') ||
-    avatarFallback.startsWith('https://') ||
-    avatarFallback.startsWith('/') ||
-    avatarFallback.startsWith('./');
+    typeof safeFallback === 'string' &&
+    (safeFallback.startsWith('http://') ||
+      safeFallback.startsWith('https://') ||
+      safeFallback.startsWith('/') ||
+      safeFallback.startsWith('./'));
 
   if (hasExhaustedAll) {
     if (isFallbackAnUrl) {
@@ -120,13 +124,13 @@ export const ChampionVisual: React.FC<ChampionVisualProps> = ({
     }
     return (
       <span className={`inline-flex items-center justify-center select-none ${className}`}>
-        {avatarFallback}
+        {safeFallback}
       </span>
     );
   }
 
   const isMarine =
-    unitId.toLowerCase().includes('marine') ||
+    Boolean(unitId && unitId.toLowerCase().includes('marine')) ||
     (currentSrc ? currentSrc.toLowerCase().includes('marine') : false);
 
   return (

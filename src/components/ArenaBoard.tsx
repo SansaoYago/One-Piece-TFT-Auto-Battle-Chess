@@ -105,6 +105,32 @@ const getCleanChampionName = (rawName: string): string => {
   return parts[parts.length - 1];
 };
 
+// Canonical vertical anchor percentage for model feet within the 3D canvas viewport
+const FEET_ANCHOR_Y_PERCENT = 71.5;
+
+// Precise tile center calculations taking into account responsive tile sizes and gap spacing
+const getTileCenterPercent = (col: number, row: number) => {
+  const tileSize = 78;
+  const gap = 10;
+  const totalW = BOARD_COLS * tileSize + (BOARD_COLS - 1) * gap;
+  const totalH = BOARD_ROWS * tileSize + (BOARD_ROWS - 1) * gap;
+  return {
+    leftPercent: ((col * (tileSize + gap) + tileSize / 2) / totalW) * 100,
+    topPercent: ((row * (tileSize + gap) + tileSize / 2) / totalH) * 100,
+  };
+};
+
+const getContinuousTileCenterPercent = (x: number, y: number) => {
+  const tileSize = 78;
+  const gap = 10;
+  const totalW = BOARD_COLS * tileSize + (BOARD_COLS - 1) * gap;
+  const totalH = BOARD_ROWS * tileSize + (BOARD_ROWS - 1) * gap;
+  return {
+    leftPercent: ((x * (tileSize + gap) + tileSize / 2) / totalW) * 100,
+    topPercent: ((y * (tileSize + gap) + tileSize / 2) / totalH) * 100,
+  };
+};
+
 export const ArenaBoard: React.FC<ArenaBoardProps> = ({
   boardUnits,
   combatUnits = [],
@@ -196,6 +222,10 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
     }
 
     const tokenDims = getChampionTokenDimensions(unit.unitId, combatState?.isTransformed);
+    const isMonsterChopper = unit.unitId === 'chopper' && Boolean(combatState?.isTransformed);
+    const headBottomPercent = isMonsterChopper
+      ? 100
+      : Math.min(100, Math.round(28.5 + 61.5 * Math.min(1.2, tokenDims.ratio)));
 
     return (
       <div
@@ -206,14 +236,17 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
             : isDead ? '' : ''
         }`}
         style={{
-          transformOrigin: 'bottom center',
-          transform: 'rotateZ(30deg) rotateX(-55deg) translateZ(8px)',
+          transformOrigin: `50% ${FEET_ANCHOR_Y_PERCENT}%`,
+          transform: 'rotateZ(30deg) rotateX(-55deg)',
           transformStyle: 'preserve-3d',
         }}
       >
         {/* Top Floating Overlay: Structured Clean HUD (HP, MP, Stars, Items, Name) - Positioned with safe head clearance above 3D model */}
         {showUnitHud && !isDead && (
-          <div className="absolute bottom-full mb-2 sm:mb-3 lg:mb-4 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none z-30 animate-in fade-in duration-200 whitespace-nowrap">
+          <div
+            style={{ bottom: `${headBottomPercent}%` }}
+            className="absolute mb-2 sm:mb-3 lg:mb-4 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none z-30 animate-in fade-in duration-200 whitespace-nowrap"
+          >
             {/* Casting / Stun Floating Status Pill */}
             {isCasting && combatState?.castingSkillName && (
               <div className={`mb-1 px-2 py-0.5 rounded-full ${
@@ -448,6 +481,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
               return (
                 <div
                   key={`${col}-${row}`}
+                  data-unit-tile={prepUnit ? 'true' : undefined}
                   draggable={Boolean(prepUnit && isPlayerHalf && !isCombatPhase && !isViewingOpponentArena)}
                   onDragStart={(e) => {
                     if (prepUnit && isPlayerHalf && !isCombatPhase && !isViewingOpponentArena) {
@@ -600,9 +634,8 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
               {boardUnits.map((pUnit) => {
                 if (pUnit.gridX < 0 || pUnit.gridY < 0) return null;
                 const isBeingDragged = draggedUnit?.instanceId === pUnit.instanceId;
-                // Precise continuous percentage position inside the 8x5 grid
-                const leftPercent = ((pUnit.gridX + 0.5) / BOARD_COLS) * 100;
-                const topPercent = ((pUnit.gridY + 0.5) / BOARD_ROWS) * 100;
+                // Precise tile center percentage taking responsive tile dimensions and gaps into account
+                const { leftPercent, topPercent } = getTileCenterPercent(pUnit.gridX, pUnit.gridY);
 
                 return (
                   <div
@@ -613,15 +646,15 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                     style={{
                       left: `${leftPercent}%`,
                       top: `${topPercent}%`,
-                      transform: 'translate(-50%, -82%)',
+                      transform: `translate(-50%, -${FEET_ANCHOR_Y_PERCENT}%)`,
                       transformStyle: 'preserve-3d',
                       zIndex: pUnit.gridY * 10 + pUnit.gridX + 10,
                     }}
                   >
-                    {/* Floor Shadow Disc underneath the champion feet */}
+                    {/* Floor Shadow Disc centered precisely underneath the champion feet */}
                     <div
-                      className="absolute left-1/2 top-[82%] -translate-x-1/2 -translate-y-1/2 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-black/70 blur-[3px] pointer-events-none"
-                      style={{ transform: 'translateZ(2px)' }}
+                      className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-black/70 blur-[3px] pointer-events-none"
+                      style={{ top: `${FEET_ANCHOR_Y_PERCENT}%`, transform: 'translate(-50%, -50%) translateZ(1px)' }}
                     />
 
                     {/* Upright 3D Tactical Billboarding Unit Token */}
@@ -635,7 +668,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
           {/* COMBAT PHASE: DEDICATED CONTINUOUS OVERLAY LAYER FOR ALL COMBAT UNITS */}
           {isCombatPhase && (
             <div
-              className="absolute inset-7 pointer-events-none z-30"
+              className="absolute inset-6 sm:inset-7 pointer-events-none z-30"
               style={{ transformStyle: 'preserve-3d' }}
             >
               {combatUnits
@@ -648,18 +681,17 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                 })
                 .map((cUnit) => {
                 const isMonster2x2 = cUnit.unitId === 'chopper' && Boolean(cUnit.isTransformed);
-                // Precise continuous percentage position inside the 8x6 grid
-                const leftPercent = ((cUnit.currentPosX + 0.5) / BOARD_COLS) * 100;
-                const topPercent = ((cUnit.currentPosY + 0.5) / BOARD_ROWS) * 100;
+                // Continuous exact percentage position inside the 8x5 grid
+                const { leftPercent, topPercent } = getContinuousTileCenterPercent(cUnit.currentPosX, cUnit.currentPosY);
 
                 return (
                   <div
                     key={cUnit.instanceId}
-                    className="absolute pointer-events-auto transition-transform duration-100 ease-linear"
+                    className="absolute pointer-events-auto transition-[left,top] duration-150 ease-linear"
                     style={{
                       left: `${leftPercent}%`,
                       top: `${topPercent}%`,
-                      transform: 'translate(-50%, -82%)',
+                      transform: `translate(-50%, -${FEET_ANCHOR_Y_PERCENT}%)`,
                       transformStyle: 'preserve-3d',
                       zIndex: (Math.round(cUnit.currentPosY) * 10 + Math.round(cUnit.currentPosX) + 10) + (isMonster2x2 ? 15 : 0),
                     }}
@@ -667,10 +699,10 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                     {/* Floor Shadow Disc underneath the combatant feet (2x2 expanded for Monster Chopper) */}
                     {!cUnit.isDefeated && cUnit.hp > 0 && (
                       <div
-                        className={`absolute left-1/2 top-[82%] -translate-x-1/2 -translate-y-1/2 ${
+                        className={`absolute left-1/2 -translate-x-1/2 -translate-y-1/2 ${
                           isMonster2x2 ? 'w-28 h-28 bg-black/85 blur-[6px]' : 'w-12 h-12 bg-black/70 blur-[4px]'
                         } rounded-full pointer-events-none transition-all duration-300`}
-                        style={{ transform: 'translateZ(2px)' }}
+                        style={{ top: `${FEET_ANCHOR_Y_PERCENT}%`, transform: 'translate(-50%, -50%) translateZ(1px)' }}
                       />
                     )}
 
@@ -682,110 +714,54 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
             </div>
           )}
 
-          {/* COMBAT PHASE: FLOATING COMBAT TEXTS LAYER */}
+          {/* COMBAT PHASE: FLOATING COMBAT TEXTS LAYER (ELEVATED ABOVE CHAMPION HEADS) */}
           {isCombatPhase && floatingTexts.length > 0 && (
             <div
-              className="absolute inset-7 pointer-events-none z-50 overflow-visible"
+              className="absolute inset-6 sm:inset-7 pointer-events-none z-50 overflow-visible"
               style={{ transformStyle: 'preserve-3d' }}
             >
               {floatingTexts.map((ft, idx) => {
-                const leftPercent = ((ft.x + 0.5) / BOARD_COLS) * 100;
-                const topPercent = ((ft.y + 0.5) / BOARD_ROWS) * 100;
+                const isKO = String(ft.value).toUpperCase().includes('DERROTADO');
+                // Remove defeated text completely for an ultra-clean visual
+                if (isKO) return null;
+
+                const { leftPercent, topPercent } = getContinuousTileCenterPercent(ft.x, ft.y);
+                const isCrit = Boolean(ft.isCrit) || String(ft.value).includes('💥') || ft.type === 'CRIT';
+                const isHeal = ft.type === 'HEAL' || String(ft.value).startsWith('+');
+
+                // Elevated above the character's head in isometric billboard projection
+                const yOffsetPx = isCrit ? -150 : -130;
+
+                // Pure numeric/value string with any 'CRIT' or symbols stripped away
+                const cleanValue = String(ft.value).replace(/💥|crit!?/gi, '').trim();
 
                 return (
                   <div
                     key={ft.id ? `${ft.id}_${idx}` : `ft_${idx}`}
-                    className="absolute font-mono font-black text-xs sm:text-sm animate-out fade-out slide-out-to-top-8 duration-700 select-none drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]"
+                    className="absolute select-none pointer-events-none"
                     style={{
                       left: `${leftPercent}%`,
                       top: `${topPercent}%`,
-                      color: ft.color || '#F59E0B',
-                      transform:
-                        'translate(-50%, -50%) rotateZ(30deg) rotateX(-55deg) translateZ(65px)',
+                      transform: `translate(-50%, -50%) rotateZ(30deg) rotateX(-55deg) translateY(${yOffsetPx}px)`,
                     }}
                   >
-                    {ft.value}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* COMBAT PHASE: VISUAL ATTACK EFFECTS LAYER */}
-          {isCombatPhase && attackEffects.length > 0 && (
-            <div
-              className="absolute inset-7 pointer-events-none z-40 overflow-visible"
-              style={{ transformStyle: 'preserve-3d' }}
-            >
-              {attackEffects.map((eff, idx) => {
-                const startX = ((eff.fromX + 0.5) / BOARD_COLS) * 100;
-                const startY = ((eff.fromY + 0.5) / BOARD_ROWS) * 100;
-                const endX = ((eff.toX + 0.5) / BOARD_COLS) * 100;
-                const endY = ((eff.toY + 0.5) / BOARD_ROWS) * 100;
-
-                return (
-                  <div
-                    key={eff.id ? `${eff.id}_${idx}` : `eff_${idx}`}
-                    className="absolute inset-0 pointer-events-none overflow-visible"
-                    style={{ transformStyle: 'preserve-3d' }}
-                  >
-                    {eff.type === 'PUNCH_EXTEND' && (
-                      <svg className="absolute inset-0 w-full h-full overflow-visible">
-                        <line
-                          x1={`${startX}%`}
-                          y1={`${startY}%`}
-                          x2={`${endX}%`}
-                          y2={`${endY}%`}
-                          stroke={eff.color}
-                          strokeWidth="8"
-                          strokeLinecap="round"
-                          className="animate-pulse"
-                          style={{ filter: `drop-shadow(0 0 8px ${eff.color})` }}
-                        />
-                      </svg>
-                    )}
-                    {eff.type === 'LIGHTNING' && (
-                      <svg className="absolute inset-0 w-full h-full overflow-visible">
-                        <line
-                          x1={`${startX}%`}
-                          y1={`${startY}%`}
-                          x2={`${endX}%`}
-                          y2={`${endY}%`}
-                          stroke="#38BDF8"
-                          strokeWidth="6"
-                          strokeDasharray="6,4"
-                          className="animate-ping"
-                          style={{ filter: 'drop-shadow(0 0 12px #38BDF8)' }}
-                        />
-                      </svg>
-                    )}
-                    {eff.type === 'MELEE_SLASH' && (
-                      <svg className="absolute inset-0 w-full h-full overflow-visible">
-                        <line
-                          x1={`${startX}%`}
-                          y1={`${startY}%`}
-                          x2={`${endX}%`}
-                          y2={`${endY}%`}
-                          stroke={eff.color || '#F59E0B'}
-                          strokeWidth="5"
-                          strokeLinecap="round"
-                          className="animate-ping"
-                          style={{ filter: `drop-shadow(0 0 10px ${eff.color || '#F59E0B'})` }}
-                        />
-                      </svg>
-                    )}
-                    {eff.type === 'PROJECTILE' && (
-                      <svg className="absolute inset-0 w-full h-full overflow-visible">
-                        <circle
-                          cx={`${endX}%`}
-                          cy={`${endY}%`}
-                          r="6"
-                          fill={eff.color || '#38BDF8'}
-                          className="animate-ping"
-                          style={{ filter: `drop-shadow(0 0 8px ${eff.color || '#38BDF8'})` }}
-                        />
-                      </svg>
-                    )}
+                    <div className={isCrit ? 'animate-crit-float' : 'animate-damage-float'}>
+                      {isCrit ? (
+                        /* Critical Damage: Increased font size, RED, rising and fading */
+                        <div className="font-mono font-black text-2xl sm:text-4xl text-red-500 drop-shadow-[0_0_16px_rgba(239,68,68,0.95)] drop-shadow-[0_3px_6px_rgba(0,0,0,1)] tracking-tight">
+                          {cleanValue}
+                        </div>
+                      ) : isHeal ? (
+                        <div className="font-mono font-black text-xs sm:text-sm text-emerald-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+                          {cleanValue}
+                        </div>
+                      ) : (
+                        /* Normal Hit: Yellow, clean font with high-contrast shadow */
+                        <div className="font-mono font-black text-sm sm:text-lg text-yellow-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
+                          {cleanValue}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })}

@@ -532,6 +532,11 @@ export function simulateCombatTick(
       }
     } else {
       // Out of range: Move towards target using multi-angle flanking pathfinding
+      // Unit is advancing towards target: keep walk animation active during transit
+      if (unit.attackAnimTimer <= 0 && !unit.isCasting && (unit.stuckTimer || 0) <= 0.30) {
+        unit.currentAnimation = 'walk';
+      }
+
       if (unit.moveCooldown <= 0) {
         const dx = target.currentPosX - unit.currentPosX;
         const dy = target.currentPosY - unit.currentPosY;
@@ -653,10 +658,15 @@ export function simulateCombatTick(
             unit.moveCooldown = 0.15 / speedMultiplier;
             unit.stuckTimer = 0;
           } else {
-            // Cannot advance and no target in melee reach:
-            // Stand in combat ready stance (idle), NEVER skate/walk in place!
-            unit.currentAnimation = 'idle';
+            // Cannot advance directly and no target in melee reach:
             unit.stuckTimer = (unit.stuckTimer || 0) + deltaSeconds;
+            // Smooth hysteresis: only settle into idle if obstructed for > 0.30s
+            if (unit.stuckTimer > 0.30) {
+              unit.currentAnimation = 'idle';
+            } else {
+              unit.currentAnimation = 'walk';
+            }
+
             if (unit.stuckTimer > 0.4) {
               // Rapid unstick: switch to the closest alternate opponent
               const altOpponents = validOpponents
@@ -672,7 +682,8 @@ export function simulateCombatTick(
                 unit.flankBias = 0;
               }
             }
-            unit.moveCooldown = 0.15 / speedMultiplier;
+            // Shorter retry delay (0.08s) so unit quickly finds open lane as allies move
+            unit.moveCooldown = 0.08 / speedMultiplier;
           }
         }
       }
@@ -887,6 +898,7 @@ function executeBasicAttack(
   const isSanji = attacker.unitId === 'sanji';
   const isCrocodile = attacker.unitId === 'crocodile';
   const isChopperMonster = attacker.unitId === 'chopper' && attacker.isTransformed;
+  const isMarine = attacker.unitId.startsWith('marine');
 
   // Combo Selection
   const punchChoices: Array<'punch1' | 'punch2' | 'punch3' | 'punch4'> = ['punch1', 'punch2', 'punch3', 'punch4'];
@@ -896,7 +908,12 @@ function executeBasicAttack(
   let strikeKey: 'punch1' | 'punch2' | 'punch3' | 'punch4' | 'kick1' | 'kick2' | 'kick3';
   let isComboFinisher = false;
 
-  if (isNami) {
+  if (isMarine) {
+    // Marines strictly use Slash1 as standard attack
+    strikeKey = 'punch1';
+    attacker.comboStep = 0;
+    isComboFinisher = false;
+  } else if (isNami) {
     // User requested: "Deixe somente a nami sem ataque, vou tirar o gld do local, e substituir por um esqueleto animado, mas pode tirar dela a animação de ataque"
     strikeKey = 'punch1';
     attacker.comboStep = 0;
@@ -934,6 +951,8 @@ function executeBasicAttack(
   const strikeConfig = COMBO_STRIKES[strikeKey];
   attacker.currentAnimation = isNami
     ? 'idle' // Nami strictly has NO attack animation
+    : isMarine
+    ? 'slash1' // Marine recruits strictly use Slash1
     : isUsopp || isCrocodile
     ? 'attack'
     : isSanji
@@ -944,7 +963,9 @@ function executeBasicAttack(
   attacker.lastAttackTimestamp = now;
 
   // Strike names
-  attacker.lastStrikeName = isNami
+  attacker.lastStrikeName = isMarine
+    ? 'Corte de Sabret (Slash 1)'
+    : isNami
     ? 'Clima-Tact (Suporte)'
     : isUsopp
     ? 'Kayaku Boshi (UsoppAtk)'
@@ -1503,16 +1524,6 @@ function applyDamageToTarget(
     target.targetInstanceId = null;
     target.isCasting = false;
     target.isStunned = false;
-
-    floatingTexts.push({
-      id: `ko_${target.instanceId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      x: target.currentPosX,
-      y: target.currentPosY - 0.35,
-      value: '💀 DERROTADO!',
-      type: 'CRIT',
-      color: '#EF4444',
-      timestamp: Date.now(),
-    });
   }
 
   // Update attacker DPS meters
@@ -1524,21 +1535,14 @@ function applyDamageToTarget(
     attacker.totalTrueDamage += amount;
   }
 
-  // Floating text color
-  const color =
-    damageType === 'TRUE_HAKI'
-      ? '#FBBF24' // Gold
-      : damageType === 'MAGICAL'
-      ? '#A855F7' // Purple
-      : isCrit
-      ? '#EF4444' // Red Crit
-      : '#FB923C'; // Orange
+  // Floating text color: Normal hits = Yellow (#FACC15), Critical hits = Red (#EF4444)
+  const color = isCrit ? '#EF4444' : '#FACC15';
 
   floatingTexts.push({
     id: `dmg_${Date.now()}_${Math.random()}`,
     x: target.currentPosX,
     y: target.currentPosY,
-    value: isCrit ? `💥 ${amount}` : amount,
+    value: amount,
     type: damageType,
     isCrit,
     color,

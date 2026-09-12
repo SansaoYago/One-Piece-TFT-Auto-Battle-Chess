@@ -15,7 +15,7 @@ interface AnimationTestBarProps {
 
 const ANIMATION_BUTTONS = [
   { id: 'idle', label: '🧍 Idle', desc: 'Postura base' },
-  { id: 'walk', label: '🚶 Caminhar', desc: 'Movimento' },
+  { id: 'walk', label: '🚶 Caminhar', desc: 'Walk.glb (26 quadros)' },
   { id: 'punch1', label: '👊 Soco 1', desc: 'Jab rápido' },
   { id: 'punch2', label: '🥊 Soco 2', desc: 'Direto' },
   { id: 'punch3', label: '💥 Soco 3', desc: 'Cruzado' },
@@ -42,15 +42,17 @@ export const AnimationTestBar: React.FC<AnimationTestBarProps> = ({
 
   const isDrinker = selectedUnit.unitId === 'zoro' || selectedUnit.unitId === 'shanks';
   const isZoro = selectedUnit.unitId === 'zoro';
+  const isMarine = selectedUnit.unitId.startsWith('marine');
   const isNami = selectedUnit.unitId === 'nami';
   const isUsopp = selectedUnit.unitId === 'usopp';
   const isSanji = selectedUnit.unitId === 'sanji';
+  const isChopper = selectedUnit.unitId === 'chopper';
   const hasSake = selectedUnit.items?.includes('garrafa_sake');
 
   const animButtons = isZoro
     ? [
         { id: 'idle', label: '🧍 Idle Zoro', desc: 'IdleZoro.glb' },
-        { id: 'walk', label: '🚶 ZoroWalk', desc: 'ZoroWalk.glb' },
+        { id: 'walk', label: '🚶 Caminhar', desc: 'Walk.glb (26 quadros)' },
         { id: 'slash1', label: '⚔️ Slash 1', desc: 'Slash1.glb (Ataque Padrão)' },
         { id: 'punch1', label: '⚔️ Golpe 1', desc: 'Slash1' },
         { id: 'punch2', label: '⚔️ Golpe 2', desc: 'Slash1' },
@@ -62,7 +64,7 @@ export const AnimationTestBar: React.FC<AnimationTestBarProps> = ({
     : isSanji
     ? [
         { id: 'idle', label: '🧍 Pose da Skin', desc: 'Repouso da SkinSanji' },
-        { id: 'walk', label: '🚶 Caminhar', desc: 'Walk.glb' },
+        { id: 'walk', label: '🚶 Caminhar', desc: 'Walk.glb (26 quadros)' },
         { id: 'kick1', label: '🦶 Chute 1', desc: 'Kick1.glb (Mouton Shot)' },
         { id: 'kick2', label: '🌪️ Chute 2', desc: 'SanjiKick1.glb (Premier Haché)' },
         { id: 'kick3', label: '🔥 Chute 3', desc: 'SanjiKick2.glb (Flambage Shot)' },
@@ -82,8 +84,27 @@ export const AnimationTestBar: React.FC<AnimationTestBarProps> = ({
     : isUsopp
     ? [
         { id: 'idle', label: '🧍 Skin Usopp', desc: 'SkinUsopp.glb' },
-        { id: 'walk', label: '🚶 Caminhar', desc: 'Walk.glb' },
+        { id: 'walk', label: '🚶 Caminhar', desc: 'Walk.glb (26 quadros)' },
         { id: 'attack', label: '🎯 Usopp Atk', desc: 'UsoppAtk.glb (Disparo Estilingue)' },
+        { id: 'turnLeft', label: '↪️ Girar Esq.', desc: 'Curva esquerda' },
+        { id: 'turnRight', label: '↩️ Girar Dir.', desc: 'Curva direita' },
+        { id: 'death', label: '💀 Morte', desc: 'Derrota' },
+      ]
+    : isChopper
+    ? [
+        { id: 'idle', label: '🧍 Skin Chopper (1m)', desc: 'SkinChopper.glb (1 metro canônico)' },
+        { id: 'walk', label: '🚶 Caminhar', desc: 'Walk.glb (Escalado à Skin)' },
+        { id: 'punch1', label: '👊 Kokutei Roseo', desc: 'Golpe com casco frontal' },
+        { id: 'punch2', label: '🥊 Ataque 2', desc: 'Ataque corporal' },
+        { id: 'turnLeft', label: '↪️ Girar Esq.', desc: 'Curva esquerda' },
+        { id: 'turnRight', label: '↩️ Girar Dir.', desc: 'Curva direita' },
+        { id: 'death', label: '💀 Morte', desc: 'Derrota' },
+      ]
+    : isMarine
+    ? [
+        { id: 'idle', label: '🧍 Soldado Marinha', desc: 'SkinMarine.glb' },
+        { id: 'walk', label: '🚶 Marcha/Caminhada', desc: 'Walk.glb' },
+        { id: 'slash1', label: '⚔️ Slash 1 (Padrão)', desc: 'Slash1.glb (Ataque Padrão Marinha)' },
         { id: 'turnLeft', label: '↪️ Girar Esq.', desc: 'Curva esquerda' },
         { id: 'turnRight', label: '↩️ Girar Dir.', desc: 'Curva direita' },
         { id: 'death', label: '💀 Morte', desc: 'Derrota' },

@@ -123,6 +123,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
       ) : (
         /* Floating Retractable Golden Shop Toggle Button */
         <button
+          data-modal-toggle="true"
           onClick={onToggleOpen}
           className={`flex items-center justify-center gap-1.5 w-[144px] h-[44px] px-3 rounded-2xl font-bold text-xs tracking-wide uppercase transition-all duration-300 shadow-xl border backdrop-blur-md cursor-pointer select-none ${
             isOpen
@@ -139,7 +140,10 @@ export const ShopModal: React.FC<ShopModalProps> = ({
 
       {/* Expanded Shop Panel Drawer centered on X axis just above the bench */}
       {isOpen && !isViewingOpponentArena && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 w-[760px] max-w-[95vw] bg-slate-950/95 border-2 border-amber-500/70 rounded-2xl p-3.5 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-4 duration-200 ring-2 ring-amber-400/20 z-50">
+        <div
+          data-modal-container="true"
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 w-[760px] max-w-[95vw] bg-slate-950/95 border-2 border-amber-500/70 rounded-2xl p-3.5 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-4 duration-200 ring-2 ring-amber-400/20 z-50"
+        >
           
           {/* Shop Header Controls */}
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
