@@ -371,6 +371,7 @@ export interface ChampionSkinResult extends CachedModelData {
     walk?: THREE.AnimationClip;
     attack?: THREE.AnimationClip;
     slash1?: THREE.AnimationClip;
+    cast?: THREE.AnimationClip;
     kick1?: THREE.AnimationClip;
     kick2?: THREE.AnimationClip;
     kick3?: THREE.AnimationClip;
@@ -463,19 +464,19 @@ export async function loadChampionSkinModel(
     return null;
   }
 
-  // 3. Nami Dedicated Rig (SkinNami, WalkFem, strictly no attack animation)
+  // 3. Nami Dedicated Rig (SkinNami, WalkFem, Idle, Slash1 for Clima-Tact)
   if (normId === 'nami') {
     const candidateUrls = [
       './models/SkinNami.glb',
       '/models/SkinNami.glb',
-      './models/IdleNami.glb',
-      '/models/IdleNami.glb',
     ];
     const res = await tryLoadCandidateModel(candidateUrls);
     if (res) {
-      const walkClip = await tryLoadAnimationClip(['./models/WalkFem.glb', '/models/WalkFem.glb'], 'walk');
-      const idleClip = res.data.animations?.[0] || null;
-      if (idleClip) idleClip.name = 'idle';
+      const [walkClip, idleClip, attackClip] = await Promise.all([
+        tryLoadAnimationClip(['./models/WalkFem.glb', '/models/WalkFem.glb'], 'walk'),
+        tryLoadAnimationClip(['./models/Idle.glb', '/models/Idle.glb'], 'idle'),
+        tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'attack'),
+      ]);
 
       return {
         ...res.data,
@@ -484,7 +485,8 @@ export async function loadChampionSkinModel(
         customAnimations: {
           idle: idleClip || undefined,
           walk: walkClip || undefined,
-          attack: undefined,
+          attack: attackClip || undefined,
+          cast: attackClip || undefined,
         },
       };
     }
@@ -676,7 +678,24 @@ export async function loadChampionSkinModel(
     ];
     const res = await tryLoadCandidateModel(candidateUrls);
     if (res) {
-      return { ...res.data, url: res.url, isDedicatedSkin: true };
+      const [slashClip, spinClip, idleClip, walkClip] = await Promise.all([
+        tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'attack'),
+        tryLoadAnimationClip(['./models/SlashSpin.glb', '/models/SlashSpin.glb'], 'cast'),
+        tryLoadAnimationClip(['./models/Idle.glb', '/models/Idle.glb'], 'idle'),
+        tryLoadAnimationClip(['./models/Walk.glb', '/models/Walk.glb'], 'walk'),
+      ]);
+      return {
+        ...res.data,
+        url: res.url,
+        isDedicatedSkin: true,
+        customAnimations: {
+          attack: slashClip || undefined,
+          slash1: slashClip || undefined,
+          cast: spinClip || undefined,
+          idle: idleClip || undefined,
+          walk: walkClip || undefined,
+        },
+      };
     }
     return null;
   }
@@ -871,7 +890,7 @@ export async function loadChampionSkinModel(
 
 export async function loadChampionAttackAnimation(unitId: string): Promise<THREE.AnimationClip | null> {
   const normId = (unitId || '').toLowerCase();
-  if (normId === 'zoro' || normId === 'mihawk' || normId === 'shanks' || normId === 'tashigi' || normId.startsWith('marine')) {
+  if (normId === 'zoro' || normId === 'mihawk' || normId === 'shanks' || normId === 'tashigi' || normId.startsWith('marine') || normId === 'buggy') {
     return tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1');
   }
   if (normId === 'crocodile') {
@@ -890,8 +909,7 @@ export async function loadChampionAttackAnimation(unitId: string): Promise<THREE
     );
   }
   if (normId === 'nami') {
-    // Nami strictly has no attack animation as requested
-    return null;
+    return tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'attack');
   }
   if (normId === 'usopp') {
     return tryLoadAnimationClip(['./models/UsoppAtk.glb', '/models/UsoppAtk.glb'], 'attack');

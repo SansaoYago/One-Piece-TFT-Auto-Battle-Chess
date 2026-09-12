@@ -4,6 +4,7 @@ import { Sparkles, Star, ShipWheel } from 'lucide-react';
 import { SYNERGY_DATABASE } from '../data/synergies';
 import { ITEM_DATABASE } from '../data/items';
 import { ChampionVisual } from './ChampionVisual';
+import { isUnitEquippedWithOrb } from '../utils/gameUtils';
 
 interface BenchProps {
   benchSlots: (UnitInstance | null)[];

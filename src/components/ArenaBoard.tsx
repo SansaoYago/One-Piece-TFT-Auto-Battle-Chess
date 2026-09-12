@@ -8,7 +8,7 @@ import { ITEM_DATABASE } from '../data/items';
 import { ChampionVisual } from './ChampionVisual';
 import { Champion3DModel } from './Champion3DModel';
 import { Commander } from '../types/game';
-import { getChampionTokenDimensions } from '../utils/gameUtils';
+import { getChampionTokenDimensions, isUnitEquippedWithOrb } from '../utils/gameUtils';
 
 interface ArenaBoardProps {
   boardUnits: UnitInstance[];
@@ -194,6 +194,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
     isDraggingAllowed: boolean
   ) => {
     const isSelected = unit.instanceId === selectedUnitId;
+    const hasOrb = isUnitEquippedWithOrb(unit);
     const baseData = CHAMPION_DATABASE[unit.unitId];
     const combatState = isCombat ? (unit as CombatUnitState) : null;
     const isCasting = combatState?.isCasting;
@@ -224,16 +225,22 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
     const tokenDims = getChampionTokenDimensions(unit.unitId, combatState?.isTransformed);
     const isMonsterChopper = unit.unitId === 'chopper' && Boolean(combatState?.isTransformed);
     const headBottomPercent = isMonsterChopper
-      ? 100
-      : Math.min(100, Math.round(28.5 + 61.5 * Math.min(1.2, tokenDims.ratio)));
+      ? 104
+      : tokenDims.meters > 2.2
+      ? 106
+      : Math.round(28.5 + 61.5 * tokenDims.ratio);
 
     return (
       <div
         key={unit.instanceId}
         className={`relative flex flex-col items-center justify-end transition-all duration-300 select-none pointer-events-none ${
           isSelected && !isDead
-            ? 'scale-110 filter drop-shadow-[0_0_16px_rgba(245,158,11,0.95)]'
-            : isDead ? '' : ''
+            ? hasOrb
+              ? 'scale-110 filter drop-shadow-[0_0_14px_rgba(245,158,11,0.95)] drop-shadow-[0_0_6px_rgba(168,85,247,0.85)]'
+              : 'scale-110 filter drop-shadow-[0_0_16px_rgba(245,158,11,0.95)]'
+            : hasOrb && !isDead
+            ? 'filter drop-shadow-[0_0_8px_rgba(168,85,247,0.75)]'
+            : ''
         }`}
         style={{
           transformOrigin: `50% ${FEET_ANCHOR_Y_PERCENT}%`,
@@ -335,7 +342,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
               </div>
 
               {/* Barra de Especial de Orbe (Roxo, 250 pt) - Apenas para unidades equipadas com o Orbe */}
-              {unit.hasSpecialItem && (
+              {hasOrb && (
                 <div className="w-full h-1 bg-slate-950/90 rounded-full overflow-hidden border border-purple-900/80 shadow-inner">
                   <div
                     className="h-full bg-gradient-to-r from-purple-600 via-purple-500 to-fuchsia-400 rounded-full transition-all duration-150 shadow-sm"
@@ -360,7 +367,13 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
             ['--token-h-lg' as any]: `${tokenDims.heightLg}px`,
           }}
           className={`w-[var(--token-w-base)] h-[var(--token-h-base)] sm:w-[var(--token-w-sm)] sm:h-[var(--token-h-sm)] lg:w-[var(--token-w-lg)] lg:h-[var(--token-h-lg)] flex items-end justify-center relative transition-all duration-300 ${
-            isSelected ? 'scale-105 drop-shadow-[0_0_16px_rgba(245,158,11,1)]' : ''
+            isSelected
+              ? hasOrb
+                ? 'scale-105 drop-shadow-[0_0_14px_rgba(245,158,11,1)] drop-shadow-[0_0_5px_rgba(168,85,247,0.8)]'
+                : 'scale-105 drop-shadow-[0_0_16px_rgba(245,158,11,1)]'
+              : hasOrb && !isDead
+              ? 'drop-shadow-[0_0_6px_rgba(168,85,247,0.65)]'
+              : ''
           }`}
         >
           {/* 3D Model Instance with dynamic directional targeting, combo strikes and GLB animations */}
@@ -475,6 +488,8 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
               const isPlayerHalf = col <= PLAYER_MAX_COL;
               const isHovered = hoveredTile?.x === col && hoveredTile?.y === row;
               const prepUnit = !isCombatPhase ? getPrepUnitAt(col, row) : null;
+              const prepUnitHasOrb = isUnitEquippedWithOrb(prepUnit);
+              const prepUnitIsSelected = prepUnit ? prepUnit.instanceId === selectedUnitId : false;
               // Only light up tiles when user is actively dragging a champion over the arena
               const isHighlightActive = isHovered && isDraggingActive && !isCombatPhase && !isViewingOpponentArena;
 
@@ -561,7 +576,11 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                           ? 'bg-slate-900/95 border-amber-500/50 shadow-inner ring-1 ring-amber-400/20'
                           : 'bg-slate-900/85 border-amber-500/35 hover:border-amber-400/70 ring-1 ring-amber-400/20'
                         : prepUnit
-                        ? 'bg-slate-900/95 border-amber-500/40 shadow-inner'
+                        ? prepUnitIsSelected
+                          ? 'bg-amber-950/80 border-amber-400 shadow-inner ring-1 ring-amber-400/50'
+                          : prepUnitHasOrb
+                          ? 'bg-purple-950/40 border-purple-400/70 shadow-[0_0_12px_rgba(168,85,247,0.25)]'
+                          : 'bg-slate-900/95 border-amber-500/40 shadow-inner'
                         : 'bg-slate-900/80 border-slate-800/90 hover:border-slate-700/60'
                       : isHighlightActive
                       ? 'bg-rose-950/90 border-rose-500 shadow-[0_0_24px_rgba(244,63,94,0.75)]'
@@ -585,7 +604,11 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                     className={`w-12 h-12 sm:w-14 sm:h-14 lg:w-16 lg:h-16 rounded-full border transition-all pointer-events-none flex items-center justify-center ${
                       prepUnit
                         ? isPlayerHalf
-                          ? 'border-amber-400/60 bg-amber-500/15 shadow-[0_0_12px_rgba(245,158,11,0.35)]'
+                          ? prepUnitIsSelected
+                            ? 'border-amber-400 bg-amber-500/25 shadow-[0_0_16px_rgba(245,158,11,0.7)] ring-1 ring-amber-400/40'
+                            : prepUnitHasOrb
+                            ? 'border-purple-400/80 bg-purple-900/20 shadow-[0_0_12px_rgba(168,85,247,0.5)] ring-1 ring-purple-400/30'
+                            : 'border-amber-400/60 bg-amber-500/15 shadow-[0_0_12px_rgba(245,158,11,0.35)]'
                           : 'border-rose-400/60 bg-rose-500/15 shadow-[0_0_12px_rgba(244,63,94,0.35)]'
                         : isPlayerHalf
                         ? isHighlightActive
@@ -600,8 +623,18 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                     <div
                       className={`w-4 h-4 sm:w-4.5 sm:h-4.5 lg:w-5 lg:h-5 rounded-full transition-opacity ${
                         isPlayerHalf
-                          ? prepUnit ? 'bg-amber-400/50' : isHighlightActive ? 'bg-amber-400/60' : 'bg-amber-500/20'
-                          : prepUnit ? 'bg-rose-400/50' : 'bg-rose-500/20'
+                          ? prepUnit
+                            ? prepUnitIsSelected
+                              ? 'bg-amber-400/80 shadow-[0_0_6px_rgba(245,158,11,0.9)]'
+                              : prepUnitHasOrb
+                              ? 'bg-purple-400/70 shadow-[0_0_6px_rgba(168,85,247,0.85)]'
+                              : 'bg-amber-400/50'
+                            : isHighlightActive
+                            ? 'bg-amber-400/60'
+                            : 'bg-amber-500/20'
+                          : prepUnit
+                          ? 'bg-rose-400/50'
+                          : 'bg-rose-500/20'
                       }`}
                     />
                   </div>
@@ -634,6 +667,8 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
               {boardUnits.map((pUnit) => {
                 if (pUnit.gridX < 0 || pUnit.gridY < 0) return null;
                 const isBeingDragged = draggedUnit?.instanceId === pUnit.instanceId;
+                const isSelected = pUnit.instanceId === selectedUnitId;
+                const hasOrb = isUnitEquippedWithOrb(pUnit);
                 // Precise tile center percentage taking responsive tile dimensions and gaps into account
                 const { leftPercent, topPercent } = getTileCenterPercent(pUnit.gridX, pUnit.gridY);
 
@@ -656,6 +691,24 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                       className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-black/70 blur-[3px] pointer-events-none"
                       style={{ top: `${FEET_ANCHOR_Y_PERCENT}%`, transform: 'translate(-50%, -50%) translateZ(1px)' }}
                     />
+
+                    {/* Destaque Místico de Orbe Equipado no Chão (Roxo, Espessura Fina - Ajustes) */}
+                    {hasOrb && (
+                      <div
+                        className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-13 h-13 sm:w-15 sm:h-15 lg:w-[64px] lg:h-[64px] rounded-full border-[1.5px] border-purple-400/85 bg-purple-950/25 shadow-[0_0_12px_rgba(168,85,247,0.7)] pointer-events-none transition-all duration-300"
+                        style={{ top: `${FEET_ANCHOR_Y_PERCENT}%`, transform: 'translate(-50%, -50%) translateZ(2px)' }}
+                      >
+                        <div className="w-full h-full rounded-full border border-dashed border-fuchsia-400/40 animate-[spin_10s_linear_infinite]" />
+                      </div>
+                    )}
+
+                    {/* Destaque de Seleção Dourado no Chão */}
+                    {isSelected && (
+                      <div
+                        className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 sm:w-16 sm:h-16 lg:w-[70px] lg:h-[70px] rounded-full border-2 border-amber-400/90 bg-amber-500/15 shadow-[0_0_18px_rgba(245,158,11,0.85)] pointer-events-none animate-pulse"
+                        style={{ top: `${FEET_ANCHOR_Y_PERCENT}%`, transform: 'translate(-50%, -50%) translateZ(3px)' }}
+                      />
+                    )}
 
                     {/* Upright 3D Tactical Billboarding Unit Token */}
                     {renderUnitToken(pUnit, false, !isViewingOpponentArena && !pUnit.isEnemy)}
@@ -681,6 +734,9 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                 })
                 .map((cUnit) => {
                 const isMonster2x2 = cUnit.unitId === 'chopper' && Boolean(cUnit.isTransformed);
+                const isSelected = cUnit.instanceId === selectedUnitId;
+                const hasOrb = isUnitEquippedWithOrb(cUnit);
+                const isAlive = !cUnit.isDefeated && cUnit.hp > 0;
                 // Continuous exact percentage position inside the 8x5 grid
                 const { leftPercent, topPercent } = getContinuousTileCenterPercent(cUnit.currentPosX, cUnit.currentPosY);
 
@@ -697,12 +753,34 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                     }}
                   >
                     {/* Floor Shadow Disc underneath the combatant feet (2x2 expanded for Monster Chopper) */}
-                    {!cUnit.isDefeated && cUnit.hp > 0 && (
+                    {isAlive && (
                       <div
                         className={`absolute left-1/2 -translate-x-1/2 -translate-y-1/2 ${
                           isMonster2x2 ? 'w-28 h-28 bg-black/85 blur-[6px]' : 'w-12 h-12 bg-black/70 blur-[4px]'
                         } rounded-full pointer-events-none transition-all duration-300`}
                         style={{ top: `${FEET_ANCHOR_Y_PERCENT}%`, transform: 'translate(-50%, -50%) translateZ(1px)' }}
+                      />
+                    )}
+
+                    {/* Destaque Místico de Orbe Equipado no Chão durante Combate (Roxo, Espessura Fina - Batalha) */}
+                    {hasOrb && isAlive && (
+                      <div
+                        className={`absolute left-1/2 -translate-x-1/2 -translate-y-1/2 ${
+                          isMonster2x2 ? 'w-30 h-30' : 'w-13 h-13 sm:w-15 sm:h-15 lg:w-[64px] lg:h-[64px]'
+                        } rounded-full border-[1.5px] border-purple-400/85 bg-purple-950/25 shadow-[0_0_12px_rgba(168,85,247,0.7)] pointer-events-none transition-all duration-300`}
+                        style={{ top: `${FEET_ANCHOR_Y_PERCENT}%`, transform: 'translate(-50%, -50%) translateZ(2px)' }}
+                      >
+                        <div className="w-full h-full rounded-full border border-dashed border-fuchsia-400/40 animate-[spin_10s_linear_infinite]" />
+                      </div>
+                    )}
+
+                    {/* Destaque de Seleção Dourado no Chão durante Combate */}
+                    {isSelected && isAlive && (
+                      <div
+                        className={`absolute left-1/2 -translate-x-1/2 -translate-y-1/2 ${
+                          isMonster2x2 ? 'w-32 h-32' : 'w-14 h-14 sm:w-16 sm:h-16 lg:w-[70px] lg:h-[70px]'
+                        } rounded-full border-2 border-amber-400/90 bg-amber-500/15 shadow-[0_0_18px_rgba(245,158,11,0.85)] pointer-events-none animate-pulse`}
+                        style={{ top: `${FEET_ANCHOR_Y_PERCENT}%`, transform: 'translate(-50%, -50%) translateZ(3px)' }}
                       />
                     )}
 

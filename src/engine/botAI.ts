@@ -175,7 +175,7 @@ export function generateEnemyBoardUnits(
       return [
         createUnitInstance('crocodile', 2, 5, 2, null, true),
         createUnitInstance('buggy', 2, 6, 1, null, true),
-        createUnitInstance('tashigi', 2, 2, 4, null, true),
+        createUnitInstance('tashigi', 2, 5, 4, null, true),
         createUnitInstance('marine_recruit_1', 2, 7, 2, null, true),
       ];
     } else if (bossLevel === 3) {
@@ -287,7 +287,7 @@ export function generateEnemyBoardUnits(
     { col: 7, row: 1 },
     { col: 7, row: 4 },
     { col: 6, row: 0 },
-    { col: 7, row: 5 },
+    { col: 7, row: 0 },
   ];
 
   const enemyUnits: UnitInstance[] = [];
@@ -301,9 +301,9 @@ export function generateEnemyBoardUnits(
         return pos;
       }
     }
-    // Fallback search
+    // Fallback search strictly within enemy territory (columns 4..7, rows 0..4)
     for (let c = 4; c <= 7; c++) {
-      for (let r = 0; r < 6; r++) {
+      for (let r = 0; r < 5; r++) {
         const key = `${c},${r}`;
         if (!occupiedTiles.has(key)) {
           occupiedTiles.add(key);
@@ -399,5 +399,11 @@ export function generateEnemyBoardUnits(
     enemyUnits.push(unit);
   });
 
-  return enemyUnits;
+  // Strict boundary guarantee: all enemy units must reside strictly in columns 4..7 and rows 0..4
+  return enemyUnits.map((u) => ({
+    ...u,
+    isEnemy: true,
+    gridX: Math.min(7, Math.max(4, Math.round(u.gridX))),
+    gridY: Math.min(4, Math.max(0, Math.round(u.gridY))),
+  }));
 }

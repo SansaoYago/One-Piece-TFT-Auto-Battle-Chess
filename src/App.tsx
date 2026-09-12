@@ -397,7 +397,7 @@ export default function App() {
       // Player territory coordinates ordered from front line to back line
       const candidateTiles: { x: number; y: number }[] = [];
       for (const col of [2, 1, 0, 3]) {
-        for (const row of [2, 3, 1, 4, 0, 5]) {
+        for (const row of [2, 3, 1, 4, 0]) {
           if (!occupiedCoords.has(`${col},${row}`)) {
             candidateTiles.push({ x: col, y: row });
           }
@@ -894,11 +894,14 @@ export default function App() {
     }
     setRoundTitle(title);
 
-    // Restore player units to starting HP/Mana using live ref
+    // Restore player units to starting HP/Mana using live ref, strictly locking to player side (cols 0..3, rows 0..4)
     const restoredPlayerUnits = boardUnitsRef.current
       .filter((u) => !u.isEnemy && u.gridX >= 0 && u.gridY >= 0)
       .map((u) => ({
         ...u,
+        isEnemy: false,
+        gridX: Math.min(3, Math.max(0, Math.round(u.gridX))),
+        gridY: Math.min(4, Math.max(0, Math.round(u.gridY))),
         hp: u.maxHp,
         mana: CHAMPION_DATABASE[u.unitId]?.startMana || 0,
         shield: 0,
@@ -911,7 +914,12 @@ export default function App() {
         nextRoundInStage,
         nextTotalRound,
         difficultyRef.current || 'medium'
-      );
+      ).map((e) => ({
+        ...e,
+        isEnemy: true,
+        gridX: Math.min(7, Math.max(4, Math.round(e.gridX))),
+        gridY: Math.min(4, Math.max(0, Math.round(e.gridY))),
+      }));
       const nextBoard = [...restoredPlayerUnits, ...newEnemies];
       setBoardUnits(nextBoard);
       boardUnitsRef.current = nextBoard;
@@ -2220,10 +2228,8 @@ export default function App() {
                 onDragStartItem={(e, itemId) => {
                   setDraggedItemId(itemId);
                 }}
-                onItemClick={(item) => {
-                  if (selectedUnit && !isViewingOpponentArena) {
-                    handleEquipItemToUnit(item.id, selectedUnit);
-                  }
+                onItemClick={(_item) => {
+                  // Inspected item details are displayed in the sidebar without forcing immediate equip
                 }}
               />
             </div>

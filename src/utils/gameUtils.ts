@@ -70,13 +70,13 @@ export const CHAMPION_CANONICAL_HEIGHTS: Record<string, number> = {
   smoker: 2.09,
   smoke: 2.09,
   crocodile: 2.53,
-  chopper_monster: 3.80,
+  chopper_monster: 3.00, // Monster Chopper é exatamente 3x Tony Tony Chopper (1.00m)
 };
 
 export function getChampionLoreHeightMeters(unitId: string, isTransformed?: boolean): number {
   const normId = (unitId || '').toLowerCase();
   if (normId === 'chopper' && isTransformed) {
-    return 3.80;
+    return 3.00; // Monster Chopper: 3.00m (proporção métrica canônica de 3x Chopper 1.00m)
   }
   return CHAMPION_CANONICAL_HEIGHTS[normId] ?? (normId.startsWith('marine') ? 1.80 : 1.75);
 }
@@ -132,39 +132,39 @@ export function getChampionTokenDimensions(unitId: string, isTransformed?: boole
   const ratio = meters / 1.74; // Razão proporcional referente a Luffy (1.74m)
 
   if (isMonster) {
-    // 2x2 Monster Chopper: Canvas amplo cobrindo o bloco 2x2 sem nenhum corte
+    // 2x2 Monster Chopper (3.00m = exatamente 3x Chopper 1.00m):
+    // Canvas amplo cobrindo o bloco 2x2 sem cortes
     return {
       meters,
       ratio,
       is2x2: true,
-      widthBase: 320,
-      heightBase: 360,
-      widthSm: 370,
-      heightSm: 410,
-      widthLg: 420,
-      heightLg: 460,
-      hudBottomBase: 250,
-      hudBottomSm: 290,
-      hudBottomLg: 330,
+      widthBase: 340,
+      heightBase: 380,
+      widthSm: 390,
+      heightSm: 430,
+      widthLg: 440,
+      heightLg: 480,
+      hudBottomBase: 320,
+      hudBottomSm: 370,
+      hudBottomLg: 420,
     };
   }
 
-  // Baseline Luffy (1.74m):
-  // Clean, uniform 1x1 isometric viewport. Since camera distance is anchored to the 1.74m baseline,
-  // characters render at their exact true physical proportions (Chopper 1.0m is 57% of Luffy).
+  // Crocodile e personagens muito altos (>2.2m)
+  const isTall = meters > 2.2;
   return {
     meters,
     ratio,
     is2x2: false,
-    widthBase: 180,
-    heightBase: 180,
-    widthSm: 210,
-    heightSm: 210,
-    widthLg: 240,
-    heightLg: 240,
-    hudBottomBase: Math.round(124 * ratio),
-    hudBottomSm: Math.round(146 * ratio),
-    hudBottomLg: Math.round(168 * ratio),
+    widthBase: isTall ? 220 : 200,
+    heightBase: isTall ? 320 : 280,
+    widthSm: isTall ? 250 : 230,
+    heightSm: isTall ? 360 : 320,
+    widthLg: isTall ? 280 : 260,
+    heightLg: isTall ? 400 : 360,
+    hudBottomBase: Math.round(168 * ratio),
+    hudBottomSm: Math.round(192 * ratio),
+    hudBottomLg: Math.round(216 * ratio),
   };
 }
 
@@ -465,5 +465,19 @@ export function calculateActiveSynergies(boardUnits: UnitInstance[], forEnemy: b
 // Rule: 1* = cost, 2* = cost * 2, 3* = cost * 3 (e.g. Luffy cost 1: 1*=1, 2*=2, 3*=3; Zoro cost 2: 1*=2, 2*=4, 3*=6)
 export function calculateUnitSellValue(unit: UnitInstance): number {
   return unit.cost * unit.stars;
+}
+
+/**
+ * Verifica se uma unidade está equipada com o Orbe do Despertar (Ultimate Core) ou item especial equivalente.
+ */
+export function isUnitEquippedWithOrb(unit: { hasSpecialItem?: boolean; items?: string[] } | null | undefined): boolean {
+  if (!unit) return false;
+  if (unit.hasSpecialItem) return true;
+  if (Array.isArray(unit.items)) {
+    return unit.items.some(
+      (itemId) => itemId === 'orbe_despertar' || itemId.includes('orbe') || Boolean(ITEM_DATABASE[itemId]?.isSpecialActivation)
+    );
+  }
+  return false;
 }
 

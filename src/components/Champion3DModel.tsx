@@ -4,7 +4,6 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { loadChampionModularRig, loadChampionSkinModel, loadChampionAttackAnimation, retargetClipToModel, sanitizeAnimationClip, ChampionRigData, isFemaleChampion } from '../utils/modelPreloader';
 import { createProceduralMannequin, ProceduralMannequin } from '../utils/proceduralMannequin';
 import { enrichMixamoModelIfNeeded } from '../utils/mixamoBodyEnricher';
-import { createBuggyBaraBaraController, BuggyBaraBaraController } from '../utils/buggyBaraBaraController';
 import { attachChampionWeapons } from '../utils/championWeapons';
 import { getChampionLoreHeightMeters } from '../utils/gameUtils';
 
@@ -100,7 +99,6 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
   const actionsRef = useRef<{ [key: string]: THREE.AnimationAction }>({});
   const activeActionRef = useRef<THREE.AnimationAction | null>(null);
   const mannequinRef = useRef<ProceduralMannequin | null>(null);
-  const buggyControllerRef = useRef<BuggyBaraBaraController | null>(null);
   const animStateRef = useRef<'idle' | 'walk' | 'punch' | 'cast'>('idle');
 
   const targetRotationYRef = useRef<number>(
@@ -161,9 +159,9 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
 
     // Procedural fallback state
     if (isCasting) {
-      animStateRef.current = isUsopp ? 'punch' : isNami ? 'idle' : 'cast';
+      animStateRef.current = isUsopp ? 'punch' : isNami ? 'punch' : 'cast';
     } else if (animationName?.includes('punch') || animationName === 'attack' || animationName === 'slash1' || animationName?.includes('kick')) {
-      animStateRef.current = isNami ? 'idle' : 'punch';
+      animStateRef.current = 'punch';
     } else if (animationName === 'walk' || animationName === 'turnLeft' || animationName === 'turnRight') {
       animStateRef.current = 'walk';
     } else {
@@ -176,7 +174,7 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     if (isNami) {
       targetAction = targetKey === 'walk'
         ? (actionsRef.current['walk'] || actionsRef.current['idle'])
-        : actionsRef.current['idle'];
+        : (actionsRef.current['attack'] || actionsRef.current['idle']);
     } else if (isUsopp && (targetKey.startsWith('punch') || targetKey.startsWith('kick') || targetKey === 'attack')) {
       targetAction = actionsRef.current['attack'] || actionsRef.current['punch1'] || actionsRef.current['idle'];
     }
@@ -253,27 +251,22 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     const height = container.clientHeight || 120;
 
     const scene = new THREE.Scene();
-    // 50° FOV provides real 3D depth, perspective foreshortening and character volume
-    const fov = 50;
+    // 45° FOV provides crisp depth, authentic perspective and character volume without distortion
+    const fov = 45;
     const camera = new THREE.PerspectiveCamera(fov, width / height, 0.1, 100);
 
-    // Dynamic isometric camera framing
-    const baselineHeight = 1.45; // Luffy 1.74m canonical baseline
+    // UNIFIED CANONICAL ISOMETRIC CAMERA
+    // Preserves exact metric proportions across all characters
+    // (Chopper 1.0m is 57% of Luffy 1.74m; Sanji 1.80m is visibly taller than Luffy;
+    // Zoro 1.81m, Buggy 1.92m, Crocodile 2.53m; Monster Chopper 3.00m is strictly 3X Tony Tony Chopper 1.00m).
+    // Standard champions share the exact same isometric projection with soles of feet at y = 0.
     const normId = unitId?.toLowerCase() || '';
     const isMonster = normId === 'chopper' && Boolean(isTransformed);
-    const loreHeight = getChampionLoreHeightMeters(unitId, isTransformed);
-    const targetHeight = (loreHeight / 1.74) * 1.45;
 
-    // Tactical top-down isometric angle (~48°)
-    // For standard 1x1 champions, the camera distance is anchored to the common 1.74m baseline.
-    // This ensures a 1.0m character like Chopper visually appears at his true 1.0m canonical size (57% of Luffy),
-    // rather than having the camera zoom in and artificially magnifying him to adult size.
-    // Monster Chopper (2x2 giant) expands camera distance to accommodate his colossal 3.8m form.
-    const refHeight = isMonster ? targetHeight : baselineHeight;
-    const yCenter = isMonster ? targetHeight * 0.54 : baselineHeight * 0.52;
-    const camDist = (isMonster ? 1.40 : 1.35) * refHeight;
-    const camY = yCenter + camDist * 0.7431; // sin(48°)
-    const camZ = camDist * 0.6691;          // cos(48°)
+    const yCenter = isMonster ? 1.25 : 0.85;
+    const camDist = isMonster ? 4.10 : 3.35;
+    const camY = yCenter + camDist * 0.74314; // sin(48°)
+    const camZ = camDist * 0.66913;          // cos(48°)
     camera.position.set(0, camY, camZ);
     camera.lookAt(0, yCenter, 0);
 
@@ -307,6 +300,8 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     resizeObserver.observe(container);
 
     // Soft subtle grounding shadow disc under feet scaled to champion size
+    const loreHeight = getChampionLoreHeightMeters(unitId, isTransformed);
+    const targetHeight = (loreHeight / 1.74) * 1.45;
     const shadowRadius = Math.max(0.65, Math.min(2.0, 0.85 * (targetHeight / 1.45)));
     const shadowGeo = new THREE.PlaneGeometry(shadowRadius, shadowRadius);
     const canvas = document.createElement('canvas');
@@ -580,8 +575,8 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
               if (customAttackAction) {
                 actions['attack'] = customAttackAction;
                 actions['slash1'] = customAttackAction;
-                if (isMarine) {
-                  // Standard attack for all common marines is strictly Slash1
+                if (isMarine || normId === 'buggy') {
+                  // Standard attack for all common marines and Buggy is strictly Slash1
                   actions['punch'] = customAttackAction;
                   actions['punch1'] = customAttackAction;
                   actions['punch2'] = customAttackAction;
@@ -592,6 +587,10 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
                   actions['kick2'] = customAttackAction;
                   actions['kick3'] = customAttackAction;
                 }
+              }
+              const customCastAction = getRetargetedAction(customSkin?.customAnimations?.cast);
+              if (customCastAction) {
+                actions['cast'] = customCastAction;
               }
             }
             if (turnLeftAction) actions['turnLeft'] = turnLeftAction;
@@ -705,9 +704,6 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
           });
 
           // 9. Attach specialized accessories and weapons
-          if (unitId === 'buggy') {
-            buggyControllerRef.current = createBuggyBaraBaraController(clonedRig, isEnemy);
-          }
           attachChampionWeapons(clonedRig, unitId, isEnemy, stars);
 
           // 10. Wrap and add to scene ONLY once fully configured
@@ -756,11 +752,6 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
       // Update Mixamo AnimationMixer
       if (mixerRef.current && !isStunned) {
         mixerRef.current.update(delta);
-      }
-
-      // Update specialized Buggy Bara Bara detachment dynamics
-      if (buggyControllerRef.current && !isStunned) {
-        buggyControllerRef.current.update(delta, elapsedTime, animStateRef.current, isCasting, animationName);
       }
 
       // Update Fallback Procedural Humanoid Rig Animation
@@ -828,10 +819,6 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
       if (mixerRef.current) {
         mixerRef.current.stopAllAction();
         mixerRef.current = null;
-      }
-      if (buggyControllerRef.current) {
-        buggyControllerRef.current.dispose();
-        buggyControllerRef.current = null;
       }
       modelGroupRef.current = null;
       mannequinRef.current = null;

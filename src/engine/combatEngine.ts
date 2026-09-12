@@ -441,18 +441,18 @@ export function simulateCombatTick(
     let target = validOpponents.find((op) => op.instanceId === unit.targetInstanceId);
 
     // Dynamic opportunistic targeting for melee units (range 1):
-    // If current target is beyond melee reach (> 1.85 tiles) but another enemy is already adjacent (<= 1.85),
+    // If current target is beyond melee reach (> 1.25 tiles) but another enemy is already adjacent (<= 1.25),
     // switch immediately to the adjacent enemy so the melee unit attacks the front-line foe directly in front of them!
     if (unit.range === 1) {
       const currentTargetDist = target
         ? Math.hypot(target.currentPosX - unit.currentPosX, target.currentPosY - unit.currentPosY)
         : Infinity;
-      if (currentTargetDist > 1.85) {
+      if (currentTargetDist > 1.25) {
         let closestAdjacent: CombatUnitState | null = null;
         let closestDist = Infinity;
         for (const op of validOpponents) {
           const d = Math.hypot(op.currentPosX - unit.currentPosX, op.currentPosY - unit.currentPosY);
-          if (d <= 1.85 && d < closestDist) {
+          if (d <= 1.25 && d < closestDist) {
             closestDist = d;
             closestAdjacent = op;
           }
@@ -488,8 +488,8 @@ export function simulateCombatTick(
       target.currentPosY - unit.currentPosY
     );
 
-    // 3. Attack Range Check: unit.range (1 is melee ~1.85 tiles for full adjacent diagonal reach & frontline engagement)
-    const effectiveRange = unit.range === 1 ? 1.85 : unit.range + 0.35;
+    // 3. Attack Range Check: unit.range (1 is melee ~1.15 tiles, requiring units to close in directly in front of the target)
+    const effectiveRange = unit.range === 1 ? 1.15 : unit.range + 0.35;
 
     if (distanceToTarget <= effectiveRange) {
       // In range: Unit stands ground in combat stance and engages
@@ -542,8 +542,8 @@ export function simulateCombatTick(
         const dy = target.currentPosY - unit.currentPosY;
         const baseAngle = Math.atan2(dy, dx);
 
-        // Sub-tile step size stopping at a comfortable attack distance (~1.20 tiles for melee)
-        const stopDistance = unit.range === 1 ? 1.20 : unit.range;
+        // Sub-tile step size stopping directly in front of the target tile (~0.92 tiles for melee range 1)
+        const stopDistance = unit.range === 1 ? 0.92 : unit.range;
         const maxStep = 0.36 * speedMultiplier;
         const desiredStep = Math.max(0.08, distanceToTarget - stopDistance);
         const baseStepSize = Math.min(maxStep, desiredStep);
@@ -628,7 +628,7 @@ export function simulateCombatTick(
           // Blocked on direct path: Check if any other enemy is in melee reach right now
           const nearbyOpponent = validOpponents.find((op) => {
             const d = Math.hypot(op.currentPosX - unit.currentPosX, op.currentPosY - unit.currentPosY);
-            return d <= (unit.range === 1 ? 1.85 : unit.range);
+            return d <= (unit.range === 1 ? 1.25 : unit.range);
           });
 
           if (nearbyOpponent) {
