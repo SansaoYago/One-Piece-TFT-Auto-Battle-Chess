@@ -1,9 +1,8 @@
 {
-  "name": "react-example",
+  "name": "one-piece-tactics",
   "private": true,
   "version": "0.0.4",
   "type": "module",
-  "main": "electron.cjs",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
