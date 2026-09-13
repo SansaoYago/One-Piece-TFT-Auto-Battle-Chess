@@ -1,7 +1,7 @@
 {
   "name": "one-piece-tactics",
   "private": true,
-  "version": "0.0.4",
+  "version": "0.0.5",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
@@ -38,6 +38,11 @@
     "directories": {
       "output": "dist-electron"
     },
+    "files": [
+      "!dist-electron{,/**/*}",
+      "!dist-electron-*{,/**/*}",
+      "!android{,/**/*}"
+    ],
     "win": {
       "target": ["nsis", "portable"]
     }
