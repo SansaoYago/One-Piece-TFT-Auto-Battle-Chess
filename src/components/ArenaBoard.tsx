@@ -235,11 +235,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
         key={unit.instanceId}
         className={`relative flex flex-col items-center justify-end transition-all duration-300 select-none pointer-events-none ${
           isSelected && !isDead
-            ? hasOrb
-              ? 'scale-110 filter drop-shadow-[0_0_14px_rgba(245,158,11,0.95)] drop-shadow-[0_0_6px_rgba(168,85,247,0.85)]'
-              : 'scale-110 filter drop-shadow-[0_0_16px_rgba(245,158,11,0.95)]'
-            : hasOrb && !isDead
-            ? 'filter drop-shadow-[0_0_8px_rgba(168,85,247,0.75)]'
+            ? 'scale-110 filter drop-shadow-[0_0_16px_rgba(245,158,11,0.95)]'
             : ''
         }`}
         style={{
@@ -368,11 +364,11 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
           }}
           className={`w-[var(--token-w-base)] h-[var(--token-h-base)] sm:w-[var(--token-w-sm)] sm:h-[var(--token-h-sm)] lg:w-[var(--token-w-lg)] lg:h-[var(--token-h-lg)] flex items-end justify-center relative transition-all duration-300 ${
             isSelected
-              ? hasOrb
-                ? 'scale-105 drop-shadow-[0_0_14px_rgba(245,158,11,1)] drop-shadow-[0_0_5px_rgba(168,85,247,0.8)]'
-                : 'scale-105 drop-shadow-[0_0_16px_rgba(245,158,11,1)]'
-              : hasOrb && !isDead
-              ? 'drop-shadow-[0_0_6px_rgba(168,85,247,0.65)]'
+              ? 'scale-105 drop-shadow-[0_0_16px_rgba(245,158,11,1)]'
+              : ''
+          } ${
+            hasOrb && !isDead
+              ? 'drop-shadow-[0_0_8px_rgba(168,85,247,0.75)]'
               : ''
           }`}
         >
@@ -381,6 +377,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
             unitId={unit.unitId}
             unitColor={unit.color || baseData?.color || '#F59E0B'}
             isEnemy={unit.isEnemy}
+            hasOrb={hasOrb}
             isStunned={isStunned}
             isCasting={isCasting}
             isTransformed={combatState?.isTransformed}
@@ -488,7 +485,6 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
               const isPlayerHalf = col <= PLAYER_MAX_COL;
               const isHovered = hoveredTile?.x === col && hoveredTile?.y === row;
               const prepUnit = !isCombatPhase ? getPrepUnitAt(col, row) : null;
-              const prepUnitHasOrb = isUnitEquippedWithOrb(prepUnit);
               const prepUnitIsSelected = prepUnit ? prepUnit.instanceId === selectedUnitId : false;
               // Only light up tiles when user is actively dragging a champion over the arena
               const isHighlightActive = isHovered && isDraggingActive && !isCombatPhase && !isViewingOpponentArena;
@@ -578,8 +574,6 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                         : prepUnit
                         ? prepUnitIsSelected
                           ? 'bg-amber-950/80 border-amber-400 shadow-inner ring-1 ring-amber-400/50'
-                          : prepUnitHasOrb
-                          ? 'bg-purple-950/40 border-purple-400/70 shadow-[0_0_12px_rgba(168,85,247,0.25)]'
                           : 'bg-slate-900/95 border-amber-500/40 shadow-inner'
                         : 'bg-slate-900/80 border-slate-800/90 hover:border-slate-700/60'
                       : isHighlightActive
@@ -606,8 +600,6 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                         ? isPlayerHalf
                           ? prepUnitIsSelected
                             ? 'border-amber-400 bg-amber-500/25 shadow-[0_0_16px_rgba(245,158,11,0.7)] ring-1 ring-amber-400/40'
-                            : prepUnitHasOrb
-                            ? 'border-purple-400/80 bg-purple-900/20 shadow-[0_0_12px_rgba(168,85,247,0.5)] ring-1 ring-purple-400/30'
                             : 'border-amber-400/60 bg-amber-500/15 shadow-[0_0_12px_rgba(245,158,11,0.35)]'
                           : 'border-rose-400/60 bg-rose-500/15 shadow-[0_0_12px_rgba(244,63,94,0.35)]'
                         : isPlayerHalf
@@ -626,8 +618,6 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                           ? prepUnit
                             ? prepUnitIsSelected
                               ? 'bg-amber-400/80 shadow-[0_0_6px_rgba(245,158,11,0.9)]'
-                              : prepUnitHasOrb
-                              ? 'bg-purple-400/70 shadow-[0_0_6px_rgba(168,85,247,0.85)]'
                               : 'bg-amber-400/50'
                             : isHighlightActive
                             ? 'bg-amber-400/60'
@@ -692,16 +682,6 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                       style={{ top: `${FEET_ANCHOR_Y_PERCENT}%`, transform: 'translate(-50%, -50%) translateZ(1px)' }}
                     />
 
-                    {/* Destaque Místico de Orbe Equipado no Chão (Roxo, Espessura Fina - Ajustes) */}
-                    {hasOrb && (
-                      <div
-                        className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-13 h-13 sm:w-15 sm:h-15 lg:w-[64px] lg:h-[64px] rounded-full border-[1.5px] border-purple-400/85 bg-purple-950/25 shadow-[0_0_12px_rgba(168,85,247,0.7)] pointer-events-none transition-all duration-300"
-                        style={{ top: `${FEET_ANCHOR_Y_PERCENT}%`, transform: 'translate(-50%, -50%) translateZ(2px)' }}
-                      >
-                        <div className="w-full h-full rounded-full border border-dashed border-fuchsia-400/40 animate-[spin_10s_linear_infinite]" />
-                      </div>
-                    )}
-
                     {/* Destaque de Seleção Dourado no Chão */}
                     {isSelected && (
                       <div
@@ -760,18 +740,6 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                         } rounded-full pointer-events-none transition-all duration-300`}
                         style={{ top: `${FEET_ANCHOR_Y_PERCENT}%`, transform: 'translate(-50%, -50%) translateZ(1px)' }}
                       />
-                    )}
-
-                    {/* Destaque Místico de Orbe Equipado no Chão durante Combate (Roxo, Espessura Fina - Batalha) */}
-                    {hasOrb && isAlive && (
-                      <div
-                        className={`absolute left-1/2 -translate-x-1/2 -translate-y-1/2 ${
-                          isMonster2x2 ? 'w-30 h-30' : 'w-13 h-13 sm:w-15 sm:h-15 lg:w-[64px] lg:h-[64px]'
-                        } rounded-full border-[1.5px] border-purple-400/85 bg-purple-950/25 shadow-[0_0_12px_rgba(168,85,247,0.7)] pointer-events-none transition-all duration-300`}
-                        style={{ top: `${FEET_ANCHOR_Y_PERCENT}%`, transform: 'translate(-50%, -50%) translateZ(2px)' }}
-                      >
-                        <div className="w-full h-full rounded-full border border-dashed border-fuchsia-400/40 animate-[spin_10s_linear_infinite]" />
-                      </div>
                     )}
 
                     {/* Destaque de Seleção Dourado no Chão durante Combate */}

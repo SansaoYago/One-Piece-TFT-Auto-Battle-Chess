@@ -42,6 +42,7 @@ export const AnimationTestBar: React.FC<AnimationTestBarProps> = ({
 
   const isDrinker = selectedUnit.unitId === 'zoro' || selectedUnit.unitId === 'shanks';
   const isZoro = selectedUnit.unitId === 'zoro';
+  const isLuffy = selectedUnit.unitId === 'luffy';
   const isMarine = selectedUnit.unitId.startsWith('marine');
   const isNami = selectedUnit.unitId === 'nami';
   const isUsopp = selectedUnit.unitId === 'usopp';
@@ -51,12 +52,24 @@ export const AnimationTestBar: React.FC<AnimationTestBarProps> = ({
 
   const animButtons = isZoro
     ? [
-        { id: 'idle', label: '🧍 Idle Zoro', desc: 'IdleZoro.glb' },
+        { id: 'idle', label: '🧍 Pose T (Base)', desc: 'SkinZoro.glb (Base Padrão)' },
         { id: 'walk', label: '🚶 Caminhar', desc: 'Walk.glb (26 quadros)' },
         { id: 'slash1', label: '⚔️ Slash 1', desc: 'Slash1.glb (Ataque Padrão)' },
         { id: 'punch1', label: '⚔️ Golpe 1', desc: 'Slash1' },
         { id: 'punch2', label: '⚔️ Golpe 2', desc: 'Slash1' },
         { id: 'kick1', label: '⚔️ Golpe Forte', desc: 'Slash1' },
+        { id: 'turnLeft', label: '↪️ Girar Esq.', desc: 'Curva esquerda' },
+        { id: 'turnRight', label: '↩️ Girar Dir.', desc: 'Curva direita' },
+        { id: 'death', label: '💀 Morte', desc: 'Derrota' },
+      ]
+    : isLuffy
+    ? [
+        { id: 'idle', label: '🧍 Pose T (Base)', desc: 'SkinLuffy.glb (Base Padrão)' },
+        { id: 'walk', label: '🚶 Caminhar', desc: 'Walk.glb (26 quadros)' },
+        { id: 'punch1', label: '👊 Pistol', desc: 'Punch1.glb' },
+        { id: 'punch2', label: '🥊 Gatling', desc: 'Punch2.glb' },
+        { id: 'punch3', label: '💥 Bazooka', desc: 'Punch3.glb' },
+        { id: 'kick1', label: '🦶 Stamp', desc: 'Kick1.glb' },
         { id: 'turnLeft', label: '↪️ Girar Esq.', desc: 'Curva esquerda' },
         { id: 'turnRight', label: '↩️ Girar Dir.', desc: 'Curva direita' },
         { id: 'death', label: '💀 Morte', desc: 'Derrota' },
@@ -83,7 +96,7 @@ export const AnimationTestBar: React.FC<AnimationTestBarProps> = ({
       ]
     : isUsopp
     ? [
-        { id: 'idle', label: '🧍 Skin Usopp', desc: 'SkinUsopp.glb' },
+        { id: 'idle', label: '🧍 Pose T (Base)', desc: 'SkinUsopp.glb (Base Padrão)' },
         { id: 'walk', label: '🚶 Caminhar', desc: 'Walk.glb (26 quadros)' },
         { id: 'attack', label: '🎯 Usopp Atk', desc: 'UsoppAtk.glb (Disparo Estilingue)' },
         { id: 'turnLeft', label: '↪️ Girar Esq.', desc: 'Curva esquerda' },

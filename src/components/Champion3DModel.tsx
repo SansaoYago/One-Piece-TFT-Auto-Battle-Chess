@@ -11,6 +11,7 @@ interface Champion3DModelProps {
   unitId: string;
   unitColor?: string;
   isEnemy?: boolean;
+  hasOrb?: boolean;
   isStunned?: boolean;
   isCasting?: boolean;
   isTransformed?: boolean;
@@ -80,6 +81,7 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
   unitId,
   unitColor = '#F59E0B',
   isEnemy = false,
+  hasOrb = false,
   isStunned = false,
   isCasting = false,
   isTransformed = false,
@@ -299,33 +301,21 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     });
     resizeObserver.observe(container);
 
-    // Soft subtle grounding shadow disc under feet scaled to champion size
     const loreHeight = getChampionLoreHeightMeters(unitId, isTransformed);
     const targetHeight = (loreHeight / 1.74) * 1.45;
-    const shadowRadius = Math.max(0.65, Math.min(2.0, 0.85 * (targetHeight / 1.45)));
-    const shadowGeo = new THREE.PlaneGeometry(shadowRadius, shadowRadius);
-    const canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 30);
-      grad.addColorStop(0, 'rgba(0, 0, 0, 0.65)');
-      grad.addColorStop(0.5, 'rgba(0, 0, 0, 0.25)');
-      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, 64, 64);
+
+    // Mystical Awakening Orb illumination - illuminates strictly the champion's body
+    let orbLight1: THREE.PointLight | null = null;
+    let orbLight2: THREE.PointLight | null = null;
+    if (hasOrb) {
+      orbLight1 = new THREE.PointLight(0xa855f7, 3.2, 4.5);
+      orbLight1.position.set(0, targetHeight * 0.55, 0.7);
+      scene.add(orbLight1);
+
+      orbLight2 = new THREE.PointLight(0x9333ea, 2.4, 4.5);
+      orbLight2.position.set(0, targetHeight * 0.8, -0.7);
+      scene.add(orbLight2);
     }
-    const shadowTex = new THREE.CanvasTexture(canvas);
-    const shadowMat = new THREE.MeshBasicMaterial({
-      map: shadowTex,
-      transparent: true,
-      depthWrite: false,
-    });
-    const groundShadow = new THREE.Mesh(shadowGeo, shadowMat);
-    groundShadow.rotation.x = -Math.PI / 2;
-    groundShadow.position.y = 0.005;
-    scene.add(groundShadow);
 
     // Dynamic Crisp Studio Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 2.4);
@@ -468,9 +458,10 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
             const actions: { [key: string]: THREE.AnimationAction } = {};
             const isFemale = isFemaleChampion(unitId);
 
-            // Idle stays on the skin's own bind/rest pose (POSE T). Zoro strictly has NO idle animation assigned,
-            // sitting in clean POSE T as his base pre-battle and default pose.
-            const idleClipToUse = isZoro ? undefined : (customSkin?.customAnimations?.idle || customSkin?.animations?.[0]);
+            // Idle stays on the skin's own bind/rest pose (POSE T). Zoro, Luffy, and Usopp strictly have NO idle animation assigned,
+            // sitting in clean POSE T as their base pre-battle and default pose ("a regra do Zoro").
+            const isPoseTDefault = isZoro || isLuffy || isUsopp;
+            const idleClipToUse = isPoseTDefault ? undefined : (customSkin?.customAnimations?.idle || customSkin?.animations?.[0]);
 
             // Walk.glb is the standard male walk animation (26 frames)
             const defaultMaleWalk = rigData.animations.walk;
@@ -668,6 +659,8 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
                   roughness: 0.45,
                   metalness: 0.1,
                   side: THREE.DoubleSide,
+                  emissive: hasOrb ? new THREE.Color('#9333ea') : (isEnemy ? new THREE.Color('#f43f5e').multiplyScalar(0.08) : new THREE.Color(0x000000)),
+                  emissiveIntensity: hasOrb ? 0.40 : (isEnemy ? 1 : 0),
                 });
                 return;
               }
@@ -678,7 +671,12 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
                   mat.side = THREE.DoubleSide;
                   mat.depthWrite = true;
                   if (mat instanceof THREE.MeshStandardMaterial) {
-                    mat.emissive = isEnemy ? new THREE.Color('#f43f5e').multiplyScalar(0.08) : new THREE.Color(0x000000);
+                    if (hasOrb) {
+                      mat.emissive = new THREE.Color('#a855f7');
+                      mat.emissiveIntensity = 0.42;
+                    } else {
+                      mat.emissive = isEnemy ? new THREE.Color('#f43f5e').multiplyScalar(0.08) : new THREE.Color(0x000000);
+                    }
                     mat.roughness = Math.min(mat.roughness ?? 0.5, 0.65);
                     mat.metalness = Math.min(mat.metalness ?? 0.1, 0.2);
                     if (mat.map) {
@@ -689,7 +687,12 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
                     }
                   } else if (mat instanceof THREE.MeshPhongMaterial || mat instanceof THREE.MeshBasicMaterial) {
                     if (mat instanceof THREE.MeshPhongMaterial) {
-                      mat.emissive = isEnemy ? new THREE.Color('#f43f5e').multiplyScalar(0.08) : new THREE.Color(0x000000);
+                      if (hasOrb) {
+                        mat.emissive = new THREE.Color('#a855f7');
+                        mat.emissiveIntensity = 0.42;
+                      } else {
+                        mat.emissive = isEnemy ? new THREE.Color('#f43f5e').multiplyScalar(0.08) : new THREE.Color(0x000000);
+                      }
                     }
                     if (mat.map) {
                       mat.map.colorSpace = THREE.SRGBColorSpace;
@@ -727,11 +730,17 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     // Fallback procedural mannequin
     const fallbackToProcedural = () => {
       if (!isMounted) return;
-      // Remove any broken partial models from scene except initial lights/shadow
-      while (scene.children.length > 4) {
-        scene.remove(scene.children[scene.children.length - 1]);
-      }
-      const mannequin = createProceduralMannequin(unitColor, isEnemy);
+      // Remove any broken partial models from scene except initial lights
+      const toRemove: THREE.Object3D[] = [];
+      scene.traverse((child) => {
+        if (child !== scene && !(child as THREE.Light).isLight) {
+          toRemove.push(child);
+        }
+      });
+      toRemove.forEach((obj) => {
+        if (obj.parent === scene) scene.remove(obj);
+      });
+      const mannequin = createProceduralMannequin(unitColor, isEnemy, hasOrb);
       mannequin.root.rotation.y = targetRotationYRef.current;
       mannequin.root.position.y = 0.08;
       scene.add(mannequin.root);
@@ -748,6 +757,13 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
       const delta = Math.min((now - lastTime) / 1000, 0.05);
       lastTime = now;
       const elapsedTime = (now - startTime) / 1000;
+
+      // Mystical Orb breathing pulse strictly on the champion's body
+      if (hasOrb && orbLight1 && orbLight2) {
+        const pulse = Math.sin(elapsedTime * 3.5);
+        orbLight1.intensity = 3.0 + pulse * 0.9;
+        orbLight2.intensity = 2.2 + pulse * 0.7;
+      }
 
       // Update Mixamo AnimationMixer
       if (mixerRef.current && !isStunned) {
@@ -828,7 +844,7 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
         container.innerHTML = '';
       }
     };
-  }, [unitId, unitColor, isEnemy, stars, isTransformed]);
+  }, [unitId, unitColor, isEnemy, stars, isTransformed, hasOrb]);
 
   return (
     <div

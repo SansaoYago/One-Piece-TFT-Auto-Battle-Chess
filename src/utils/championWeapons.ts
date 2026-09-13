@@ -41,10 +41,11 @@ export function attachChampionWeapons(
     }
   });
 
-  // Find Right Hand, Left Hand, and Head bones
+  // Find Right Hand, Left Hand, Head, and Hips bones
   let rightHandBone: THREE.Object3D | null = null;
   let leftHandBone: THREE.Object3D | null = null;
   let headBone: THREE.Object3D | null = null;
+  let hipsBone: THREE.Object3D | null = null;
 
   model.traverse((child) => {
     const name = child.name || '';
@@ -54,6 +55,8 @@ export function attachChampionWeapons(
       leftHandBone = child;
     } else if (/head/i.test(name) && !/top|end/i.test(name) && !headBone) {
       headBone = child;
+    } else if (/hips|pelvis/i.test(name) && !hipsBone) {
+      hipsBone = child;
     }
   });
 
@@ -62,6 +65,15 @@ export function attachChampionWeapons(
       const name = child.name || '';
       if (/head/i.test(name) && !headBone) {
         headBone = child;
+      }
+    });
+  }
+
+  if (!hipsBone) {
+    model.traverse((child) => {
+      const name = child.name || '';
+      if (/spine/i.test(name) && !hipsBone) {
+        hipsBone = child;
       }
     });
   }
@@ -77,10 +89,27 @@ export function attachChampionWeapons(
   } else if (normId === 'tashigi') {
     return attachTashigiKatana(rightHandBone || model, isEnemy);
   } else if (normId === 'zoro') {
-    return attachZoroSwordsByTier(rightHandBone || model, leftHandBone || model, headBone || model, isEnemy, stars);
+    // Hide any detached auxiliary sword meshes from SkinZoro.glb
+    model.traverse((child) => {
+      const n = (child.name || '').toLowerCase();
+      if (n.includes('object_8') || n.includes('object_10') || n.includes('weapon_d')) {
+        child.visible = false;
+      }
+    });
+    return attachZoroSwordsByTier(rightHandBone || model, leftHandBone || model, headBone || model, hipsBone || model, isEnemy, stars);
   } else if (normId === 'shanks') {
     return attachShanksGryphonSaber(rightHandBone || model, isEnemy);
   } else if (normId === 'usopp') {
+    // If model already has built-in slingshot (e.g. SkinUsopp.glb), do not attach duplicate
+    let hasBuiltinWeapon = false;
+    model.traverse((child) => {
+      if (child.name && /usopp.*weapon|weapon.*body/i.test(child.name)) {
+        hasBuiltinWeapon = true;
+      }
+    });
+    if (hasBuiltinWeapon) {
+      return null;
+    }
     return attachUsoppSlingshot(rightHandBone || model, isEnemy);
   } else if (normId === 'mihawk') {
     // Mihawk GLB model already has his giant Kokuto Yoru blade modeled in the mesh
@@ -277,15 +306,168 @@ const ZORO_SWORD_INVENTORY: KatanaConfig[] = [
 ];
 
 /**
+ * Creates an authentic Katana Scabbard (Saya) with Kojiri (chape),
+ * Koi-guchi (mouth), Kurigata, and optional Tsuka (hilt) when sheathed.
+ */
+function createKatanaSheathMesh(options: {
+  sheathLength: number;
+  sheathColor: number;
+  guardColor: number;
+  hiltColor: number;
+  isSheathed: boolean;
+}): THREE.Group {
+  const sheath = new THREE.Group();
+
+  const sayaMat = new THREE.MeshStandardMaterial({
+    color: options.sheathColor,
+    roughness: 0.35,
+    metalness: 0.2,
+  });
+
+  const fittingMat = new THREE.MeshStandardMaterial({
+    color: options.guardColor,
+    metalness: 0.85,
+    roughness: 0.25,
+  });
+
+  // 1. Scabbard body (Saya)
+  const saya = new THREE.Mesh(
+    new THREE.BoxGeometry(0.022, options.sheathLength, 0.042),
+    sayaMat
+  );
+  saya.position.set(0, -options.sheathLength / 2, 0);
+  sheath.add(saya);
+
+  // 2. Throat band (Koi-guchi)
+  const koiguchi = new THREE.Mesh(
+    new THREE.BoxGeometry(0.026, 0.022, 0.046),
+    fittingMat
+  );
+  koiguchi.position.set(0, -0.01, 0);
+  sheath.add(koiguchi);
+
+  // 3. Tip chape (Kojiri)
+  const kojiri = new THREE.Mesh(
+    new THREE.BoxGeometry(0.025, 0.03, 0.045),
+    fittingMat
+  );
+  kojiri.position.set(0, -options.sheathLength, 0);
+  sheath.add(kojiri);
+
+  // 4. Middle Sageo / Kurigata knob
+  const kurigata = new THREE.Mesh(
+    new THREE.BoxGeometry(0.028, 0.04, 0.048),
+    fittingMat
+  );
+  kurigata.position.set(0, -options.sheathLength * 0.25, 0);
+  sheath.add(kurigata);
+
+  if (options.isSheathed) {
+    // Katana handle & guard still resting in sheath
+    const hiltMat = new THREE.MeshStandardMaterial({
+      color: options.hiltColor,
+      roughness: 0.6,
+    });
+
+    const guard = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.042, 0.042, 0.012, 16),
+      fittingMat
+    );
+    guard.position.set(0, 0.01, 0);
+    sheath.add(guard);
+
+    const handle = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.016, 0.016, 0.20, 12),
+      hiltMat
+    );
+    handle.position.set(0, 0.11, 0);
+    sheath.add(handle);
+
+    const pommel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.018, 0.018, 0.016, 12),
+      fittingMat
+    );
+    pommel.position.set(0, 0.21, 0);
+    sheath.add(pommel);
+  } else {
+    // Open empty throat slot
+    const slotMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+    const slot = new THREE.Mesh(
+      new THREE.BoxGeometry(0.015, 0.005, 0.032),
+      slotMat
+    );
+    slot.position.set(0, 0.002, 0);
+    sheath.add(slot);
+  }
+
+  return sheath;
+}
+
+/**
+ * Creates Zoro's signature 3 Katana Sheaths (Saya) bundled on his waist/hip sash,
+ * showing all 3 on the same side in canonical One Piece fashion.
+ */
+function createZoroSheathsCluster(stars: number = 1): THREE.Group {
+  const cluster = new THREE.Group();
+  cluster.name = 'weapon_zoro_sheaths_cluster';
+
+  const wadoConfig = ZORO_SWORD_INVENTORY[0];
+  const kitetsuConfig = ZORO_SWORD_INVENTORY[1];
+  const enmaConfig = ZORO_SWORD_INVENTORY[3] || ZORO_SWORD_INVENTORY[2];
+
+  // 1. Wado Ichimonji (White Saya) - always drawn in Right Hand (1★, 2★, 3★)
+  const sheath1 = createKatanaSheathMesh({
+    sheathLength: 0.78,
+    sheathColor: wadoConfig.sheathColor,
+    guardColor: wadoConfig.guardColor,
+    hiltColor: wadoConfig.hiltColor,
+    isSheathed: false,
+  });
+  sheath1.position.set(0, 0, 0);
+  cluster.add(sheath1);
+
+  // 2. Sandai Kitetsu (Crimson Saya) - sheathed at 1★; drawn in Left Hand at 2★ & 3★
+  const sheath2 = createKatanaSheathMesh({
+    sheathLength: 0.76,
+    sheathColor: kitetsuConfig.sheathColor,
+    guardColor: kitetsuConfig.guardColor,
+    hiltColor: kitetsuConfig.hiltColor,
+    isSheathed: stars < 2,
+  });
+  sheath2.position.set(0.028, 0.012, -0.026);
+  sheath2.rotation.z = -0.05;
+  cluster.add(sheath2);
+
+  // 3. Enma / Shusui (Purple / Black Saya) - sheathed at 1★ & 2★; drawn in Mouth at 3★
+  const sheath3 = createKatanaSheathMesh({
+    sheathLength: 0.79,
+    sheathColor: enmaConfig.sheathColor,
+    guardColor: enmaConfig.guardColor,
+    hiltColor: enmaConfig.hiltColor,
+    isSheathed: stars < 3,
+  });
+  sheath3.position.set(0.056, 0.025, -0.052);
+  sheath3.rotation.z = -0.09;
+  cluster.add(sheath3);
+
+  // Zoro wears all 3 katanas on his right waist/hip, angled diagonally backwards
+  cluster.position.set(-0.16, -0.03, 0.02);
+  cluster.rotation.set(-0.50, 0.15, -0.28);
+
+  return cluster;
+}
+
+/**
  * Zoro's Dynamic Sword Progression by Star Tier:
- * - 1★ (Ittoryu): 1 Katana (Right Hand) - Wado Ichimonji
- * - 2★ (Nitoryu): 2 Katanas (Right Hand + Left Hand) - Wado Ichimonji + Sandai Kitetsu
- * - 3★ (Santoryu): 3 Katanas (Right Hand + Left Hand + Mouth) - Wado Ichimonji + Sandai Kitetsu + Enma/Shusui
+ * - 1★ (Ittoryu): 1 Katana (Right Hand) - Wado Ichimonji + 3 Sheaths on waist (2 sheathed, 1 drawn)
+ * - 2★ (Nitoryu): 2 Katanas (Right Hand + Left Hand) - Wado + Sandai Kitetsu + 3 Sheaths on waist (1 sheathed, 2 drawn)
+ * - 3★ (Santoryu): 3 Katanas (Right Hand + Left Hand + Mouth) - Wado + Kitetsu + Enma + 3 Sheaths on waist (all 3 drawn)
  */
 function attachZoroSwordsByTier(
   rightHand: THREE.Object3D,
   leftHand: THREE.Object3D,
   head: THREE.Object3D,
+  hips: THREE.Object3D,
   isEnemy: boolean,
   stars: number = 1
 ): THREE.Group {
@@ -295,6 +477,17 @@ function attachZoroSwordsByTier(
   const wadoConfig = ZORO_SWORD_INVENTORY[0]; // Wado Ichimonji
   const kitetsuConfig = ZORO_SWORD_INVENTORY[1]; // Sandai Kitetsu
   const enmaConfig = ZORO_SWORD_INVENTORY[3] || ZORO_SWORD_INVENTORY[2]; // Enma
+
+  // 0. Hip Sheaths Cluster (All 3 sheaths bundled on the waist/hip on the same side)
+  if (hips) {
+    const sheaths = createZoroSheathsCluster(stars);
+    const isRootModel = !hips.parent || hips.name.toLowerCase().includes('scene') || hips.name.toLowerCase().includes('group');
+    if (isRootModel) {
+      sheaths.position.set(-0.16, 0.85, 0.02);
+    }
+    applyCompensationScale(sheaths, hips);
+    hips.add(sheaths);
+  }
 
   // 1. Right Hand Katana (Equipped for all star levels 1★, 2★, 3★)
   const swordRight = createKatanaMesh({

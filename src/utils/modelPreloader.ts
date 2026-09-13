@@ -62,10 +62,8 @@ export const modelCache: {
 const loadingPromises: { [key: string]: Promise<CachedModelData> } = {};
 
 export const REQUIRED_3D_ASSETS = [
-  { url: './models/SkinLuffy_a.glb', label: 'Skin Luffy A (SkinLuffy_a.glb)' },
-  { url: './models/SkinLuffy_b.glb', label: 'Skin Luffy B (SkinLuffy_b.glb)' },
+  { url: './models/SkinLuffy.glb', label: 'Skin Luffy (SkinLuffy.glb)' },
   { url: './models/SkinZoro.glb', label: 'Skin Zoro (SkinZoro.glb)' },
-  { url: './models/IdleZoro.glb', label: 'Postura Zoro (IdleZoro.glb)' },
   { url: './models/ZoroWalk.glb', label: 'Caminhada Zoro (ZoroWalk.glb)' },
   { url: './models/Slash1.glb', label: 'Ataque Espada 1 (Slash1.glb)' },
   { url: './models/SkinNami.glb', label: 'Skin Nami (SkinNami.glb)' },
@@ -130,7 +128,8 @@ export const loadModelCached = (
               nameLower.includes('25_-') ||
               nameLower.includes('_sad') ||
               nameLower.includes('teethbroken') ||
-              nameLower.includes('hawk_rifle')
+              nameLower.includes('hawk_rifle') ||
+              (url.toLowerCase().includes('zoro') && (nameLower.includes('object_8') || nameLower.includes('object_10') || nameLower.includes('weapon_d')))
             ) {
               if (child.parent && !(child as THREE.SkinnedMesh).isSkinnedMesh && !(child as THREE.Bone).isBone) {
                 child.visible = false;
@@ -233,6 +232,27 @@ export function retargetClipToModel(
     }
   });
 
+  // Detect if the Hips bone's parent (e.g. Armature) has a non-identity rotation relative to targetModel.
+  // Models like SkinUsopp.glb have an Armature node rotated by +90 deg on X (a standard Blender export artifact).
+  // Standard animation clips (Walk.glb, UsoppAtk.glb) are authored with parent rotation = Identity.
+  // When an animation sets mixamorig:Hips.quaternion without counteracting Armature's +90 deg X rotation,
+  // the entire character tilts 90 deg forward and falls flat face-down onto the floor.
+  // By pre-multiplying keyframe quaternions with hipsInvParentQuat, the character remains perfectly upright.
+  let hipsInvParentQuat: THREE.Quaternion | null = null;
+  const hipsBone = Array.from(modelBoneMap.entries()).find(([name]) => name.toLowerCase().includes('hips'))?.[1];
+  if (hipsBone && hipsBone.parent) {
+    targetModel.updateMatrixWorld(true);
+    const parentWorldQ = new THREE.Quaternion();
+    hipsBone.parent.getWorldQuaternion(parentWorldQ);
+    const rootWorldQ = new THREE.Quaternion();
+    targetModel.getWorldQuaternion(rootWorldQ);
+    const relParentQ = rootWorldQ.clone().invert().multiply(parentWorldQ);
+    const angle = 2 * Math.acos(Math.min(1, Math.max(-1, Math.abs(relParentQ.w))));
+    if (angle > 0.01) {
+      hipsInvParentQuat = relParentQ.clone().invert();
+    }
+  }
+
   const newTracks: THREE.KeyframeTrack[] = [];
 
   for (const track of clip.tracks) {
@@ -294,22 +314,35 @@ export function retargetClipToModel(
       const values = cloned.values;
       if (values && values.length >= 3) {
         const targetBone = modelBoneMap.get(matchedName);
-        const targetRestPos = targetBone ? targetBone.position : null;
-        const targetRestY = targetRestPos ? targetRestPos.y : values[1];
-        const animBaseY = values.length >= 2 ? values[1] : 1.0;
-        const heightScale = (animBaseY > 0.001 && targetRestY > 0.001) ? (targetRestY / animBaseY) : 1.0;
+        const targetRestPos = targetBone ? targetBone.position.clone() : new THREE.Vector3(values[0], values[1], values[2]);
 
-        const baseRootX = targetRestPos ? targetRestPos.x : values[0];
-        const baseRootZ = targetRestPos ? targetRestPos.z : values[2];
+        // Find rest hip height in world/rig space
+        let worldRestHeight = targetRestPos.y;
+        if (targetBone) {
+          const boneWorldPos = new THREE.Vector3();
+          targetBone.getWorldPosition(boneWorldPos);
+          const rootWorldPos = new THREE.Vector3();
+          targetModel.getWorldPosition(rootWorldPos);
+          worldRestHeight = Math.abs(boneWorldPos.y - rootWorldPos.y);
+        }
+
+        const animBaseY = values.length >= 2 ? values[1] : 1.0;
+        const heightScale = (animBaseY > 0.001 && worldRestHeight > 0.001) ? (worldRestHeight / animBaseY) : 1.0;
+
         const numKeys = cloned.times.length;
         for (let i = 0; i < numKeys; i++) {
-          values[i * 3 + 0] = baseRootX;
-          // Scale vertical elevation (steps, jumps, bobbing) relative to the model's actual rest hip height.
-          // This guarantees characters with short legs (e.g. Chopper 1m skin with 0.268m hips)
-          // never get their hips yanked up or legs stretched by adult animation keyframes.
-          const deltaY = values[i * 3 + 1] - animBaseY;
-          values[i * 3 + 1] = targetRestY + deltaY * heightScale;
-          values[i * 3 + 2] = baseRootZ;
+          const deltaY = (values[i * 3 + 1] - animBaseY) * heightScale;
+          if (hipsInvParentQuat) {
+            // Apply vertical delta along the true world up direction, converted to local parent space
+            const deltaLocal = new THREE.Vector3(0, deltaY, 0).applyQuaternion(hipsInvParentQuat);
+            values[i * 3 + 0] = targetRestPos.x + deltaLocal.x;
+            values[i * 3 + 1] = targetRestPos.y + deltaLocal.y;
+            values[i * 3 + 2] = targetRestPos.z + deltaLocal.z;
+          } else {
+            values[i * 3 + 0] = targetRestPos.x;
+            values[i * 3 + 1] = targetRestPos.y + deltaY;
+            values[i * 3 + 2] = targetRestPos.z;
+          }
         }
       }
       newTracks.push(cloned);
@@ -318,8 +351,22 @@ export function retargetClipToModel(
 
     // Preserve rotations & quaternions retargeted to matched bone
     if (propName === '.quaternion' || propName === '.rotation') {
-      const cloned = track.clone();
+      const cloned = track.clone() as THREE.QuaternionKeyframeTrack;
       cloned.name = matchedName + (propName === '.rotation' ? '.quaternion' : propName);
+      const isHips = matchedName.toLowerCase().includes('hips');
+      if (isHips && hipsInvParentQuat) {
+        const values = cloned.values;
+        const numKeys = cloned.times.length;
+        const q = new THREE.Quaternion();
+        for (let i = 0; i < numKeys; i++) {
+          q.set(values[i * 4 + 0], values[i * 4 + 1], values[i * 4 + 2], values[i * 4 + 3]);
+          const corrected = hipsInvParentQuat.clone().multiply(q);
+          values[i * 4 + 0] = corrected.x;
+          values[i * 4 + 1] = corrected.y;
+          values[i * 4 + 2] = corrected.z;
+          values[i * 4 + 3] = corrected.w;
+        }
+      }
       newTracks.push(cloned);
       continue;
     }
@@ -449,17 +496,29 @@ export async function loadChampionSkinModel(
     return null;
   }
 
-  // 2. Luffy Dedicated Rig
+  // 2. Luffy Dedicated Rig (SkinLuffy base POSE T, Walk, Punch1/Punch2/Punch3)
   if (normId === 'luffy') {
     const candidateUrls = [
-      './models/SkinLuffy_b.glb',
-      '/models/SkinLuffy_b.glb',
-      './models/SkinLuffy_a.glb',
-      '/models/SkinLuffy_a.glb',
+      './models/SkinLuffy.glb',
+      '/models/SkinLuffy.glb',
     ];
     const res = await tryLoadCandidateModel(candidateUrls);
     if (res) {
-      return { ...res.data, url: res.url, isDedicatedSkin: true };
+      const [walkClip, punchClip] = await Promise.all([
+        tryLoadAnimationClip(['./models/Walk.glb', '/models/Walk.glb'], 'walk'),
+        tryLoadAnimationClip(['./models/Punch1.glb', '/models/Punch1.glb', './models/Punch2.glb'], 'punch'),
+      ]);
+      return {
+        ...res.data,
+        animations: [], // Explicitly clear any embedded idle animations so Luffy defaults to POSE T like Zoro
+        url: res.url,
+        isDedicatedSkin: true,
+        customAnimations: {
+          idle: undefined, // Follows Zoro's rule: clean base rest pose (POSE T) as default
+          walk: walkClip || undefined,
+          attack: punchClip || undefined,
+        },
+      };
     }
     return null;
   }
@@ -493,17 +552,23 @@ export async function loadChampionSkinModel(
     return null;
   }
 
-  // 4. Usopp Dedicated Rig (SkinUsopp, UsoppAtk)
+  // 4. Usopp Dedicated Rig (SkinUsopp base POSE T, Walk, UsoppAtk)
   if (normId === 'usopp') {
     const candidateUrls = ['./models/SkinUsopp.glb', '/models/SkinUsopp.glb'];
     const res = await tryLoadCandidateModel(candidateUrls);
     if (res) {
-      const attackClip = await tryLoadAnimationClip(['./models/UsoppAtk.glb', '/models/UsoppAtk.glb'], 'attack');
+      const [walkClip, attackClip] = await Promise.all([
+        tryLoadAnimationClip(['./models/Walk.glb', '/models/Walk.glb'], 'walk'),
+        tryLoadAnimationClip(['./models/UsoppAtk.glb', '/models/UsoppAtk.glb'], 'attack'),
+      ]);
       return {
         ...res.data,
+        animations: [], // Explicitly clear any embedded idle animations so Usopp defaults to POSE T like Zoro
         url: res.url,
         isDedicatedSkin: true,
         customAnimations: {
+          idle: undefined, // Follows Zoro's rule: clean base rest pose (POSE T) as default
+          walk: walkClip || undefined,
           attack: attackClip || undefined,
         },
       };
@@ -929,11 +994,9 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
   }
 
   championRigPromise = (async () => {
-    // 1. Try loading SkinLuffy_b GLB first as base model
-    const baseModel = await loadModelCached('./models/SkinLuffy_b.glb')
-      .catch(() => loadModelCached('/models/SkinLuffy_b.glb'))
-      .catch(() => loadModelCached('./models/SkinLuffy_a.glb'))
-      .catch(() => loadModelCached('/models/SkinLuffy_a.glb'))
+    // 1. Try loading SkinLuffy GLB as base model
+    const baseModel = await loadModelCached('./models/SkinLuffy.glb')
+      .catch(() => loadModelCached('/models/SkinLuffy.glb'))
       .catch(() => null);
 
     // 2. Load animations in parallel
@@ -977,7 +1040,7 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
     const chosenBase = baseModel?.object;
 
     if (!chosenBase) {
-      throw new Error('Base model (SkinLuffy_a.glb) not found');
+      throw new Error('Base model (SkinLuffy.glb) not found');
     }
 
     let walkClip = walkData?.animations?.[0];

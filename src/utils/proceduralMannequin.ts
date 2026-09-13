@@ -30,7 +30,7 @@ export interface ProceduralMannequin {
   update: (delta: number, time: number, animName: 'idle' | 'walk' | 'punch' | 'cast', isEnemy?: boolean) => void;
 }
 
-export function createProceduralMannequin(unitColor: string, isEnemy: boolean = false): ProceduralMannequin {
+export function createProceduralMannequin(unitColor: string, isEnemy: boolean = false, hasOrb: boolean = false): ProceduralMannequin {
   const root = new THREE.Group();
 
   const primaryColor = new THREE.Color(isEnemy ? '#f43f5e' : unitColor);
@@ -41,15 +41,16 @@ export function createProceduralMannequin(unitColor: string, isEnemy: boolean = 
     color: primaryColor,
     roughness: 0.35,
     metalness: 0.15,
-    emissive: primaryColor.clone().multiplyScalar(0.25),
-    emissiveIntensity: 0.4,
+    emissive: hasOrb ? new THREE.Color('#9333ea') : primaryColor.clone().multiplyScalar(0.25),
+    emissiveIntensity: hasOrb ? 0.45 : 0.4,
   });
 
   const accentMat = new THREE.MeshStandardMaterial({
     color: accentColor,
     roughness: 0.3,
     metalness: 0.2,
-    emissive: accentColor.clone().multiplyScalar(0.3),
+    emissive: hasOrb ? new THREE.Color('#c084fc') : accentColor.clone().multiplyScalar(0.3),
+    emissiveIntensity: hasOrb ? 0.5 : 0.3,
   });
 
   const darkMat = new THREE.MeshStandardMaterial({
@@ -59,11 +60,11 @@ export function createProceduralMannequin(unitColor: string, isEnemy: boolean = 
   });
 
   const glowMat = new THREE.MeshStandardMaterial({
-    color: primaryColor.clone().offsetHSL(0, 0.1, 0.2),
+    color: hasOrb ? new THREE.Color('#c084fc') : primaryColor.clone().offsetHSL(0, 0.1, 0.2),
     roughness: 0.2,
     metalness: 0.3,
-    emissive: primaryColor,
-    emissiveIntensity: 0.6,
+    emissive: hasOrb ? new THREE.Color('#a855f7') : primaryColor,
+    emissiveIntensity: hasOrb ? 0.7 : 0.6,
   });
 
   // Pelvis / Core Center - Elevated so feet rest cleanly at y=0 on the arena floor
