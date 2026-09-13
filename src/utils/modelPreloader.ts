@@ -11,7 +11,6 @@ export interface ChampionRigData {
   baseModel: THREE.Group;
   animations: {
     idle?: THREE.AnimationClip;
-    idleZoro?: THREE.AnimationClip;
     femaleIdle?: THREE.AnimationClip;
     maleIdle?: THREE.AnimationClip;
     walk?: THREE.AnimationClip;
@@ -425,23 +424,22 @@ export async function loadChampionSkinModel(
 ): Promise<ChampionSkinResult | null> {
   const normId = (unitId || '').toLowerCase();
 
-  // 1. Zoro Dedicated Rig & Custom Animations (SkinZoro base, IdleZoro, ZoroWalk, Slash1)
+  // 1. Zoro Dedicated Rig & Custom Animations (SkinZoro base POSE T, ZoroWalk, Slash1)
   if (normId === 'zoro') {
     const candidateUrls = ['./models/SkinZoro.glb', '/models/SkinZoro.glb'];
     const res = await tryLoadCandidateModel(candidateUrls);
     if (res) {
-      const [walkClip, slashClip, idleClip] = await Promise.all([
+      const [walkClip, slashClip] = await Promise.all([
         tryLoadAnimationClip(['./models/Walk.glb', '/models/Walk.glb', './models/ZoroWalk.glb', '/models/ZoroWalk.glb'], 'walk'),
         tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1'),
-        tryLoadAnimationClip(['./models/IdleZoro.glb', '/models/IdleZoro.glb', './models/Idle.glb', '/models/Idle.glb'], 'idle'),
       ]);
       return {
         ...res.data,
-        animations: [],
+        animations: [], // Explicitly clear any embedded idle animations so Zoro defaults to POSE T
         url: res.url,
         isDedicatedSkin: true,
         customAnimations: {
-          idle: idleClip || undefined,
+          idle: undefined, // Strict POSE T as requested: SkinZoro is base pre-battle and default pose
           walk: walkClip || undefined,
           attack: slashClip || undefined,
           slash1: slashClip || undefined,
@@ -500,16 +498,12 @@ export async function loadChampionSkinModel(
     const candidateUrls = ['./models/SkinUsopp.glb', '/models/SkinUsopp.glb'];
     const res = await tryLoadCandidateModel(candidateUrls);
     if (res) {
-      const [attackClip, idleClip] = await Promise.all([
-        tryLoadAnimationClip(['./models/UsoppAtk.glb', '/models/UsoppAtk.glb'], 'attack'),
-        tryLoadAnimationClip(['./models/Idle.glb', '/models/Idle.glb'], 'idle'),
-      ]);
+      const attackClip = await tryLoadAnimationClip(['./models/UsoppAtk.glb', '/models/UsoppAtk.glb'], 'attack');
       return {
         ...res.data,
         url: res.url,
         isDedicatedSkin: true,
         customAnimations: {
-          idle: idleClip || undefined,
           attack: attackClip || undefined,
         },
       };
@@ -628,7 +622,7 @@ export async function loadChampionSkinModel(
       '/models/Sanji.glb',
     ];
     const res = await tryLoadCandidateModel(candidateUrls);
-    const [kick1Clip, kick2Clip, kick3Clip, idleClip] = await Promise.all([
+    const [kick1Clip, kick2Clip, kick3Clip] = await Promise.all([
       tryLoadAnimationClip(['./models/Kick1.glb', '/models/Kick1.glb'], 'kick1'),
       tryLoadAnimationClip(
         [
@@ -648,7 +642,6 @@ export async function loadChampionSkinModel(
         ],
         'kick3'
       ),
-      tryLoadAnimationClip(['./models/Idle.glb', '/models/Idle.glb'], 'idle'),
     ]);
 
     if (res) {
@@ -657,7 +650,6 @@ export async function loadChampionSkinModel(
         url: res.url,
         isDedicatedSkin: true,
         customAnimations: {
-          idle: idleClip || undefined,
           kick1: kick1Clip || undefined,
           kick2: kick2Clip || undefined,
           kick3: kick3Clip || undefined,
@@ -725,17 +717,13 @@ export async function loadChampionSkinModel(
       '/models/Mihawk.glb',
     ];
     const res = await tryLoadCandidateModel(candidateUrls);
-    const [slashClip, idleClip] = await Promise.all([
-      tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1'),
-      tryLoadAnimationClip(['./models/Idle.glb', '/models/Idle.glb'], 'idle'),
-    ]);
+    const slashClip = await tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1');
     if (res) {
       return {
         ...res.data,
         url: res.url,
         isDedicatedSkin: true,
         customAnimations: {
-          idle: idleClip || undefined,
           slash1: slashClip || undefined,
           attack: slashClip || undefined,
         },
@@ -761,17 +749,13 @@ export async function loadChampionSkinModel(
       '/models/Shanks.glb',
     ];
     const res = await tryLoadCandidateModel(candidateUrls);
-    const [slashClip, idleClip] = await Promise.all([
-      tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1'),
-      tryLoadAnimationClip(['./models/Idle.glb', '/models/Idle.glb'], 'idle'),
-    ]);
+    const slashClip = await tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1');
     if (res) {
       return {
         ...res.data,
         url: res.url,
         isDedicatedSkin: true,
         customAnimations: {
-          idle: idleClip || undefined,
           slash1: slashClip || undefined,
           attack: slashClip || undefined,
         },
@@ -824,17 +808,13 @@ export async function loadChampionSkinModel(
       '/models/Tashigi.glb',
     ];
     const res = await tryLoadCandidateModel(candidateUrls);
-    const [slashClip, idleClip] = await Promise.all([
-      tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1'),
-      tryLoadAnimationClip(['./models/Idle.glb', '/models/Idle.glb'], 'idle'),
-    ]);
+    const slashClip = await tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1');
     if (res) {
       return {
         ...res.data,
         url: res.url,
         isDedicatedSkin: true,
         customAnimations: {
-          idle: idleClip || undefined,
           slash1: slashClip || undefined,
           attack: slashClip || undefined,
         },
@@ -863,10 +843,7 @@ export async function loadChampionSkinModel(
       './models/Marine.glb',
       '/models/Marine.glb',
     ];
-    const [slashClip, idleClip] = await Promise.all([
-      tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1'),
-      tryLoadAnimationClip(['./models/Idle.glb', '/models/Idle.glb'], 'idle'),
-    ]);
+    const slashClip = await tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1');
     const res = await tryLoadCandidateModel(candidateUrls);
     if (res) {
       return {
@@ -874,7 +851,6 @@ export async function loadChampionSkinModel(
         url: res.url,
         isDedicatedSkin: true,
         customAnimations: {
-          idle: idleClip || undefined,
           slash1: slashClip || undefined,
         },
       };
@@ -962,8 +938,6 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
 
     // 2. Load animations in parallel
     const [
-      idleData,
-      idleZoroData,
       walkData,
       femaleWalkData,
       punch1Data,
@@ -973,12 +947,6 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
       turnLeftData,
       turnRightData,
     ] = await Promise.all([
-      loadModelCached('./models/Idle.glb')
-        .catch(() => loadModelCached('/models/Idle.glb'))
-        .catch(() => null),
-      loadModelCached('./models/IdleZoro.glb')
-        .catch(() => loadModelCached('/models/IdleZoro.glb'))
-        .catch(() => null),
       loadModelCached('./models/Walk.glb')
         .catch(() => loadModelCached('/models/Walk.glb'))
         .catch(() => null),
@@ -1012,8 +980,6 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
       throw new Error('Base model (SkinLuffy_a.glb) not found');
     }
 
-    let idleClip = idleData?.animations?.[0];
-    let idleZoroClip = idleZoroData?.animations?.[0];
     let walkClip = walkData?.animations?.[0];
     // WalkFem.glb currently contains the female mesh but no animation clip;
     // use the compatible shared walk until a clipped WalkFem asset is supplied.
@@ -1027,8 +993,6 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
     let turnLeftClip = turnLeftData?.animations?.[0];
     let turnRightClip = turnRightData?.animations?.[0];
 
-    if (idleClip) idleClip.name = 'idle';
-    if (idleZoroClip) idleZoroClip.name = 'idleZoro';
     if (walkClip) walkClip.name = 'walk';
     if (femaleWalkClip) femaleWalkClip.name = 'femaleWalk';
     if (punch1Clip) punch1Clip.name = 'punch1';
@@ -1043,8 +1007,6 @@ export async function loadChampionModularRig(): Promise<ChampionRigData> {
     return {
       baseModel: chosenBase,
       animations: {
-        idle: idleClip,
-        idleZoro: idleZoroClip,
         walk: walkClip,
         femaleWalk: femaleWalkClip,
         punch: punch1Clip,

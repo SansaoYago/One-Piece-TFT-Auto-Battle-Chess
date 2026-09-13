@@ -468,10 +468,9 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
             const actions: { [key: string]: THREE.AnimationAction } = {};
             const isFemale = isFemaleChampion(unitId);
 
-            // Idle priority: custom dedicated idle clip (e.g. Sanji, Zoro, Nami, Usopp) -> skin embedded clip -> rigData.animations.idle
-            const idleClipToUse = customSkin?.customAnimations?.idle ||
-              customSkin?.animations?.[0] ||
-              (isZoro ? (rigData.animations.idleZoro || rigData.animations.idle) : rigData.animations.idle);
+            // Idle stays on the skin's own bind/rest pose (POSE T). Zoro strictly has NO idle animation assigned,
+            // sitting in clean POSE T as his base pre-battle and default pose.
+            const idleClipToUse = isZoro ? undefined : (customSkin?.customAnimations?.idle || customSkin?.animations?.[0]);
 
             // Walk.glb is the standard male walk animation (26 frames)
             const defaultMaleWalk = rigData.animations.walk;
