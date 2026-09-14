@@ -30,10 +30,10 @@ npm run build
 # Fecha instancias que podem bloquear app.asar ou arquivos do instalador.
 Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like "One Piece Tactics*" } | Stop-Process -Force
 taskkill /F /IM 7za.exe /T 2>$null
- taskkill /F /IM electron.exe /T 2>$null
+taskkill /F /IM electron.exe /T 2>$null
 
 # Gera NSIS e portable fora do projeto para evitar locks e empacotamento recursivo.
-Remove-Item $TEMP_OUTPUT -Recurse -Force -ErrorAction SilentlyContinue
+
 npx electron-builder --win nsis portable --config.directories.output=$TEMP_OUTPUT
 
 # Remove os artefatos da versão anterior da pasta final.
@@ -58,7 +58,7 @@ Na pasta `dist-electron` devem aparecer:
 - `One Piece Tactics Setup X.Y.Z.exe.blockmap`: arquivo auxiliar do instalador/atualização.
 - `One Piece Tactics X.Y.Z.exe`: versão portátil, sem instalação.
 
-## Verificar a versão
+## Verificar a versãoRemove-Item $TEMP_OUTPUT -Recurse -Force -ErrorAction SilentlyContinue
 
 ```powershell
 Get-Content package.json | Select-String '"version"'
