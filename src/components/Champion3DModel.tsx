@@ -608,10 +608,21 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
             mixer.update(0.01);
           }
 
-          // 6. Compute exact model height strictly from the static rest pose of the SKIN.
-          // This guarantees the character's height is determined 100% by the SKIN geometry,
-          // completely independent of and never distorted by movement or animations.
-          const skinBox = new THREE.Box3().setFromObject(sourceModel);
+          // 6. Compute exact model height strictly from the visible static rest pose geometry of the SKIN.
+          // This guarantees the character's height and centering are determined 100% by the visible character body,
+          // completely independent of detached auxiliary props or animation distortion.
+          sourceModel.updateMatrixWorld(true);
+          const skinBox = new THREE.Box3();
+          sourceModel.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh && child.visible) {
+              const meshBox = new THREE.Box3().setFromObject(child);
+              skinBox.union(meshBox);
+            }
+          });
+          // Fallback if no visible mesh was found
+          if (skinBox.isEmpty()) {
+            skinBox.setFromObject(sourceModel);
+          }
           const skinSize = new THREE.Vector3();
           skinBox.getSize(skinSize);
           const skinHeight = skinSize.y > 0.0001 ? skinSize.y : Math.max(skinSize.x, skinSize.z);
