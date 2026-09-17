@@ -13,7 +13,7 @@ Set-Location "C:\Users\kaiqu\Documents\GitHub\ONE_PIECE_TFT\One-Piece-TFT-Auto-B
 Altere somente o valor de `$VERSION` para a nova versão desejada:
 
 ```powershell
-$VERSION = "0.0.6"
+$VERSION = "0.1.0"
 $PROJECT = "C:\Users\kaiqu\Documents\GitHub\ONE_PIECE_TFT\One-Piece-TFT-Auto-Battle-Chess"
 $OUTPUT = Join-Path $PROJECT "dist-electron"
 $TEMP_OUTPUT = Join-Path $env:TEMP "one-piece-tft-electron-$VERSION"
@@ -58,14 +58,16 @@ Na pasta `dist-electron` devem aparecer:
 - `One Piece Tactics Setup X.Y.Z.exe.blockmap`: arquivo auxiliar do instalador/atualização.
 - `One Piece Tactics X.Y.Z.exe`: versão portátil, sem instalação.
 
-## Verificar a versãoRemove-Item $TEMP_OUTPUT -Recurse -Force -ErrorAction SilentlyContinue
+## Verificar a versão
+
+Remove-Item $TEMP_OUTPUT -Recurse -Force -ErrorAction SilentlyContinue
 
 ```powershell
 Get-Content package.json | Select-String '"version"'
-Get-ChildItem "dist-electron\*0.0.6*" | Select-Object Name,Length,LastWriteTime
+Get-ChildItem "dist-electron\*0.1.0*" | Select-Object Name,Length,LastWriteTime
 ```
 
-Troque `0.0.6` pelo valor usado em `$VERSION`.
+Troque `0.1.0` pelo valor usado em `$VERSION`.
 
 ## Se o build falhar com arquivo bloqueado
 
@@ -84,7 +86,7 @@ Depois repita a partir da linha que define `$TEMP_OUTPUT`. O procedimento usa um
 Se quiser gerar somente o EXE portátil:
 
 ```powershell
-$VERSION = "0.0.6"
+$VERSION = "0.1.0"
 $PROJECT = "C:\Users\kaiqu\Documents\GitHub\ONE_PIECE_TFT\One-Piece-TFT-Auto-Battle-Chess"
 $TEMP_OUTPUT = Join-Path $env:TEMP "one-piece-tft-electron-$VERSION-portable"
 Set-Location $PROJECT

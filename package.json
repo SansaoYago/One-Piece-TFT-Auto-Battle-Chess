@@ -1,7 +1,7 @@
 {
   "name": "one-piece-tactics",
   "private": true,
-  "version": "0.0.6",
+  "version": "0.1.0",
   "main": "electron.cjs",
   "type": "module",
   "scripts": {
@@ -39,6 +39,7 @@
     "directories": {
       "output": "dist-electron"
     },
+    "icon": "public/app-icon-256.png",
     "files": [
       "!dist-electron{,/**/*}",
       "!dist-electron-*{,/**/*}",
