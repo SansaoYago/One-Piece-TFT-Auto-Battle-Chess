@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Commander } from '../types/game';
 import { Crown, Flame, Heart, Skull, ChevronLeft, ChevronRight, Check, X, Swords, Scale } from 'lucide-react';
 
@@ -19,8 +19,25 @@ export const PlayerList: React.FC<PlayerListProps> = ({
 }) => {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(isInitiallyCollapsed);
 
-  const aliveCount = commanders.filter((c) => c.hp > 0).length;
+  const aliveCount = commanders.filter((c) => c.hp > 0 && !c.isEliminated).length;
   const humanCmd = commanders.find((c) => c.isHuman);
+
+  // Dynamic ranking: Alive commanders sorted by HP descending, eliminated commanders at bottom
+  const sortedCommanders = useMemo(() => {
+    return [...commanders].sort((a, b) => {
+      const aAlive = a.hp > 0 && !a.isEliminated;
+      const bAlive = b.hp > 0 && !b.isEliminated;
+      if (aAlive && !bAlive) return -1;
+      if (!aAlive && bAlive) return 1;
+      if (aAlive && bAlive) {
+        if (b.hp !== a.hp) return b.hp - a.hp;
+        if (a.isHuman) return -1;
+        if (b.isHuman) return 1;
+        return (b.winStreak || 0) - (a.winStreak || 0);
+      }
+      return b.hp - a.hp;
+    });
+  }, [commanders]);
 
   return (
     <div className="relative h-full flex items-start select-none">
@@ -60,7 +77,7 @@ export const PlayerList: React.FC<PlayerListProps> = ({
             </span>
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] text-slate-400 font-mono font-bold">
-                {aliveCount}/{commanders.length}
+                {aliveCount}/{commanders.length} vivos
               </span>
               <button
                 onClick={() => setIsCollapsed(true)}
@@ -72,12 +89,13 @@ export const PlayerList: React.FC<PlayerListProps> = ({
             </div>
           </div>
 
-          {/* 8 Commander Cards List */}
+          {/* Dynamically Sorted Commander Cards List */}
           <div className="space-y-2 flex-1">
-            {commanders.map((cmd) => {
+            {sortedCommanders.map((cmd, rankIdx) => {
               const hpPercent = Math.max(0, (cmd.hp / cmd.maxHp) * 100);
-              const isAlive = cmd.hp > 0;
+              const isAlive = cmd.hp > 0 && !cmd.isEliminated;
               const isViewing = cmd.id === viewingCommanderId;
+              const rankPosition = rankIdx + 1;
               const hpColorClass =
                 hpPercent > 50
                   ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
@@ -91,7 +109,7 @@ export const PlayerList: React.FC<PlayerListProps> = ({
                 <div
                   key={cmd.id}
                   onClick={() => onSelectCommander(cmd.id)}
-                  className={`relative rounded-xl p-2.5 border transition-all duration-200 cursor-pointer ${
+                  className={`relative rounded-xl p-2.5 border transition-all duration-300 cursor-pointer ${
                     isViewing
                       ? 'bg-gradient-to-r from-amber-950/70 via-slate-900/90 to-slate-900/90 border-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.4)] ring-2 ring-amber-400 scale-[1.02]'
                       : cmd.isHuman
@@ -108,8 +126,22 @@ export const PlayerList: React.FC<PlayerListProps> = ({
                 >
                   {/* Top Row: Rank, Avatar, Name & Level */}
                   <div className="flex items-center justify-between gap-1.5 mb-1.5">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-lg flex-shrink-0 drop-shadow">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {/* Placement Rank Badge */}
+                      <span
+                        className={`w-4 h-4 rounded flex items-center justify-center text-[9px] font-black font-mono flex-shrink-0 ${
+                          rankPosition === 1
+                            ? 'bg-amber-500 text-slate-950 font-black shadow-[0_0_8px_rgba(245,158,11,0.5)]'
+                            : rankPosition === 2
+                            ? 'bg-slate-300 text-slate-950'
+                            : rankPosition === 3
+                            ? 'bg-amber-700 text-amber-100'
+                            : 'bg-slate-800 text-slate-400 border border-slate-700'
+                        }`}
+                      >
+                        {rankPosition}
+                      </span>
+                      <span className="text-base flex-shrink-0 drop-shadow">
                         {cmd.avatar}
                       </span>
                       <div className="min-w-0">

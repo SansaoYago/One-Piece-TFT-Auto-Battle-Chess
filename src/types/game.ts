@@ -249,3 +249,12 @@ export const DIFFICULTY_CONFIGS: Record<GameDifficulty, DifficultyConfig> = {
   },
 };
 
+export interface OpponentDisplayInfo {
+  name: string;
+  avatar: string;
+  isGhost?: boolean;
+  isBoss?: boolean;
+  bossTitle?: string;
+  isPvE?: boolean;
+}
+

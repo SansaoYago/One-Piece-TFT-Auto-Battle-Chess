@@ -1,6 +1,6 @@
 import { UnitInstance, StarLevel, GameDifficulty } from '../types/game';
 import { CHAMPION_DATABASE } from '../data/units';
-import { createUnitInstance } from '../utils/gameUtils';
+import { createUnitInstance, THREE_STAR_CHANCE_BY_TIER } from '../utils/gameUtils';
 import { BOT_ARCHETYPES } from './botAI';
 
 export interface BotPlayerData {
@@ -132,7 +132,11 @@ export function generateIndividualBotState(
       if (i === 0 && totalRound >= 3) stars = 2;
       else if (i <= 1 && totalRound >= 6) stars = 2;
       else if (i <= 2 && totalRound >= 10) stars = 2;
-      else if (i === 0 && totalRound >= 15) stars = 3;
+      else if (i === 0 && totalRound >= 14) {
+        const tier = CHAMPION_DATABASE[champKey]?.cost || 1;
+        const chance = THREE_STAR_CHANCE_BY_TIER[tier] ?? 0.50;
+        if (Math.random() <= chance) stars = 3;
+      }
     } else {
       if (i === 0 && totalRound >= 5) stars = 2;
       else if (i <= 1 && totalRound >= 9) stars = 2;

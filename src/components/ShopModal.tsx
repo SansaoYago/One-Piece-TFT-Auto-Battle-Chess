@@ -162,13 +162,13 @@ export const ShopModal: React.FC<ShopModalProps> = ({
         >
           
           {/* Shop Header Controls */}
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 flex-wrap gap-2">
             {/* Left: Level & Odds */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5 flex-wrap">
               <span className="text-xs font-bold text-amber-400">
-                Nível {level} Probabilidades:
+                Nível {level} Odds:
               </span>
-              <div className="flex items-center gap-1.5 text-[10px] font-mono">
+              <div className="flex items-center gap-1 text-[10px] font-mono">
                 <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
                   T1: {currentOdds[0]}%
                 </span>
@@ -184,6 +184,10 @@ export const ShopModal: React.FC<ShopModalProps> = ({
                 <span className="px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800 font-bold">
                   T5: {currentOdds[4]}%
                 </span>
+              </div>
+              <div className="hidden md:flex items-center gap-1.5 text-[9px] text-amber-300/90 bg-amber-950/50 px-2 py-0.5 rounded-md border border-amber-500/30">
+                <span className="font-semibold text-amber-400">🎯 Dif. 3★:</span>
+                <span className="font-mono text-slate-300">T1: 75% | T2: 68% | T3: 50% | T4: 40% | T5: 25%</span>
               </div>
             </div>
 

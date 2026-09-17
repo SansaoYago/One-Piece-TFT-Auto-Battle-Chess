@@ -1,6 +1,6 @@
 import { GameDifficulty, StarLevel, UnitInstance } from '../types/game';
 import { CHAMPION_DATABASE } from '../data/units';
-import { createUnitInstance } from '../utils/gameUtils';
+import { createUnitInstance, THREE_STAR_CHANCE_BY_TIER } from '../utils/gameUtils';
 
 export interface BotOpponent {
   id: string;
@@ -323,7 +323,11 @@ export function generateEnemyBoardUnits(
       if (idx === 0 && totalRound >= 3) stars = 2;
       else if (idx <= 1 && totalRound >= 6) stars = 2;
       else if (idx <= 2 && totalRound >= 10) stars = 2;
-      else if (idx === 0 && totalRound >= 15) stars = 3;
+      else if (idx === 0 && totalRound >= 14) {
+        const tier = CHAMPION_DATABASE[champId]?.cost || 1;
+        const chance = THREE_STAR_CHANCE_BY_TIER[tier] ?? 0.50;
+        if (Math.random() <= chance) stars = 3;
+      }
     } else {
       // Medium
       if (idx === 0 && totalRound >= 5) stars = 2;
@@ -368,7 +372,11 @@ export function generateEnemyBoardUnits(
       if (idx === 0 && totalRound >= 4) stars = 2;
       else if (idx <= 1 && totalRound >= 7) stars = 2;
       else if (idx <= 2 && totalRound >= 11) stars = 2;
-      else if (idx === 0 && totalRound >= 16) stars = 3;
+      else if (idx === 0 && totalRound >= 15) {
+        const tier = CHAMPION_DATABASE[champId]?.cost || 1;
+        const chance = THREE_STAR_CHANCE_BY_TIER[tier] ?? 0.50;
+        if (Math.random() <= chance) stars = 3;
+      }
     } else {
       // Medium
       if (idx === 0 && totalRound >= 6) stars = 2;

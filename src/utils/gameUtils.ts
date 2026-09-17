@@ -232,6 +232,14 @@ export function createUnitInstance(
   };
 }
 
+export const THREE_STAR_CHANCE_BY_TIER: Record<number, number> = {
+  1: 0.75, // Tier 1 (Cost 1): 75% de chance de atingir 3★ na campanha
+  2: 0.68, // Tier 2 (Cost 2): 68% de chance
+  3: 0.50, // Tier 3 (Cost 3): 50% de chance
+  4: 0.40, // Tier 4 (Cost 4): 40% de chance
+  5: 0.25, // Tier 5 (Cost 5): 25% de chance
+};
+
 export interface UpgradeResult {
   nextBench: (UnitInstance | null)[];
   nextBoard: UnitInstance[];
@@ -263,7 +271,7 @@ export function performStarUpgrades(
     });
 
     for (const unitId of allUnitIds) {
-      // 1. Check for 3 x 1★ -> 2★
+      // 1. Check for 3 x 1★ -> 2★ (Always 100% guaranteed)
       const board1 = board.filter((u) => !u.isEnemy && u.unitId === unitId && u.stars === 1);
       const bench1 = bench.filter((u): u is UnitInstance => u !== null && u.unitId === unitId && u.stars === 1);
       const total1 = [...board1, ...bench1];
@@ -325,15 +333,15 @@ export function performStarUpgrades(
         break; // Re-evaluate from start
       }
 
-      // 2. Check for 3 x 2★ -> 3★
+      // 2. Check for 3 x 2★ -> 3★ (Always 100% instant merge to immediately free bench space!)
       const board2 = board.filter((u) => !u.isEnemy && u.unitId === unitId && u.stars === 2);
       const bench2 = bench.filter((u): u is UnitInstance => u !== null && u.unitId === unitId && u.stars === 2);
       const total2 = [...board2, ...bench2];
 
       if (total2.length >= 3) {
+        const base = CHAMPION_DATABASE[unitId] || CHAMPION_DATABASE.luffy;
         const main = total2[0];
         const toMerge = [total2[1], total2[2]];
-        const base = CHAMPION_DATABASE[unitId] || CHAMPION_DATABASE.luffy;
 
         // Collect items from merged units without losing any
         const mergedItems = [...main.items];
@@ -395,6 +403,116 @@ export function performStarUpgrades(
     refundedItems,
     upgradedUnit: lastUpgradedUnit,
   };
+}
+
+/**
+ * Conta quantas cópias de um mesmo campeão o jogador possui no tabuleiro e no banco.
+ * (1★ = 1 cópia, 2★ = 3 cópias, 3★ = 9 cópias)
+ */
+export function countChampionOwnedCopies(
+  unitId: string,
+  units: (UnitInstance | null)[]
+): number {
+  let count = 0;
+  for (const u of units) {
+    if (!u || u.unitId !== unitId || u.isEnemy) continue;
+    if (u.stars === 1) count += 1;
+    else if (u.stars === 2) count += 3;
+    else if (u.stars === 3) count += 9;
+  }
+  return count;
+}
+
+/**
+ * Geração de cartas da loja baseada no nível do jogador e na probabilidade de Tier.
+ * A dificuldade para atingir 3★ (9 cópias) é controlada exclusivamente na loja:
+ * - Simula a diluição de um elenco maior (~30 personagens) para que tiers com poucos
+ *   campeões (ex: Shanks sendo o único T5, Zoro/Smoker no T2) não apareçam em demasia.
+ * - Conforme o jogador acumula cópias em direção a 3★ (6 a 8 cópias), a taxa de reaparição
+ *   naquele tier é ponderada pela porcentagem definida para o tier:
+ *   (T1: 75%, T2: 68%, T3: 50%, T4: 40%, T5: 25%).
+ * - Quando o campeão já alcançou 3★ (9+ cópias), seu peso na loja é reduzido ao mínimo
+ *   para não desperdiçar slots com cartas inúteis.
+ */
+export function generateShopCards(
+  currentLevel: number,
+  playerUnits: (UnitInstance | null)[] = []
+): (import('../types/game').UnitBaseData | null)[] {
+  const allPool = Object.values(CHAMPION_DATABASE).filter((u) => !u.isEnemy);
+  const odds = SHOP_ODDS_BY_LEVEL[currentLevel] || [100, 0, 0, 0, 0];
+  const cards: import('../types/game').UnitBaseData[] = [];
+
+  for (let slot = 0; slot < 5; slot++) {
+    // 1. Rola o Tier de acordo com as probabilidades do nível atual
+    const rand = Math.random() * 100;
+    let cumulative = 0;
+    let selectedTier = 1;
+
+    for (let t = 0; t < odds.length; t++) {
+      cumulative += odds[t];
+      if (rand <= cumulative) {
+        selectedTier = t + 1;
+        break;
+      }
+    }
+
+    let tierPool = allPool.filter((u) => u.tier === selectedTier);
+    if (tierPool.length === 0) {
+      tierPool = allPool;
+    }
+
+    // 2. Pondera cada personagem do tier considerando cópias já adquiridas e dificuldade do Tier
+    const weights = tierPool.map((champ) => {
+      const owned = countChampionOwnedCopies(champ.id, playerUnits);
+      const tierChance = THREE_STAR_CHANCE_BY_TIER[champ.tier] ?? 0.50;
+
+      // Se já atingiu 3★ (9+ cópias): peso residual (quase zero) para liberar espaço para outros campeões
+      if (owned >= 9) {
+        return 0.05;
+      }
+
+      // Reta final para 3★ (6 a 8 cópias - já tem dois 2★):
+      // A chance de obter as últimas cópias é ponderada pelo índice do Tier
+      if (owned >= 6) {
+        return tierChance;
+      }
+
+      // Meio do caminho (3 a 5 cópias - já tem um 2★):
+      if (owned >= 3) {
+        return Math.sqrt(tierChance);
+      }
+
+      // 0 a 2 cópias (início):
+      // Para simular a diluição como se houvesse ~30 campeões (evita monopólio de Shanks/Zoro):
+      if (champ.tier === 5) {
+        return tierChance; // Shanks sendo único T5 recebe peso proporcional ao tier
+      }
+      if (champ.tier === 4) {
+        return 0.70;
+      }
+      if (champ.tier === 2) {
+        return 0.80;
+      }
+      return 1.0;
+    });
+
+    // Seleção ponderada
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+    let r = Math.random() * totalWeight;
+    let pickedIndex = 0;
+
+    for (let i = 0; i < weights.length; i++) {
+      r -= weights[i];
+      if (r <= 0) {
+        pickedIndex = i;
+        break;
+      }
+    }
+
+    cards.push(tierPool[pickedIndex] || tierPool[0]);
+  }
+
+  return cards;
 }
 
 export function calculateActiveSynergies(boardUnits: UnitInstance[], forEnemy: boolean = false): ActiveSynergy[] {

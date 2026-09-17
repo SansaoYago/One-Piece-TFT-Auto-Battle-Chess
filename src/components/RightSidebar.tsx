@@ -56,6 +56,13 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   };
   const [inspectedItem, setInspectedItem] = useState<ItemData | null>(null);
 
+  // Auto-clear inspectedItem if it is no longer in the player's chest
+  React.useEffect(() => {
+    if (inspectedItem && !playerItems.includes(inspectedItem.id)) {
+      setInspectedItem(null);
+    }
+  }, [playerItems, inspectedItem]);
+
   // Friendly units on the board for DPS and synergy checks
   const playerBoardUnits = boardUnits.filter((u) => !u.isEnemy && u.gridX >= 0 && u.gridY >= 0);
 
@@ -338,50 +345,98 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                 </p>
 
                 {/* Quick Champion Selector to equip item */}
-                {selectedUnit ? (
-                  <button
-                    onClick={() => {
-                      onEquipItemToUnit(inspectedItem.id, selectedUnit);
-                    }}
-                    className="w-full py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-black uppercase tracking-wider transition-all shadow flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <Zap className="w-3.5 h-3.5" /> Equipar em {selectedUnit.name.split(' ')[0]} ({selectedUnit.stars}★)
-                  </button>
-                ) : (
-                  <div className="space-y-1.5 pt-1">
-                    <span className="text-[9px] uppercase font-bold text-slate-400 block text-center">
-                      Equipar em um Campeão:
-                    </span>
-                    {playerBoardUnits.length === 0 && benchUnits.filter(Boolean).length === 0 ? (
-                      <p className="text-[9px] text-slate-500 italic text-center">
-                        Nenhum campeão disponível no tabuleiro ou banco.
-                      </p>
-                    ) : (
-                      <div className="grid grid-cols-4 gap-1.5 max-h-24 overflow-y-auto pr-1">
-                        {[...playerBoardUnits, ...benchUnits.filter((u): u is UnitInstance => u !== null)].map((u) => (
-                          <button
-                            key={u.instanceId}
-                            onClick={() => onEquipItemToUnit(inspectedItem.id, u)}
-                            className="p-1 rounded-xl bg-slate-900/90 hover:bg-amber-950/70 border border-slate-700 hover:border-amber-400 flex flex-col items-center gap-0.5 text-center transition-all cursor-pointer"
-                            title={`Equipar em ${u.name}`}
-                          >
-                            <ChampionVisual
-                              unitId={u.unitId}
-                              avatarFallback={u.avatarUrl || '🏴‍☠️'}
-                              visualAssets={u.visualAssets}
-                              mode="portrait"
-                              alt={u.name}
-                              className="w-6 h-6 rounded-lg text-xs"
-                            />
-                            <span className="text-[8px] font-bold text-slate-300 truncate w-full">
-                              {u.name.split(' ')[0]}
-                            </span>
-                          </button>
-                        ))}
+                {(() => {
+                  const isSpecialItem = !!inspectedItem.isSpecialActivation;
+                  const checkUnitEligibility = (u: UnitInstance) => {
+                    const currentSpecial = u.hasSpecialItem || u.items.some((id) => ITEM_DATABASE[id]?.isSpecialActivation);
+                    const currentBattles = u.items.filter((id) => !ITEM_DATABASE[id]?.isSpecialActivation);
+
+                    if (isSpecialItem) {
+                      if (u.stars < 2) return { eligible: false, reason: 'Requer 2★ ou 3★' };
+                      if (currentSpecial) return { eligible: false, reason: 'Já possui Item Especial' };
+                      return { eligible: true };
+                    } else {
+                      if (currentBattles.length >= 2) return { eligible: false, reason: 'Máximo 2 itens' };
+                      return { eligible: true };
+                    }
+                  };
+
+                  const allUnits = [...playerBoardUnits, ...benchUnits.filter((u): u is UnitInstance => u !== null)];
+                  const selectedEligible = selectedUnit ? checkUnitEligibility(selectedUnit) : null;
+
+                  return (
+                    <div className="space-y-2 pt-1">
+                      {selectedUnit && (
+                        <div>
+                          {selectedEligible?.eligible ? (
+                            <button
+                              onClick={() => {
+                                onEquipItemToUnit(inspectedItem.id, selectedUnit);
+                                setInspectedItem(null);
+                              }}
+                              className="w-full py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-black uppercase tracking-wider transition-all shadow flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                            >
+                              <Zap className="w-3.5 h-3.5" /> Equipar em {selectedUnit.name.split(' ')[0]} ({selectedUnit.stars}★)
+                            </button>
+                          ) : (
+                            <div className="w-full py-1.5 px-2 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-400 text-[10px] text-center font-medium">
+                              {selectedUnit.name.split(' ')[0]} ({selectedUnit.stars}★): {selectedEligible?.reason}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="space-y-1.5">
+                        <span className="text-[9px] uppercase font-bold text-slate-400 block text-center">
+                          {selectedUnit ? 'Ou escolha outro campeão:' : 'Equipar em um Campeão:'}
+                        </span>
+                        {allUnits.length === 0 ? (
+                          <p className="text-[9px] text-slate-500 italic text-center">
+                            Nenhum campeão disponível no tabuleiro ou banco.
+                          </p>
+                        ) : (
+                          <div className="grid grid-cols-4 gap-1.5 max-h-24 overflow-y-auto pr-1">
+                            {allUnits.map((u) => {
+                              const { eligible, reason } = checkUnitEligibility(u);
+                              return (
+                                <button
+                                  key={u.instanceId}
+                                  disabled={!eligible}
+                                  onClick={() => {
+                                    if (!eligible) return;
+                                    onEquipItemToUnit(inspectedItem.id, u);
+                                    setInspectedItem(null);
+                                  }}
+                                  className={`p-1 rounded-xl border flex flex-col items-center gap-0.5 text-center transition-all ${
+                                    eligible
+                                      ? 'bg-slate-900/90 hover:bg-amber-950/70 border-slate-700 hover:border-amber-400 cursor-pointer active:scale-95'
+                                      : 'bg-slate-950/50 border-slate-800/60 opacity-35 cursor-not-allowed'
+                                  }`}
+                                  title={eligible ? `Equipar em ${u.name} (${u.stars}★)` : `${u.name}: ${reason}`}
+                                >
+                                  <ChampionVisual
+                                    unitId={u.unitId}
+                                    avatarFallback={u.avatarUrl || '🏴‍☠️'}
+                                    visualAssets={u.visualAssets}
+                                    mode="portrait"
+                                    alt={u.name}
+                                    className="w-6 h-6 rounded-lg text-xs"
+                                  />
+                                  <span className="text-[8px] font-bold text-slate-300 truncate w-full">
+                                    {u.name.split(' ')[0]}
+                                  </span>
+                                  <span className="text-[7px] text-amber-400/80 font-mono">
+                                    {u.stars}★
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>

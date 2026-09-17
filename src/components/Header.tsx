@@ -1,6 +1,6 @@
 import React from 'react';
-import { GamePhase, GameDifficulty, DIFFICULTY_CONFIGS } from '../types/game';
-import { Shield, Swords, RefreshCw, Play, Pause, AlertTriangle, Eye, FlaskConical, RotateCcw, Trash2, Zap, Lock, ChevronDown } from 'lucide-react';
+import { GamePhase, GameDifficulty, DIFFICULTY_CONFIGS, OpponentDisplayInfo } from '../types/game';
+import { Shield, Swords, RefreshCw, Play, Pause, AlertTriangle, Eye, FlaskConical, RotateCcw, Trash2, Zap, Lock, ChevronDown, Crown } from 'lucide-react';
 
 interface HeaderProps {
   phase: GamePhase;
@@ -12,6 +12,7 @@ interface HeaderProps {
   isPaused: boolean;
   isViewingOpponentArena?: boolean;
   opponentName?: string;
+  opponentInfo?: OpponentDisplayInfo;
   isTestMode?: boolean;
   difficulty?: GameDifficulty;
   isDifficultyLocked?: boolean;
@@ -34,6 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   isPaused,
   isViewingOpponentArena = false,
   opponentName = 'Oponente',
+  opponentInfo,
   isTestMode = false,
   difficulty = 'medium',
   isDifficultyLocked = false,
@@ -104,6 +106,67 @@ export const Header: React.FC<HeaderProps> = ({
                   ) : null}
                 </button>
               )}
+
+              {/* Next Opponent Indicator - ONLY shown during PREPARATION phase (pré-battle) as requested */}
+              {isViewingOpponentArena ? (
+                <div
+                  id="header-opponent-indicator"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-md bg-purple-950/80 border-purple-500/60 text-purple-200"
+                  title={`Visualizando Arena de: ${opponentName}`}
+                >
+                  <Eye className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                  <span className="hidden sm:inline text-[10px] font-bold text-purple-300/80 uppercase tracking-wide">
+                    Espiando:
+                  </span>
+                  <span className="font-black text-xs text-purple-100 truncate max-w-[140px] sm:max-w-[200px]">
+                    {opponentName}
+                  </span>
+                </div>
+              ) : phase === 'PREPARATION' ? (
+                opponentInfo?.isBoss ? (
+                  <div
+                    id="header-opponent-indicator"
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-[0_0_15px_rgba(245,158,11,0.35)] bg-gradient-to-r from-red-950/90 via-amber-950/80 to-red-950/90 border-amber-500/80 text-amber-200 ring-2 ring-amber-500/30 animate-pulse"
+                    title={`Próximo Mestre de Fase: ${opponentInfo.name}`}
+                  >
+                    <span className="text-sm shrink-0 leading-none drop-shadow">
+                      {opponentInfo.avatar || '👑'}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/30 text-amber-300 border border-amber-400/60 text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shrink-0">
+                        <Crown className="w-3 h-3 text-amber-400 fill-amber-400" />
+                        <span>{opponentInfo.bossTitle || 'Mestre de Fase'}</span>
+                      </span>
+                      <span className="font-black text-xs text-amber-100 drop-shadow truncate max-w-[140px] sm:max-w-[220px]">
+                        {opponentInfo.name}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    id="header-opponent-indicator"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-md bg-slate-900/90 border-slate-700/80 text-slate-200 hover:border-slate-600"
+                    title={`Próximo Adversário: ${opponentInfo?.name || opponentName}`}
+                  >
+                    <span className="text-sm shrink-0 leading-none drop-shadow">
+                      {opponentInfo?.avatar || '⚔️'}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="hidden sm:inline text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">
+                        Próximo:
+                      </span>
+                      <span className="font-black text-xs text-slate-100 truncate max-w-[130px] sm:max-w-[200px]">
+                        {opponentInfo?.name || opponentName}
+                      </span>
+                      {opponentInfo?.isGhost && (
+                        <span className="px-1.5 py-0.2 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-500/40 text-[9px] font-bold shrink-0">
+                          Fantasma 👻
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              ) : null}
             </>
           ) : (
             /* Test Mode Badge & Return Button */

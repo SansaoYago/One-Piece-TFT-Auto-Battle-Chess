@@ -24,6 +24,7 @@ import {
 interface UnitInspectorProps {
   unit: UnitInstance;
   gamePhase?: GamePhase;
+  totalRound?: number;
   changedSkillUnitIdThisRound?: string | null;
   isViewingOpponentArena?: boolean;
   onClose: () => void;
@@ -35,6 +36,7 @@ interface UnitInspectorProps {
 export const UnitInspector: React.FC<UnitInspectorProps> = ({
   unit,
   gamePhase = 'PREPARATION',
+  totalRound,
   changedSkillUnitIdThisRound = null,
   isViewingOpponentArena = false,
   onClose,

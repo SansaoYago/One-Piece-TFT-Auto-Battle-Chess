@@ -7,6 +7,7 @@ import {
   UnitInstance,
   GameDifficulty,
   DIFFICULTY_CONFIGS,
+  OpponentDisplayInfo,
 } from './types/game';
 import { AttackEffect, CombatUnitState, FloatingText, TheftEvent } from './types/combat';
 import { CHAMPION_DATABASE } from './data/units';
@@ -16,6 +17,8 @@ import {
   calculateActiveSynergies,
   calculateUnitSellValue,
   performStarUpgrades,
+  generateShopCards as generateShopCardsUtil,
+  THREE_STAR_CHANCE_BY_TIER,
   LEVEL_XP_REQUIREMENTS,
   LEVEL_MAX_SLOTS,
   SHOP_ODDS_BY_LEVEL,
@@ -23,6 +26,12 @@ import {
 import { initializeCombatUnits, simulateCombatTick } from './engine/combatEngine';
 import { generateEnemyBoardUnits, BOT_OPPONENTS, isPvEBossRound } from './engine/botAI';
 import { generateIndividualBotState, BotPlayerData } from './engine/botStateManager';
+import {
+  generateRoundMatchmaking,
+  convertBotBoardToEnemyUnits,
+  ScheduledBotMatch,
+  RoundMatchmakingResult,
+} from './engine/matchmaking';
 import { Header } from './components/Header';
 import { PlayerList } from './components/PlayerList';
 import { RightSidebar } from './components/RightSidebar';
@@ -40,16 +49,6 @@ import { TheftBannerNotification } from './components/TheftBannerNotification';
 import { preloadAllGameAssets, warmupRoundCombatAssets, loadChampionModularRig } from './utils/modelPreloader';
 import { Sparkles, Trophy, Skull, Coins, Zap } from 'lucide-react';
 import { RoundOutcomeBanner } from './components/RoundOutcomeBanner';
-
-interface ScheduledBotMatch {
-  botAId: string;
-  botBId?: string;
-  finishCountdown: number;
-  winnerId: string;
-  damageA: number;
-  damageB: number;
-  isResolved: boolean;
-}
 
 export default function App() {
   // === Global Preloading Pipeline State ===
@@ -101,6 +100,8 @@ export default function App() {
   const [xp, setXp] = useState<number>(0);
   const [lastRoundXp, setLastRoundXp] = useState<number>(2);
   const [commanders, setCommanders] = useState<Commander[]>(INITIAL_COMMANDERS);
+  const commandersRef = useRef<Commander[]>(commanders);
+  commandersRef.current = commanders;
   const [playerItems, setPlayerItems] = useState<string[]>([]); // Starts with 0 items
 
   // === Item Draft & Rewards State ===
@@ -149,6 +150,20 @@ export default function App() {
   const lastTickTimeRef = useRef<number>(Date.now());
   const [activeTheftEvent, setActiveTheftEvent] = useState<TheftEvent | null>(null);
   const theftTrackerRef = useRef<{ player: boolean; enemy: boolean }>({ player: false, enemy: false });
+  const playerItemsRef = useRef<string[]>(playerItems);
+  playerItemsRef.current = playerItems;
+
+  // === Dynamic Matchmaking & Opponent Tracking ===
+  const currentOpponentCommanderIdRef = useRef<string | null>(null);
+  const isHumanFightingGhostRef = useRef<boolean>(false);
+  const scheduledMatchmakingRef = useRef<RoundMatchmakingResult | null>(null);
+  const [currentOpponentInfo, setCurrentOpponentInfo] = useState<OpponentDisplayInfo>({
+    name: '2 Recrutas da Marinha',
+    avatar: '⚓',
+    isGhost: false,
+    isBoss: false,
+    isPvE: true,
+  });
 
   // Selection & Inspector Modal
   const [selectedUnit, setSelectedUnit] = useState<UnitInstance | null>(null);
@@ -303,36 +318,11 @@ export default function App() {
   // Is Overtime active (at 15s remaining or less during combat)
   const isOvertime = phase === 'COMBAT' && countdown <= 15;
 
-  // === Reroll / Generate Shop Cards Based on Level Odds ===
+  // === Reroll / Generate Shop Cards Based on Level Odds & Tier 3★ Odds ===
   const generateShopCards = useCallback(
     (currentLevel: number): (UnitBaseData | null)[] => {
-      const allPool = Object.values(CHAMPION_DATABASE).filter((u) => !u.isEnemy);
-      const odds = SHOP_ODDS_BY_LEVEL[currentLevel] || [100, 0, 0, 0, 0];
-      const cards: UnitBaseData[] = [];
-
-      for (let i = 0; i < 5; i++) {
-        const rand = Math.random() * 100;
-        let cumulative = 0;
-        let selectedTier = 1;
-
-        for (let t = 0; t < odds.length; t++) {
-          cumulative += odds[t];
-          if (rand <= cumulative) {
-            selectedTier = t + 1;
-            break;
-          }
-        }
-
-        const tierPool = allPool.filter((u) => u.tier === selectedTier);
-        const picked =
-          tierPool.length > 0
-            ? tierPool[Math.floor(Math.random() * tierPool.length)]
-            : allPool[Math.floor(Math.random() * allPool.length)];
-
-        cards.push(picked);
-      }
-
-      return cards;
+      const playerUnits = [...benchSlotsRef.current, ...boardUnitsRef.current];
+      return generateShopCardsUtil(currentLevel, playerUnits);
     },
     []
   );
@@ -342,10 +332,13 @@ export default function App() {
     setShopCards(generateShopCards(1));
   }, [generateShopCards]);
 
-  // Automatic Star Upgrades check (e.g. merging existing 3x 2★ into 3★)
+  // Automatic Star Upgrades check (merging 3x 1★ into 2★, and 3x 2★ into 3★ immediately)
   useEffect(() => {
     if (phase === 'PREPARATION') {
-      const upgradeRes = performStarUpgrades(benchSlotsRef.current, boardUnitsRef.current);
+      const upgradeRes = performStarUpgrades(
+        benchSlotsRef.current,
+        boardUnitsRef.current
+      );
       if (upgradeRes.upgradedUnit) {
         setBenchSlots(upgradeRes.nextBench);
         benchSlotsRef.current = upgradeRes.nextBench;
@@ -431,18 +424,63 @@ export default function App() {
       boardUnitsRef.current = updatedBoard;
     }
 
-    // Ensure enemies are loaded for combat (if this round was PvP and didn't pre-place them during prep)
+    // Run Matchmaking Engine according to user rules:
+    // - Even alive player counts: 100% direct 1v1, NO ghosts!
+    // - Odd alive player counts: exactly 1 ghost fighter (last/penultimate player), fighting a random player clone
+    // - PvE rounds: PvE bosses and minions
+    const matchmaking = scheduledMatchmakingRef.current || generateRoundMatchmaking(
+      commanders,
+      stageRef.current,
+      roundInStageRef.current,
+      totalRoundRef.current,
+      difficultyRef.current || 'medium',
+      botPlayerStates
+    );
+    scheduledMatchmakingRef.current = null;
+
+    currentOpponentCommanderIdRef.current = matchmaking.humanOpponentId;
+    isHumanFightingGhostRef.current = matchmaking.isHumanFightingGhost;
+    setCurrentOpponentInfo({
+      name: matchmaking.opponentName,
+      avatar: matchmaking.opponentAvatar,
+      isGhost: matchmaking.isHumanFightingGhost,
+      isBoss: matchmaking.isBoss,
+      bossTitle: matchmaking.bossTitle,
+      isPvE: matchmaking.isPvE,
+    });
+    setRoundTitle(
+      matchmaking.isPvE
+        ? matchmaking.opponentName
+        : `Batalha PvP: ${matchmaking.opponentName}`
+    );
+
+    // Setup enemies on board
     let combatBoardUnits = [...updatedBoard];
     const existingEnemies = combatBoardUnits.filter((u) => u.isEnemy && u.gridX >= 0 && u.gridY >= 0);
 
     if (existingEnemies.length === 0) {
-      const generatedEnemies = generateEnemyBoardUnits(
-        stageRef.current,
-        roundInStageRef.current,
-        totalRoundRef.current,
-        difficultyRef.current || 'medium'
-      );
-      combatBoardUnits = [...combatBoardUnits, ...generatedEnemies];
+      if (matchmaking.isPvE) {
+        const generatedEnemies = generateEnemyBoardUnits(
+          stageRef.current,
+          roundInStageRef.current,
+          totalRoundRef.current,
+          difficultyRef.current || 'medium'
+        );
+        combatBoardUnits = [...combatBoardUnits, ...generatedEnemies];
+      } else if (matchmaking.humanOpponentId) {
+        const oppState =
+          botPlayerStates[matchmaking.humanOpponentId] ||
+          generateIndividualBotState(
+            matchmaking.humanOpponentId,
+            totalRoundRef.current,
+            difficultyRef.current || 'medium'
+          );
+        const enemyUnits = convertBotBoardToEnemyUnits(
+          oppState.boardUnits,
+          matchmaking.isHumanFightingGhost
+        );
+        combatBoardUnits = [...combatBoardUnits, ...enemyUnits];
+      }
     }
 
     // Lock difficulty once combat begins
@@ -461,64 +499,13 @@ export default function App() {
     setCommanders((prevCmds) =>
       prevCmds.map((c) => ({
         ...c,
-        roundCombatStatus: c.hp > 0 ? ('FIGHTING' as const) : undefined,
+        roundCombatStatus: c.hp > 0 && !c.isEliminated ? ('FIGHTING' as const) : undefined,
         damageTakenThisRound: 0,
       }))
     );
 
-    // Setup bot matchups schedule for other arenas
-    const isPvERound = stageRef.current === 1 || isPvEBossRound(totalRoundRef.current);
-    const aliveBots = commanders.filter((c) => !c.isHuman && c.hp > 0);
-    const scheduled: ScheduledBotMatch[] = [];
-
-    if (isPvERound) {
-      aliveBots.forEach((bot) => {
-        const finishCd = Math.floor(Math.random() * 12) + 12; // finish between 12s and 24s
-        scheduled.push({
-          botAId: bot.id,
-          finishCountdown: finishCd,
-          winnerId: bot.id,
-          damageA: 0,
-          damageB: 0,
-          isResolved: false,
-        });
-      });
-    } else {
-      const opponentCmdId = BOT_OPPONENTS[(totalRoundRef.current - 1) % BOT_OPPONENTS.length] || aliveBots[0]?.id;
-      const otherBots = aliveBots.filter((b) => b.id !== opponentCmdId);
-
-      for (let i = 0; i < otherBots.length; i += 2) {
-        const b1 = otherBots[i];
-        const b2 = otherBots[i + 1];
-        if (b1 && b2) {
-          const finishCd = Math.floor(Math.random() * 15) + 10;
-          const b1Wins = Math.random() >= 0.5;
-          const dmg = stageRef.current * 2 + Math.floor(Math.random() * 4) + 2;
-          scheduled.push({
-            botAId: b1.id,
-            botBId: b2.id,
-            finishCountdown: finishCd,
-            winnerId: b1Wins ? b1.id : b2.id,
-            damageA: b1Wins ? 0 : dmg,
-            damageB: b1Wins ? dmg : 0,
-            isResolved: false,
-          });
-        } else if (b1) {
-          const finishCd = Math.floor(Math.random() * 12) + 12;
-          const wins = Math.random() >= 0.4;
-          const dmg = stageRef.current * 2 + Math.floor(Math.random() * 4) + 2;
-          scheduled.push({
-            botAId: b1.id,
-            finishCountdown: finishCd,
-            winnerId: wins ? b1.id : 'ENEMY',
-            damageA: wins ? 0 : dmg,
-            damageB: 0,
-            isResolved: false,
-          });
-        }
-      }
-    }
-    scheduledBotMatchesRef.current = scheduled;
+    // Assign scheduled bot matches from matchmaking engine
+    scheduledBotMatchesRef.current = matchmaking.botMatches;
 
     // Start Round Warmup & Countdown
     setIsCombatStarting(true);
@@ -639,8 +626,9 @@ export default function App() {
 
     // Damage Calculation to Commander:
     let humanDiedThisRound = false;
-    const isPvERound = stageRef.current === 1 || isPvEBossRound(totalRoundRef.current);
-    const opponentCmdId = BOT_OPPONENTS[(totalRoundRef.current - 1) % BOT_OPPONENTS.length];
+    const isPvERound = totalRoundRef.current === 1 || isPvEBossRound(totalRoundRef.current);
+    const activeOpponentId = currentOpponentCommanderIdRef.current;
+    const isGhostBattle = isHumanFightingGhostRef.current;
 
     let dmgTaken = 0;
     if (isDraw) {
@@ -656,6 +644,15 @@ export default function App() {
     }
 
     setCommanders((prevCmds) => {
+      // 1. Force resolve any remaining scheduled bot matches in other arenas immediately
+      if (scheduledBotMatchesRef.current.length > 0) {
+        scheduledBotMatchesRef.current.forEach((m) => {
+          if (!m.isResolved) {
+            m.isResolved = true;
+          }
+        });
+      }
+
       const updated = prevCmds.map((c) => {
         if (c.isHuman) {
           if (isWin) {
@@ -692,7 +689,9 @@ export default function App() {
         }
 
         // If this bot is the opponent the player fought in PvP:
-        if (!isPvERound && c.id === opponentCmdId) {
+        // Rule: If it was a ghost clone match, the original bot was fighting another arena and doesn't take damage here.
+        // In real 1v1 (!isGhostBattle), the opponent takes real damage!
+        if (!isPvERound && activeOpponentId && c.id === activeOpponentId && !isGhostBattle) {
           if (isWin) {
             const survivingPlayerUnits = combatUnits.filter((u) => !u.isEnemy && u.hp > 0).length;
             const enemyDmg = stageRef.current * 2 + Math.max(1, survivingPlayerUnits * 2);
@@ -726,12 +725,48 @@ export default function App() {
             };
           }
         }
+
+        // Other bots fighting in scheduled matches across other arenas:
+        const match = scheduledBotMatchesRef.current.find(
+          (m) => (m.botAId === c.id || m.botBId === c.id) && m.isResolved
+        );
+        if (match) {
+          const isWinner = match.winnerId === c.id;
+          const dmg = match.botAId === c.id ? match.damageA : match.damageB;
+          if (isWinner || match.winnerId === 'PVE_WIN') {
+            return {
+              ...c,
+              winStreak: c.winStreak + 1,
+              lossStreak: 0,
+              roundCombatStatus: 'WON' as const,
+              damageTakenThisRound: 0,
+            };
+          } else {
+            const nextHp = Math.max(0, c.hp - dmg);
+            return {
+              ...c,
+              hp: nextHp,
+              isEliminated: nextHp <= 0,
+              winStreak: 0,
+              lossStreak: c.lossStreak + 1,
+              roundCombatStatus: 'LOST' as const,
+              damageTakenThisRound: dmg,
+            };
+          }
+        }
+
         return c;
       });
 
-      const aliveCount = updated.filter((c) => c.hp > 0).length;
-      if (humanDiedThisRound && !isSpectating) {
-        setUserPlacementRank(aliveCount + 1);
+      const livingCommanders = updated.filter((c) => c.hp > 0 && !c.isEliminated);
+      const isHumanAlive = updated.some((c) => c.isHuman && c.hp > 0 && !c.isEliminated);
+
+      if (isHumanAlive && livingCommanders.length === 1) {
+        // VICTORY: All other 7 commanders have been eliminated!
+        setUserPlacementRank(1);
+        setIsGameOverModalOpen(true);
+      } else if (humanDiedThisRound && !isSpectating) {
+        setUserPlacementRank(livingCommanders.length + 1);
         setIsGameOverModalOpen(true);
       }
 
@@ -795,6 +830,7 @@ export default function App() {
       }))
     );
     setPlayerItems([]);
+    playerItemsRef.current = [];
     setIsItemDraftOpen(false);
     setIsBossDraft(false);
     setDraftedRounds([]);
@@ -821,10 +857,25 @@ export default function App() {
     setAttackEffects([]);
     setBattleOutcome(null);
     setShopCards(generateShopCards(1));
+    scheduledMatchmakingRef.current = null;
+    setCurrentOpponentInfo({
+      name: '2 Recrutas da Marinha',
+      avatar: '⚓',
+      isGhost: false,
+      isBoss: false,
+      isPvE: true,
+    });
   };
 
   // Move to next stage and reset board units to preparation
   const handleProceedToNextRound = () => {
+    // Stop round advancement if victory or defeat has already ended the match!
+    const living = commanders.filter((c) => c.hp > 0 && !c.isEliminated);
+    const humanAlive = commanders.some((c) => c.isHuman && c.hp > 0 && !c.isEliminated);
+    if ((humanAlive && living.length <= 1) || (!humanAlive && !isSpectating)) {
+      return;
+    }
+
     warmupTimersRef.current.forEach(clearTimeout);
     warmupTimersRef.current = [];
     if (autoAdvanceTimerRef.current) {
@@ -878,19 +929,33 @@ export default function App() {
     const stageCode = `${nextStage}-${nextRoundInStage}`;
     setRoundStage(stageCode);
 
+    // Pre-calculate matchmaking for the upcoming round so Header accurately displays next opponent & boss status
+    const upcomingMatch = generateRoundMatchmaking(
+      commandersRef.current,
+      nextStage,
+      nextRoundInStage,
+      nextTotalRound,
+      difficultyRef.current || 'medium',
+      botPlayerStates
+    );
+    scheduledMatchmakingRef.current = upcomingMatch;
+    setCurrentOpponentInfo({
+      name: upcomingMatch.opponentName,
+      avatar: upcomingMatch.opponentAvatar,
+      isGhost: upcomingMatch.isHumanFightingGhost,
+      isBoss: upcomingMatch.isBoss,
+      bossTitle: upcomingMatch.bossTitle,
+      isPvE: upcomingMatch.isPvE,
+    });
+
     // Determine Title dynamically using Bot AI & Boss progression
     let title = '';
-    if (nextTotalRound === 1) {
-      title = 'PvE: 2 Recrutas da Marinha';
-    } else if (isPvEBossRound(nextTotalRound)) {
-      const bossNum = Math.floor(nextTotalRound / 6);
-      if (bossNum === 1) title = 'PvE Boss: Smoker & Guarda Costeira 💨';
-      else if (bossNum === 2) title = 'PvE Boss: Sir Crocodile & Baroque Works 🐊';
-      else if (bossNum === 3) title = 'PvE Boss: Rob Lucci & CP9 Governo 🐆';
-      else title = 'PvE Boss Lendário: Shanks o Ruivo ⚔️';
+    if (upcomingMatch.isPvE) {
+      title = upcomingMatch.isBoss
+        ? `${upcomingMatch.bossTitle || 'PvE Boss'}: ${upcomingMatch.opponentName}`
+        : `PvE: ${upcomingMatch.opponentName}`;
     } else {
-      const bot = BOT_OPPONENTS[(nextStage * 3 + nextRoundInStage + nextTotalRound) % BOT_OPPONENTS.length];
-      title = `Batalha PvP: ${bot.name} (${bot.theme})`;
+      title = `Batalha PvP: ${upcomingMatch.opponentName}`;
     }
     setRoundTitle(title);
 
@@ -1106,15 +1171,24 @@ export default function App() {
                   }
                 });
 
-                // Check if all alive commanders have finished
-                const allDone = updated
-                  .filter((c) => !c.isEliminated)
-                  .every((c) => c.roundCombatStatus && c.roundCombatStatus !== 'FIGHTING');
+                const livingCommanders = updated.filter((c) => c.hp > 0 && !c.isEliminated);
+                const isHumanAlive = updated.some((c) => c.isHuman && c.hp > 0 && !c.isEliminated);
 
-                if (allDone && !autoAdvanceTimerRef.current) {
-                  autoAdvanceTimerRef.current = setTimeout(() => {
-                    handleProceedToNextRound();
-                  }, 1800);
+                if (isHumanAlive && livingCommanders.length === 1) {
+                  // Victory triggered by bot elimination!
+                  setUserPlacementRank(1);
+                  setIsGameOverModalOpen(true);
+                } else {
+                  // Check if all alive commanders have finished
+                  const allDone = updated
+                    .filter((c) => !c.isEliminated)
+                    .every((c) => c.roundCombatStatus && c.roundCombatStatus !== 'FIGHTING');
+
+                  if (allDone && !autoAdvanceTimerRef.current) {
+                    autoAdvanceTimerRef.current = setTimeout(() => {
+                      handleProceedToNextRound();
+                    }, 1800);
+                  }
                 }
 
                 return updated;
@@ -1241,7 +1315,10 @@ export default function App() {
     bench: (UnitInstance | null)[],
     board: UnitInstance[]
   ) => {
-    const upgradeRes = performStarUpgrades(bench, board);
+    const upgradeRes = performStarUpgrades(
+      bench,
+      board
+    );
     setBenchSlots(upgradeRes.nextBench);
     benchSlotsRef.current = upgradeRes.nextBench;
     setBoardUnits(upgradeRes.nextBoard);
@@ -1697,6 +1774,13 @@ export default function App() {
 
   // === Item Equipping Logic (2 Battle Items + 1 Special Item) ===
   const handleEquipItemToUnit = (itemId: string, targetUnit: UnitInstance) => {
+    // 1. Strict anti-exploit check: item must exist in the player's inventory bag
+    const itemIdx = playerItemsRef.current.indexOf(itemId);
+    if (itemIdx === -1) {
+      console.warn(`Attempted to equip item ${itemId} that is not in inventory.`);
+      return;
+    }
+
     const itemData = ITEM_DATABASE[itemId];
     if (!itemData) return;
 
@@ -1755,6 +1839,12 @@ export default function App() {
       }
     }
 
+    // 2. Consume item from player bag immediately and synchronously
+    const nextPlayerItems = [...playerItemsRef.current];
+    nextPlayerItems.splice(itemIdx, 1);
+    playerItemsRef.current = nextPlayerItems;
+    setPlayerItems(nextPlayerItems);
+
     const updatedTraits = [...targetUnit.traits];
     if (itemData.grantTrait && !updatedTraits.includes(itemData.grantTrait)) {
       updatedTraits.push(itemData.grantTrait);
@@ -1804,14 +1894,6 @@ export default function App() {
       mr: targetUnit.mr + bonusMr,
       attackSpeed: targetUnit.attackSpeed + bonusAs,
     };
-
-    setPlayerItems((prev) => {
-      const idx = prev.indexOf(itemId);
-      if (idx === -1) return prev;
-      const next = [...prev];
-      next.splice(idx, 1);
-      return next;
-    });
 
     setBoardUnits((prev) =>
       prev.map((u) => (u.instanceId === updatedUnit.instanceId ? updatedUnit : u))
@@ -2054,7 +2136,8 @@ export default function App() {
         roundNumber={(stage - 1) * 4 + roundInStage}
         isPaused={isTimerPaused}
         isViewingOpponentArena={isViewingOpponentArena}
-        opponentName={viewingCommander.name}
+        opponentName={isViewingOpponentArena ? viewingCommander.name : currentOpponentInfo.name}
+        opponentInfo={currentOpponentInfo}
         isTestMode={isTestMode}
         difficulty={difficulty}
         isDifficultyLocked={isDifficultyLocked}
@@ -2243,6 +2326,7 @@ export default function App() {
         <UnitInspector
           unit={selectedUnit}
           gamePhase={phase}
+          totalRound={totalRound}
           changedSkillUnitIdThisRound={changedSkillUnitIdThisRound}
           isViewingOpponentArena={isViewingOpponentArena}
           onClose={() => setSelectedUnit(null)}
@@ -2347,6 +2431,7 @@ export default function App() {
       <GameOverModal
         isOpen={isGameOverModalOpen}
         playerRank={userPlacementRank}
+        totalRound={totalRound}
         onRestart={handleRestartGame}
         onSpectate={() => {
           setIsSpectating(true);
