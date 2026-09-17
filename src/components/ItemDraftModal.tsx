@@ -10,24 +10,52 @@ interface ItemDraftModalProps {
   onSelectItem: (item: ItemData) => void;
 }
 
-// Function to pick 3 distinct items with robust Fisher-Yates shuffle
+// Function to pick 3 distinct items with balanced rarity for synergy emblems
 function getRandomItemIds(boss: boolean): string[] {
   const allItems = Object.values(ITEM_DATABASE);
-  let pool = [...allItems];
-  if (boss) {
-    // Boss rewards prioritize special / trait chips and high-tier items
-    const bossPool = allItems.filter(
-      (i) => i.isSpecialActivation || i.grantTrait || i.id === 'armadura_haki' || i.id === 'lente_clarividencia' || i.id === 'capa_almirante'
-    );
-    if (bossPool.length >= 3) pool = bossPool;
+  const battleItems = allItems.filter((i) => !i.grantTrait);
+  const traitEmblems = allItems.filter((i) => Boolean(i.grantTrait));
+
+  // Boss battle pool prioritizes higher-tier combat items
+  const bossBattleItems = battleItems.filter(
+    (i) => i.isSpecialActivation || i.id === 'armadura_haki' || i.id === 'lente_clarividencia' || i.id === 'capa_almirante' || i.id === 'frasco_rum' || i.id === 'espada_pirata'
+  );
+
+  const availableBattlePool = boss && bossBattleItems.length >= 3 ? bossBattleItems : battleItems;
+
+  // Emblems are rare: 35% chance of 1 emblem in Boss rounds, 15% chance in normal rounds.
+  // CRITICAL: At most 1 emblem can EVER appear in a single draft (never 2 or 3).
+  const emblemChance = boss ? 0.35 : 0.15;
+  const includeEmblem = Math.random() < emblemChance && traitEmblems.length > 0;
+
+  const chosenIds: string[] = [];
+
+  if (includeEmblem) {
+    const randomEmblem = traitEmblems[Math.floor(Math.random() * traitEmblems.length)];
+    chosenIds.push(randomEmblem.id);
   }
-  // Modern Fisher-Yates shuffle
-  const arr = [...pool];
-  for (let i = arr.length - 1; i > 0; i--) {
+
+  // Shuffle battle pool to fill remaining slots (2 or 3)
+  const shuffledBattle = [...availableBattlePool];
+  for (let i = shuffledBattle.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+    [shuffledBattle[i], shuffledBattle[j]] = [shuffledBattle[j], shuffledBattle[i]];
   }
-  return arr.slice(0, 3).map((i) => i.id);
+
+  for (const item of shuffledBattle) {
+    if (chosenIds.length >= 3) break;
+    if (!chosenIds.includes(item.id)) {
+      chosenIds.push(item.id);
+    }
+  }
+
+  // Shuffle final 3 choices so emblem isn't always in slot 0
+  for (let i = chosenIds.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [chosenIds[i], chosenIds[j]] = [chosenIds[j], chosenIds[i]];
+  }
+
+  return chosenIds;
 }
 
 export const ItemDraftModal: React.FC<ItemDraftModalProps> = ({
@@ -114,7 +142,7 @@ export const ItemDraftModal: React.FC<ItemDraftModalProps> = ({
                 </div>
 
                 {/* Item Name */}
-                <h4 className="text-sm font-black text-slate-100 line-clamp-1 mb-1">
+                <h4 className="text-sm font-black text-slate-100 line-clamp-2 min-h-[2.5rem] flex items-center justify-center text-center mb-1">
                   {item.name}
                 </h4>
 
@@ -131,7 +159,7 @@ export const ItemDraftModal: React.FC<ItemDraftModalProps> = ({
                   {item.isSpecialActivation
                     ? 'Item Especial (Skill C)'
                     : item.grantTrait
-                    ? '+1 Sinergia'
+                    ? `+1 Sinergia (${item.grantTrait.toUpperCase()})`
                     : 'Item de Batalha'}
                 </span>
 
