@@ -760,6 +760,70 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
             </div>
           )}
 
+          {/* COMBAT PHASE: ATTACK EFFECTS & RANGED PROJECTILES LAYER */}
+          {isCombatPhase && attackEffects.length > 0 && (
+            <div
+              className="absolute inset-6 sm:inset-7 pointer-events-none z-45 overflow-visible"
+              style={{ transformStyle: 'preserve-3d' }}
+            >
+              {attackEffects.map((fx) => {
+                const from = getContinuousTileCenterPercent(fx.fromX, fx.fromY);
+                const to = getContinuousTileCenterPercent(fx.toX, fx.toY);
+                const isEmeraldSlash = fx.color === '#10B981' || fx.icon === '🗡️';
+
+                return (
+                  <div
+                    key={fx.id}
+                    className="absolute pointer-events-none"
+                    style={{
+                      left: `${from.leftPercent}%`,
+                      top: `${from.topPercent}%`,
+                      transform: 'translate(-50%, -50%)',
+                    }}
+                  >
+                    <div
+                      className="animate-projectile-fly flex items-center justify-center pointer-events-none"
+                      style={{
+                        ['--target-dx' as any]: `${(to.leftPercent - from.leftPercent) * 7.5}px`,
+                        ['--target-dy' as any]: `${(to.topPercent - from.topPercent) * 4.5}px`,
+                        ['--fly-duration' as any]: `${fx.durationMs || 280}ms`,
+                      }}
+                    >
+                      {isEmeraldSlash ? (
+                        /* Mihawk's Signature Emerald Flying Blade Slash (Kokuto Yoru Sen) */
+                        <div className="relative flex items-center justify-center">
+                          <div className="w-10 h-3 sm:w-14 sm:h-4 bg-gradient-to-r from-emerald-400 via-teal-200 to-emerald-500 rounded-full blur-[1px] shadow-[0_0_18px_#10b981] -rotate-12 border border-emerald-200" />
+                          <div className="absolute w-8 h-1.5 bg-white rounded-full shadow-[0_0_8px_#fff]" />
+                        </div>
+                      ) : fx.type === 'PROJECTILE' ? (
+                        /* Generic ranged energy blast or slingshot bullet */
+                        <div
+                          className="w-4 h-4 rounded-full shadow-md flex items-center justify-center border text-[10px]"
+                          style={{
+                            backgroundColor: fx.color || '#F59E0B',
+                            borderColor: '#ffffff',
+                            boxShadow: `0 0 10px ${fx.color || '#F59E0B'}`,
+                          }}
+                        >
+                          {fx.icon || '⚡'}
+                        </div>
+                      ) : (
+                        /* Melee impact spark / slash flare */
+                        <div
+                          className="w-8 h-8 rounded-full animate-ping opacity-75"
+                          style={{
+                            backgroundColor: fx.color || '#F59E0B',
+                            boxShadow: `0 0 15px ${fx.color || '#F59E0B'}`,
+                          }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {/* COMBAT PHASE: FLOATING COMBAT TEXTS LAYER (ELEVATED ABOVE CHAMPION HEADS) */}
           {isCombatPhase && floatingTexts.length > 0 && (
             <div

@@ -121,20 +121,36 @@ export const ShopModal: React.FC<ShopModalProps> = ({
           <span className="font-mono font-black text-amber-300 text-sm ml-0.5">+{sellValue}฿</span>
         </div>
       ) : (
-        /* Floating Retractable Golden Shop Toggle Button */
+        /* Floating Retractable Golden Shop Toggle Button with Saldo */
         <button
           data-modal-toggle="true"
           onClick={onToggleOpen}
-          className={`flex items-center justify-center gap-1.5 w-[144px] h-[44px] px-3 rounded-2xl font-bold text-xs tracking-wide uppercase transition-all duration-300 shadow-xl border backdrop-blur-md cursor-pointer select-none ${
+          className={`flex items-center justify-center gap-2 min-w-[164px] h-[44px] px-3.5 rounded-2xl font-bold text-xs tracking-wide transition-all duration-300 shadow-xl border backdrop-blur-md cursor-pointer select-none whitespace-nowrap ${
             isOpen
               ? 'bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 border-amber-300 ring-2 ring-amber-400/50 shadow-[0_0_20px_rgba(245,158,11,0.4)]'
-              : 'bg-slate-900/60 text-amber-300 border-amber-500/50 hover:border-amber-400 hover:scale-102'
+              : 'bg-slate-900/80 text-amber-300 border-amber-500/50 hover:border-amber-400 hover:scale-102'
           }`}
+          title={`Loja - Saldo Atual: ${gold}฿ (Atalho: D)`}
         >
-          <ShoppingBag className="w-4 h-4 shrink-0" />
-          <span className="font-bold">Loja (฿)</span>
-          <span className="text-[10px] opacity-80 font-mono">[D]</span>
-          {isOpen ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronUp className="w-4 h-4 shrink-0" />}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <ShoppingBag className="w-4 h-4 shrink-0" />
+            <span className="font-bold uppercase tracking-wider">Loja</span>
+          </div>
+
+          <div
+            className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border font-mono font-black text-xs shrink-0 ${
+              isOpen
+                ? 'bg-slate-950/20 text-slate-950 border-slate-950/30'
+                : 'bg-amber-950/80 text-amber-300 border-amber-500/40 shadow-inner'
+            }`}
+          >
+            <span className="text-[10px] font-medium opacity-75">Saldo:</span>
+            <span>{gold}฿</span>
+          </div>
+
+          <div className="flex items-center shrink-0 opacity-80">
+            {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+          </div>
         </button>
       )}
 
@@ -171,18 +187,25 @@ export const ShopModal: React.FC<ShopModalProps> = ({
               </div>
             </div>
 
-            {/* Right: Lock Shop */}
-            <button
-              onClick={onToggleLock}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${
-                isLocked
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500'
-                  : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'
-              }`}
-            >
-              {isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-              {isLocked ? 'Loja Travada' : 'Travar'}
-            </button>
+            {/* Right: Saldo & Lock Shop */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/40 text-amber-300 font-mono font-black text-xs shadow-inner">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-amber-400/80">Saldo:</span>
+                <span className="text-amber-300">{gold}฿</span>
+              </div>
+
+              <button
+                onClick={onToggleLock}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${
+                  isLocked
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500'
+                    : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'
+                }`}
+              >
+                {isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                {isLocked ? 'Loja Travada' : 'Travar'}
+              </button>
+            </div>
           </div>
 
           {/* If unit is being dragged with shop open, show minimal sell target */}

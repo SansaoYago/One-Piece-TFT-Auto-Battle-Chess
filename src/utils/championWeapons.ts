@@ -28,6 +28,14 @@ export function attachChampionWeapons(
 ): THREE.Group | null {
   const normId = unitId.toLowerCase();
 
+  // If Nami already has her Clima-Tact weapon attached, preserve it
+  if (normId === 'nami') {
+    const existingStaff = model.getObjectByName('weapon_clima_tact');
+    if (existingStaff) {
+      return existingStaff as THREE.Group;
+    }
+  }
+
   // Clean up any previously attached weapons to prevent duplication on star upgrade
   const toRemove: THREE.Object3D[] = [];
   model.traverse((child) => {
@@ -49,9 +57,10 @@ export function attachChampionWeapons(
 
   model.traverse((child) => {
     const name = child.name || '';
-    if (/righthand|right_hand|hand_r|hand\.r/i.test(name)) {
+    const isFinger = /thumb|index|middle|ring|pinky|finger/i.test(name);
+    if (/righthand|right_hand|hand_r|hand\.r/i.test(name) && !isFinger) {
       rightHandBone = child;
-    } else if (/lefthand|left_hand|hand_l|hand\.l/i.test(name)) {
+    } else if (/lefthand|left_hand|hand_l|hand\.l/i.test(name) && !isFinger) {
       leftHandBone = child;
     } else if (/head/i.test(name) && !/top|end/i.test(name) && !headBone) {
       headBone = child;
@@ -79,13 +88,10 @@ export function attachChampionWeapons(
   }
 
   if (normId.includes('marine')) {
-    if (normId === 'marine_recruit_2') {
-      return attachMarineCutlass(rightHandBone || model, isEnemy);
-    }
-    // Default recruit 1 / marine soldier -> Flintlock Musket Rifle with Bayonet
-    return attachMarineMusket(rightHandBone || model, isEnemy);
+    // All Marine recruits / soldiers carry an officer cutlass sword in their right hand
+    return attachMarineCutlass(rightHandBone || model, isEnemy);
   } else if (normId === 'nami') {
-    return attachNamiClimaTact(rightHandBone || model, isEnemy);
+    return attachNamiClimaTact(model, rightHandBone || model, isEnemy);
   } else if (normId === 'tashigi') {
     return attachTashigiKatana(rightHandBone || model, isEnemy);
   } else if (normId === 'zoro') {
@@ -112,8 +118,7 @@ export function attachChampionWeapons(
     }
     return attachUsoppSlingshot(rightHandBone || model, isEnemy);
   } else if (normId === 'mihawk') {
-    // Mihawk GLB model already has his giant Kokuto Yoru blade modeled in the mesh
-    return null;
+    return attachMihawkKokutoYoru(rightHandBone || model, isEnemy);
   }
 
   return null;
@@ -690,15 +695,64 @@ function createKatanaMesh(options: {
 }
 
 /**
- * Nami's Sorcery Clima-Tact (3-section weather staff with glowing weather orbs)
+ * Nami's Sorcery Clima-Tact (Authentic 3D mesh from SkinNami.glb or 4-orb procedural fallback)
  */
-function attachNamiClimaTact(parent: THREE.Object3D, isEnemy: boolean): THREE.Group {
+function attachNamiClimaTact(model: THREE.Object3D, parent: THREE.Object3D, isEnemy: boolean): THREE.Group {
+  // 1. If Nami already has weapon_clima_tact attached, preserve it directly
+  const existingWrapper = model.getObjectByName('weapon_clima_tact');
+  if (existingWrapper) {
+    return existingWrapper as THREE.Group;
+  }
+
+  // 2. Check if model already includes the authentic 3D Clima-Tact (e.g. Sketchfab_model from SkinNami.glb)
+  let embeddedStaff: THREE.Object3D | null = null;
+  model.traverse((child) => {
+    if (
+      !embeddedStaff &&
+      (child.name === 'Sketchfab_model' ||
+        child.name.toLowerCase().includes('sketchfab') ||
+        /circle\.013|cylinder\.004|clima.*tact/i.test(child.name))
+    ) {
+      let curr: THREE.Object3D = child;
+      while (curr.parent && curr.parent !== model && curr.parent.name !== 'Scene') {
+        curr = curr.parent;
+      }
+      embeddedStaff = curr;
+    }
+  });
+
+  if (embeddedStaff) {
+    // Measure bounding box of the embedded staff in model space before reparenting
+    model.updateMatrixWorld(true);
+    const staffBox = new THREE.Box3().setFromObject(embeddedStaff);
+    const staffCenter = staffBox.getCenter(new THREE.Vector3());
+
+    // Detach from current root parent so it no longer floats disconnected at the side
+    if (embeddedStaff.parent) {
+      embeddedStaff.parent.remove(embeddedStaff);
+    }
+
+    const staffWrapper = new THREE.Group();
+    staffWrapper.name = 'weapon_clima_tact';
+
+    // Center staff geometry so its hand grip point (middle of the staff, around Y = 0.85m) is at local origin (0, 0, 0)
+    // The authentic staff in SkinNami.glb is oriented vertically along Y (from y = 0 to 1.64m, center at y = 0.82m)
+    embeddedStaff.position.set(-staffCenter.x, -0.85, -staffCenter.z);
+    staffWrapper.add(embeddedStaff);
+
+    // Apply compensation scale and attach directly to Nami's right hand bone
+    applyCompensationScale(staffWrapper, parent);
+    parent.add(staffWrapper);
+    return staffWrapper;
+  }
+
+  // 3. Fallback: Procedural Clima-Tact if model does not contain an embedded staff
   const climaTact = new THREE.Group();
   climaTact.name = 'weapon_clima_tact';
 
   const staffMat = new THREE.MeshStandardMaterial({
-    color: isEnemy ? 0xd97706 : 0x0284c7, // Sky blue or fiery amber for enemy
-    metalness: 0.85,
+    color: isEnemy ? 0xd97706 : 0x0284c7, // Turquoise cyan (#0284c7) or fiery amber for enemy
+    metalness: 0.80,
     roughness: 0.25,
   });
 
@@ -711,57 +765,58 @@ function attachNamiClimaTact(parent: THREE.Object3D, isEnemy: boolean): THREE.Gr
   const orbMat = new THREE.MeshStandardMaterial({
     color: isEnemy ? 0xf43f5e : 0x38bdf8,
     emissive: isEnemy ? new THREE.Color(0xf43f5e) : new THREE.Color(0x38bdf8),
-    emissiveIntensity: 0.8,
-    roughness: 0.1,
+    emissiveIntensity: 0.85,
+    roughness: 0.12,
   });
 
-  // Main 3-piece connected staff shaft
-  const staffGeometry = new THREE.CylinderGeometry(0.018, 0.018, 0.95, 12);
+  // Main connected staff shaft (length: 1.05m, center at y = 0)
+  const staffGeometry = new THREE.CylinderGeometry(0.015, 0.015, 1.05, 16);
   const staffMesh = new THREE.Mesh(staffGeometry, staffMat);
   climaTact.add(staffMesh);
 
-  // Top, middle, and bottom golden rings + Weather Orbs
-  const orbGeo = new THREE.SphereGeometry(0.038, 12, 12);
-  const ringGeo = new THREE.TorusGeometry(0.026, 0.007, 8, 16);
+  // 4 Weather Orbs matching Image 3 (Top, Upper-Mid, Lower-Mid, Bottom)
+  const orbGeo = new THREE.SphereGeometry(0.036, 16, 16);
+  const ringGeo = new THREE.TorusGeometry(0.023, 0.005, 8, 16);
 
-  // Top Weather Orb & Gold Accents
+  // 1. Top Weather Orb (+0.48m from center)
   const topOrb = new THREE.Mesh(orbGeo, orbMat);
-  topOrb.position.set(0, 0.46, 0);
+  topOrb.position.set(0, 0.48, 0);
   climaTact.add(topOrb);
-
   const topRing = new THREE.Mesh(ringGeo, goldMat);
   topRing.rotation.x = Math.PI / 2;
-  topRing.position.set(0, 0.42, 0);
+  topRing.position.set(0, 0.44, 0);
   climaTact.add(topRing);
 
-  // Middle Core Orb
-  const midOrb = new THREE.Mesh(orbGeo, orbMat);
-  midOrb.position.set(0, 0, 0);
-  climaTact.add(midOrb);
+  // 2. Upper-Mid Weather Orb (+0.16m from center)
+  const upperMidOrb = new THREE.Mesh(orbGeo, orbMat);
+  upperMidOrb.position.set(0, 0.16, 0);
+  climaTact.add(upperMidOrb);
+  const upperMidRing = new THREE.Mesh(ringGeo, goldMat);
+  upperMidRing.rotation.x = Math.PI / 2;
+  upperMidRing.position.set(0, 0.13, 0);
+  climaTact.add(upperMidRing);
 
-  const midRing1 = new THREE.Mesh(ringGeo, goldMat);
-  midRing1.rotation.x = Math.PI / 2;
-  midRing1.position.set(0, 0.05, 0);
-  climaTact.add(midRing1);
+  // 3. Lower-Mid Weather Orb (-0.16m from center)
+  const lowerMidOrb = new THREE.Mesh(orbGeo, orbMat);
+  lowerMidOrb.position.set(0, -0.16, 0);
+  climaTact.add(lowerMidOrb);
+  const lowerMidRing = new THREE.Mesh(ringGeo, goldMat);
+  lowerMidRing.rotation.x = Math.PI / 2;
+  lowerMidRing.position.set(0, -0.13, 0);
+  climaTact.add(lowerMidRing);
 
-  const midRing2 = new THREE.Mesh(ringGeo, goldMat);
-  midRing2.rotation.x = Math.PI / 2;
-  midRing2.position.set(0, -0.05, 0);
-  climaTact.add(midRing2);
-
-  // Bottom Orb
+  // 4. Bottom Weather Orb (-0.48m from center)
   const bottomOrb = new THREE.Mesh(orbGeo, orbMat);
-  bottomOrb.position.set(0, -0.46, 0);
+  bottomOrb.position.set(0, -0.48, 0);
   climaTact.add(bottomOrb);
-
   const bottomRing = new THREE.Mesh(ringGeo, goldMat);
   bottomRing.rotation.x = Math.PI / 2;
-  bottomRing.position.set(0, -0.42, 0);
+  bottomRing.position.set(0, -0.44, 0);
   climaTact.add(bottomRing);
 
-  // Position and orient weapon relative to hand
-  climaTact.position.set(0, 0.05, 0.02);
-  climaTact.rotation.set(Math.PI / 2, 0, 0);
+  // Position and orient weapon relative to right hand:
+  climaTact.position.set(0, 0.02, 0);
+  climaTact.rotation.set(Math.PI, 0, 0);
 
   applyCompensationScale(climaTact, parent);
   parent.add(climaTact);

@@ -899,6 +899,7 @@ function executeBasicAttack(
   const isCrocodile = attacker.unitId === 'crocodile';
   const isChopperMonster = attacker.unitId === 'chopper' && attacker.isTransformed;
   const isMarine = attacker.unitId.startsWith('marine');
+  const isMihawk = attacker.unitId === 'mihawk';
 
   // Combo Selection
   const punchChoices: Array<'punch1' | 'punch2' | 'punch3' | 'punch4'> = ['punch1', 'punch2', 'punch3', 'punch4'];
@@ -920,6 +921,11 @@ function executeBasicAttack(
   } else if (isUsopp) {
     strikeKey = 'punch1';
     attacker.comboStep = 0;
+  } else if (isMihawk) {
+    // Mihawk: Dedicated ranged slash attack with Kokuto Yoru (MihawkAtk)
+    strikeKey = 'punch1';
+    attacker.comboStep = 0;
+    isComboFinisher = false;
   } else if (isCrocodile) {
     // Crocodile uses CrocodileATK
     strikeKey = 'punch1';
@@ -953,6 +959,8 @@ function executeBasicAttack(
     ? 'idle' // Nami strictly has NO attack animation
     : isMarine
     ? 'slash1' // Marine recruits strictly use Slash1
+    : isMihawk
+    ? 'attack' // Mihawk strictly uses his dedicated MihawkAtk animation
     : isUsopp || isCrocodile
     ? 'attack'
     : isSanji
@@ -969,6 +977,8 @@ function executeBasicAttack(
     ? 'Clima-Tact (Suporte)'
     : isUsopp
     ? 'Kayaku Boshi (UsoppAtk)'
+    : isMihawk
+    ? 'Kokuto: Corte Noturno (MihawkAtk)'
     : isCrocodile
     ? 'Desert Spada (CrocodileATK)'
     : isSanji
@@ -1048,17 +1058,23 @@ function executeBasicAttack(
   }
 
   // Visual Attack Effect
+  const effectColor = isMihawk
+    ? '#10B981' // Signature Kokuto Emerald Flying Slash
+    : isComboFinisher
+    ? '#F59E0B'
+    : (attacker.accentColor || (attacker.isEnemy ? '#F43F5E' : '#38BDF8'));
+
   attackEffects.push({
     id: `atk_${attacker.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
     fromX: attacker.currentPosX,
     fromY: attacker.currentPosY,
     toX: target.currentPosX,
     toY: target.currentPosY,
-    type: isComboFinisher ? 'MELEE_SLASH' : isMelee ? 'PUNCH_EXTEND' : 'PROJECTILE',
-    color: isComboFinisher ? '#F59E0B' : (attacker.accentColor || (attacker.isEnemy ? '#F43F5E' : '#38BDF8')),
-    icon: strikeConfig.icon || baseData?.avatarUrl || '⚔️',
+    type: isMihawk ? 'PROJECTILE' : isComboFinisher ? 'MELEE_SLASH' : isMelee ? 'PUNCH_EXTEND' : 'PROJECTILE',
+    color: effectColor,
+    icon: isMihawk ? '🗡️' : strikeConfig.icon || baseData?.avatarUrl || '⚔️',
     timestamp: now,
-    durationMs: isComboFinisher ? 340 : 250,
+    durationMs: isMihawk ? 280 : isComboFinisher ? 340 : 250,
   });
 
   // Process Thief Trait / Synergy Theft Check

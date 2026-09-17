@@ -105,10 +105,10 @@ export const AnimationTestBar: React.FC<AnimationTestBarProps> = ({
       ]
     : isChopper
     ? [
-        { id: 'idle', label: '🧍 Skin Chopper (1m)', desc: 'SkinChopper.glb (1 metro canônico)' },
-        { id: 'walk', label: '🚶 Caminhar', desc: 'Walk.glb (Escalado à Skin)' },
-        { id: 'punch1', label: '👊 Kokutei Roseo', desc: 'Golpe com casco frontal' },
-        { id: 'punch2', label: '🥊 Ataque 2', desc: 'Ataque corporal' },
+        { id: 'idle', label: '🧍 Chopper (1m)', desc: 'SkinChopper.glb (Tony Tony Chopper)' },
+        { id: 'walk', label: '🚶 Caminhar', desc: 'Walk.glb' },
+        { id: 'punch1', label: '👊 Kokutei Roseo', desc: 'Golpe com casco' },
+        { id: 'monster_invoke', label: '👹 Monster Point', desc: 'ChopperMonsterActive.glb + SkinMonsterChopper.glb' },
         { id: 'turnLeft', label: '↪️ Girar Esq.', desc: 'Curva esquerda' },
         { id: 'turnRight', label: '↩️ Girar Dir.', desc: 'Curva direita' },
         { id: 'death', label: '💀 Morte', desc: 'Derrota' },

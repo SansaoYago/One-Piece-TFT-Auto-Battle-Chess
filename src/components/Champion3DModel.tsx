@@ -97,11 +97,26 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const modelGroupRef = useRef<THREE.Group | null>(null);
+  const clonedRigRef = useRef<THREE.Group | null>(null);
+  const restBoneTransformsRef = useRef<Map<THREE.Bone, { position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 }>>(new Map());
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const actionsRef = useRef<{ [key: string]: THREE.AnimationAction }>({});
   const activeActionRef = useRef<THREE.AnimationAction | null>(null);
   const mannequinRef = useRef<ProceduralMannequin | null>(null);
   const animStateRef = useRef<'idle' | 'walk' | 'punch' | 'cast'>('idle');
+
+  // Restores all model bones directly to the character skin's native base idle rest pose
+  const restoreSkinRestPose = () => {
+    if (!restBoneTransformsRef.current || restBoneTransformsRef.current.size === 0) return;
+    restBoneTransformsRef.current.forEach(({ position, quaternion, scale }, bone) => {
+      bone.position.copy(position);
+      bone.quaternion.copy(quaternion);
+      bone.scale.copy(scale);
+    });
+    if (clonedRigRef.current) {
+      clonedRigRef.current.updateMatrixWorld(true);
+    }
+  };
 
   const targetRotationYRef = useRef<number>(
     computeTargetRotationY(isEnemy, currentPos, targetPos, facingAngle, unitId)
@@ -119,26 +134,51 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     );
   }, [isEnemy, currentPos?.x, currentPos?.y, targetPos?.x, targetPos?.y, facingAngle, unitId]);
 
-  const isNami = unitId?.toLowerCase().includes('nami');
-  const isUsopp = unitId?.toLowerCase().includes('usopp');
+  const normId = unitId?.toLowerCase() || '';
+  const isMonster = (normId.includes('chopper') && Boolean(isTransformed)) || normId.includes('chopper_monster');
+  const isNami = normId.includes('nami');
+  const isUsopp = normId.includes('usopp');
+  const isMihawk = normId.includes('mihawk');
 
   // Determine active action key
   const getActionKey = (): string => {
     if (animationName === 'monster_invoke' || transformationPhase === 'INVOKING') {
       return 'monster_invoke';
     }
-    if (isNami) {
-      // Nami currently has no attack animation: stays in idle/rest pose during attacks
+    if (isMonster) {
       if (animationName === 'walk') return 'walk';
       if (animationName === 'turnLeft') return 'turnLeft';
       if (animationName === 'turnRight') return 'turnRight';
       if (animationName === 'death') return 'death';
+      if (isCasting || animationName?.includes('punch') || animationName?.includes('kick') || animationName === 'attack' || animationName === 'slash1') {
+        return 'attack';
+      }
+      return 'idle';
+    }
+    if (isNami) {
+      if (animationName === 'walk') return 'walk';
+      if (animationName === 'turnLeft') return 'turnLeft';
+      if (animationName === 'turnRight') return 'turnRight';
+      if (animationName === 'death') return 'death';
+      if (isCasting || animationName?.includes('punch') || animationName?.includes('kick') || animationName === 'attack' || animationName === 'slash1') {
+        return 'attack';
+      }
       return 'idle';
     }
     if (isUsopp) {
       if (isCasting || animationName?.includes('punch') || animationName?.includes('kick') || animationName === 'attack' || animationName === 'slash1') {
         return 'attack';
       }
+    }
+    if (isMihawk) {
+      if (animationName === 'walk') return 'walk';
+      if (animationName === 'turnLeft') return 'turnLeft';
+      if (animationName === 'turnRight') return 'turnRight';
+      if (animationName === 'death') return 'death';
+      if (isCasting || animationName?.includes('punch') || animationName?.includes('kick') || animationName === 'attack' || animationName === 'slash1') {
+        return 'attack';
+      }
+      return 'idle';
     }
     if (isCasting) return 'kick1';
     if (animationName === 'punch' || animationName === 'punch1' || animationName === 'attack' || animationName === 'slash1') return 'punch1';
@@ -170,33 +210,48 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
       animStateRef.current = 'idle';
     }
 
+    // Each Skin model IS the authentic base idle pose. Stop all animations and restore skin rest pose.
+    if (targetKey === 'idle' || animationName === 'idle') {
+      animStateRef.current = 'idle';
+      if (activeActionRef.current) {
+        activeActionRef.current.stop();
+        activeActionRef.current = null;
+      }
+      if (mixerRef.current) {
+        mixerRef.current.stopAllAction();
+      }
+      restoreSkinRestPose();
+      return;
+    }
+
     if (!mixerRef.current || !actionsRef.current) return;
 
     let targetAction = actionsRef.current[targetKey];
-    if (isNami) {
-      targetAction = targetKey === 'walk'
-        ? (actionsRef.current['walk'] || actionsRef.current['idle'])
-        : (actionsRef.current['attack'] || actionsRef.current['idle']);
+    if (isNami && (targetKey.startsWith('punch') || targetKey.startsWith('kick') || targetKey === 'attack')) {
+      targetAction = actionsRef.current['attack'] || actionsRef.current['punch1'];
+    } else if (isNami && targetKey === 'walk') {
+      targetAction = actionsRef.current['walk'];
     } else if (isUsopp && (targetKey.startsWith('punch') || targetKey.startsWith('kick') || targetKey === 'attack')) {
-      targetAction = actionsRef.current['attack'] || actionsRef.current['punch1'] || actionsRef.current['idle'];
+      targetAction = actionsRef.current['attack'] || actionsRef.current['punch1'];
+    } else if (isMihawk && (targetKey.startsWith('punch') || targetKey.startsWith('kick') || targetKey === 'attack' || targetKey === 'slash1')) {
+      targetAction = actionsRef.current['attack'] || actionsRef.current['slash1'] || actionsRef.current['punch1'];
+    } else if (isMonster && (targetKey.startsWith('punch') || targetKey.startsWith('kick') || targetKey === 'attack')) {
+      targetAction = actionsRef.current['attack'] || actionsRef.current['punch1'];
     }
     if (!targetAction && targetKey.startsWith('punch')) {
-      targetAction = actionsRef.current['punch1'] || actionsRef.current['punch'] || actionsRef.current['idle'];
+      targetAction = actionsRef.current['punch1'] || actionsRef.current['punch'];
     }
     if (!targetAction && targetKey.startsWith('kick')) {
       targetAction = isUsopp
-        ? (actionsRef.current['attack'] || actionsRef.current['punch1'] || actionsRef.current['idle'])
-        : (actionsRef.current['kick1'] || actionsRef.current['kick'] || actionsRef.current['punch1'] || actionsRef.current['idle']);
+        ? (actionsRef.current['attack'] || actionsRef.current['punch1'])
+        : (actionsRef.current['kick1'] || actionsRef.current['kick'] || actionsRef.current['punch1']);
     }
     if (!targetAction && (targetKey === 'turnLeft' || targetKey === 'turnRight')) {
-      targetAction = actionsRef.current['walk'] || actionsRef.current['idle'];
-    }
-    if (!targetAction) {
-      targetAction = actionsRef.current['idle'];
+      targetAction = actionsRef.current['walk'];
     }
 
     if (targetAction) {
-      const isAttackStrike = targetKey.startsWith('punch') || targetKey.startsWith('kick');
+      const isAttackStrike = targetKey.startsWith('punch') || targetKey.startsWith('kick') || targetKey === 'attack';
 
       if (isAttackStrike) {
         // Strike execution: immediately replay with high impact
@@ -211,7 +266,7 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
         }
         activeActionRef.current = targetAction;
       } else if (targetAction !== activeActionRef.current) {
-        // Non-attack transitions (walk, idle, turns)
+        // Non-attack transitions (walk, turns)
         const prevAction = activeActionRef.current;
         
         targetAction.enabled = true;
@@ -235,11 +290,16 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
         activeActionRef.current = targetAction;
       }
     } else {
-      // Skinned character in idle: fade out active animation so model returns cleanly to its own SkinPersonagem rest pose
+      // Skinned character in idle: stop active animation so model returns cleanly to its own Skin rest pose
+      animStateRef.current = 'idle';
       if (activeActionRef.current) {
-        activeActionRef.current.fadeOut(0.12);
+        activeActionRef.current.stop();
         activeActionRef.current = null;
       }
+      if (mixerRef.current) {
+        mixerRef.current.stopAllAction();
+      }
+      restoreSkinRestPose();
     }
   }, [animationName, isCasting, lastAttackTimestamp]);
 
@@ -354,10 +414,11 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
           const isZoro = normId === 'zoro';
           const isNami = normId === 'nami';
           const isUsopp = normId === 'usopp';
+          const isMihawk = normId === 'mihawk';
           const isMarine = normId.startsWith('marine_recruit');
           const isChopper = normId === 'chopper' || normId === 'chopper_monster';
 
-          if (!isLuffy && !isZoro && !isNami && !isUsopp && !customSkin) {
+          if (!isLuffy && !isZoro && !isNami && !isUsopp && !isMihawk && !isChopper && !customSkin) {
             fallbackToProcedural();
             return;
           }
@@ -389,11 +450,13 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
           const clonedRig = (hasBonesOrSkin
             ? SkeletonUtils.clone(sourceModel)
             : sourceModel.clone(true)) as THREE.Group;
+          clonedRigRef.current = clonedRig;
 
           // 1. Reset root rotation - models are upright Y-up and face forward
           clonedRig.rotation.set(0, 0, 0);
 
-          // 2. Configure SkinnedMesh and bones if rigged
+          // 2. Configure SkinnedMesh and capture baseline rest pose transforms for all bones
+          const restTransforms = new Map<THREE.Bone, { position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 }>();
           if (hasBonesOrSkin) {
             clonedRig.traverse((child) => {
               if ((child as THREE.SkinnedMesh).isSkinnedMesh) {
@@ -410,9 +473,15 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
               if ((child as THREE.Bone).isBone) {
                 const bone = child as THREE.Bone;
                 bone.matrixAutoUpdate = true;
+                restTransforms.set(bone, {
+                  position: bone.position.clone(),
+                  quaternion: bone.quaternion.clone(),
+                  scale: bone.scale.clone(),
+                });
               }
             });
           }
+          restBoneTransformsRef.current = restTransforms;
 
           // 3. Filter alternate/duplicate face parts on Luffy's Wano model
           if (normId === 'luffy') {
@@ -457,11 +526,10 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
 
             const actions: { [key: string]: THREE.AnimationAction } = {};
             const isFemale = isFemaleChampion(unitId);
-
-            // Idle stays on the skin's own bind/rest pose (POSE T). Zoro, Luffy, and Usopp strictly have NO idle animation assigned,
-            // sitting in clean POSE T as their base pre-battle and default pose ("a regra do Zoro").
-            const isPoseTDefault = isZoro || isLuffy || isUsopp;
-            const idleClipToUse = isPoseTDefault ? undefined : (customSkin?.customAnimations?.idle || customSkin?.animations?.[0]);
+            const isMarine = normId.startsWith('marine') || normId.includes('marine');
+            const isBuggy = normId.includes('buggy');
+            const isTashigi = normId === 'tashigi';
+            const isBoaHancock = normId.includes('boa_hancock');
 
             // Walk.glb is the standard male walk animation (26 frames)
             const defaultMaleWalk = rigData.animations.walk;
@@ -474,12 +542,15 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
               walkClipToUse = customSkin.customAnimations.walk;
             }
 
-            const idleAction = getRetargetedAction(idleClipToUse);
             const walkAction = getRetargetedAction(walkClipToUse);
 
-            // Dedicated attack clips for Zoro & Marines (Slash1), Nami (NamiAtk), or Usopp (UsoppAtk)
-            const isMarine = normId.startsWith('marine') || normId.includes('marine');
-            const championAttackClip = (isZoro || isMarine)
+            // Dedicated attack clips: Swordsmen (Zoro, Marines, Tashigi) use Slash1, Mihawk uses MihawkAtk, Monster Chopper uses MonsterChopperAtk, Nami uses her staff strike, Usopp uses slingshot
+            const isSwordUser = isZoro || isMarine || isTashigi;
+            const championAttackClip = isMihawk
+              ? (customSkin?.customAnimations?.attack || customSkin?.customAnimations?.slash1 || customAttackClip)
+              : isMonster
+              ? (customSkin?.customAnimations?.attack || customAttackClip)
+              : isSwordUser
               ? (customSkin?.customAnimations?.slash1 || customSkin?.customAnimations?.attack || customAttackClip)
               : isNami
               ? (customSkin?.customAnimations?.attack || customAttackClip)
@@ -498,22 +569,22 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
             const sanjiKick2Action = getRetargetedAction(customSkin?.customAnimations?.kick2);
             const sanjiKick3Action = getRetargetedAction(customSkin?.customAnimations?.kick3);
 
-            // Nami, Usopp and Chopper have no standard human high kicks: map to their unique attack/punch
-            const isNoKickChampion = isNami || isUsopp || isChopper;
+            // Nami, Usopp, Chopper and Boa Hancock do not use generic high kicks:
+            // Nami & Usopp use weapon strikes, Chopper & Boa Hancock attack with punches
+            const isNoKickChampion = isNami || isUsopp || isChopper || isBoaHancock;
             const kickAction = isNoKickChampion
-              ? (customAttackAction || punchAction)
+              ? (isBoaHancock ? (punchAction || customAttackAction) : (customAttackAction || punchAction))
               : (sanjiKick1Action || getRetargetedAction(rigData.animations.kick1 || rigData.animations.kick) || customAttackAction);
             const kick2Action = isNoKickChampion
-              ? (customAttackAction || punchAction)
+              ? (isBoaHancock ? (punch2Action || punchAction) : (customAttackAction || punchAction))
               : (sanjiKick2Action || getRetargetedAction(rigData.animations.kick2) || kickAction);
             const kick3Action = isNoKickChampion
-              ? (customAttackAction || punchAction)
+              ? (isBoaHancock ? (punch3Action || punchAction) : (customAttackAction || punchAction))
               : (sanjiKick3Action || getRetargetedAction(rigData.animations.kick3) || kickAction);
             const turnLeftAction = getRetargetedAction(rigData.animations.turnLeft) || walkAction;
             const turnRightAction = getRetargetedAction(rigData.animations.turnRight) || walkAction;
             const deathAction = getRetargetedAction(rigData.animations.death);
 
-            if (idleAction) actions['idle'] = idleAction;
             if (walkAction) actions['walk'] = walkAction;
 
             if (isNami || isUsopp) {
@@ -530,6 +601,37 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
                 actions['kick1'] = uniqueCharAttack;
                 actions['kick2'] = uniqueCharAttack;
                 actions['kick3'] = uniqueCharAttack;
+              }
+            } else if (isMihawk) {
+              // Mihawk: Dedicated ranged slash attack with Kokuto Yoru (MihawkAtk.glb)
+              const mihawkAttack = customAttackAction || getRetargetedAction(customSkin?.customAnimations?.attack) || punchAction;
+              if (mihawkAttack) {
+                actions['attack'] = mihawkAttack;
+                actions['slash1'] = mihawkAttack;
+                actions['punch'] = mihawkAttack;
+                actions['punch1'] = mihawkAttack;
+                actions['punch2'] = mihawkAttack;
+                actions['punch3'] = mihawkAttack;
+                actions['punch4'] = mihawkAttack;
+                actions['kick'] = mihawkAttack;
+                actions['kick1'] = mihawkAttack;
+                actions['kick2'] = mihawkAttack;
+                actions['kick3'] = mihawkAttack;
+              }
+            } else if (isMonster) {
+              // Monster Chopper: Heavy primal strikes with MonsterChopperAtk.glb
+              const monsterAttack = customAttackAction || getRetargetedAction(customSkin?.customAnimations?.attack) || punchAction;
+              if (monsterAttack) {
+                actions['attack'] = monsterAttack;
+                actions['punch'] = monsterAttack;
+                actions['punch1'] = monsterAttack;
+                actions['punch2'] = monsterAttack;
+                actions['punch3'] = monsterAttack;
+                actions['punch4'] = monsterAttack;
+                actions['kick'] = monsterAttack;
+                actions['kick1'] = monsterAttack;
+                actions['kick2'] = monsterAttack;
+                actions['kick3'] = monsterAttack;
               }
             } else if (normId === 'sanji') {
               // Sanji: 100% kick combat style with all 3 distinct kicks (Kick1, SanjiKick1, SanjiKick2)
@@ -566,8 +668,8 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
               if (customAttackAction) {
                 actions['attack'] = customAttackAction;
                 actions['slash1'] = customAttackAction;
-                if (isMarine || normId === 'buggy') {
-                  // Standard attack for all common marines and Buggy is strictly Slash1
+                if (isMarine || normId === 'buggy' || isTashigi || isNami) {
+                  // Standard attack for all common marines, Tashigi, Buggy, and Nami is strictly their weapon strike
                   actions['punch'] = customAttackAction;
                   actions['punch1'] = customAttackAction;
                   actions['punch2'] = customAttackAction;
@@ -578,6 +680,16 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
                   actions['kick2'] = customAttackAction;
                   actions['kick3'] = customAttackAction;
                 }
+              }
+              if (isBoaHancock) {
+                // Boa Hancock attacks strictly with punches
+                if (punchAction) {
+                  actions['attack'] = punchAction;
+                  actions['kick'] = punchAction;
+                  actions['kick1'] = punchAction;
+                }
+                if (punch2Action) actions['kick2'] = punch2Action;
+                if (punch3Action) actions['kick3'] = punch3Action;
               }
               const customCastAction = getRetargetedAction(customSkin?.customAnimations?.cast);
               if (customCastAction) {
@@ -596,16 +708,38 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
 
             actionsRef.current = actions;
 
-            // Start default idle animation if action exists
+            // Start action only if currently walking or acting; otherwise character remains in their authentic Skin base idle pose
             const initialKey = getActionKey();
-            const initialAction = actions[initialKey] || actions['idle'];
-            if (initialAction) {
+            if (initialKey !== 'idle' && actions[initialKey]) {
+              const initialAction = actions[initialKey];
               initialAction.play();
               activeActionRef.current = initialAction;
+            } else {
+              activeActionRef.current = null;
+              // Settle immediately into pristine authentic skin rest pose
+              restTransforms.forEach(({ position, quaternion, scale }, bone) => {
+                bone.position.copy(position);
+                bone.quaternion.copy(quaternion);
+                bone.scale.copy(scale);
+              });
+              clonedRig.updateMatrixWorld(true);
             }
 
-            // Advance mixer a tiny step to settle skeleton into the upright battle idle pose
-            mixer.update(0.01);
+            // Return to Skin rest pose whenever an action completes
+            mixer.addEventListener('finished', () => {
+              if (animStateRef.current !== 'walk') {
+                if (activeActionRef.current) {
+                  activeActionRef.current.stop();
+                  activeActionRef.current = null;
+                }
+                restBoneTransformsRef.current.forEach(({ position, quaternion, scale }, bone) => {
+                  bone.position.copy(position);
+                  bone.quaternion.copy(quaternion);
+                  bone.scale.copy(scale);
+                });
+                clonedRig.updateMatrixWorld(true);
+              }
+            });
           }
 
           // 6. Compute exact model height strictly from the visible static rest pose geometry of the SKIN.

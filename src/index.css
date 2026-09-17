@@ -156,3 +156,25 @@
   will-change: transform, opacity;
 }
 
+/* Flying projectile and ranged slash trajectory animation */
+@keyframes projectileFly {
+  0% {
+    transform: translate(0, 0) scale(0.65);
+    opacity: 0.9;
+  }
+  60% {
+    opacity: 1;
+    transform: translate(calc(var(--target-dx) * 0.65), calc(var(--target-dy) * 0.65)) scale(1.15);
+  }
+  100% {
+    transform: translate(var(--target-dx), var(--target-dy)) scale(0.9);
+    opacity: 0;
+  }
+}
+
+.animate-projectile-fly {
+  animation: projectileFly var(--fly-duration, 280ms) cubic-bezier(0.2, 0, 0.2, 1) forwards;
+  will-change: transform, opacity;
+}
+
+
