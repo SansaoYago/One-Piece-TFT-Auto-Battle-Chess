@@ -214,11 +214,8 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     if (targetKey === 'idle' || animationName === 'idle') {
       animStateRef.current = 'idle';
       if (activeActionRef.current) {
-        activeActionRef.current.stop();
+        activeActionRef.current.fadeOut(0.12);
         activeActionRef.current = null;
-      }
-      if (mixerRef.current) {
-        mixerRef.current.stopAllAction();
       }
       restoreSkinRestPose();
       return;
@@ -254,15 +251,17 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
       const isAttackStrike = targetKey.startsWith('punch') || targetKey.startsWith('kick') || targetKey === 'attack';
 
       if (isAttackStrike) {
-        // Strike execution: immediately replay with high impact
+        // Strike execution: authentic animation speed, clamp on finish, and play fully
         targetAction.reset();
-        targetAction.setEffectiveTimeScale(1.15);
+        targetAction.setLoop(THREE.LoopOnce, 1);
+        targetAction.clampWhenFinished = true;
+        targetAction.setEffectiveTimeScale(1.0);
         targetAction.setEffectiveWeight(1);
-        targetAction.fadeIn(0.08);
+        targetAction.fadeIn(0.06);
         targetAction.play();
 
         if (activeActionRef.current && activeActionRef.current !== targetAction) {
-          activeActionRef.current.fadeOut(0.08);
+          activeActionRef.current.fadeOut(0.06);
         }
         activeActionRef.current = targetAction;
       } else if (targetAction !== activeActionRef.current) {

@@ -25,6 +25,21 @@ export interface AttackEffect {
   durationMs: number;
 }
 
+export interface PendingAttackHit {
+  targetInstanceId: string;
+  damage: number;
+  attackType: DamageType;
+  isCrit: boolean;
+  strikeName: string;
+  lifestealPercent: number;
+  hitDelay: number;
+  isComboFinisher?: boolean;
+  isMelee?: boolean;
+  effectColor?: string;
+  effectIcon?: string;
+  doubleAttackChance?: number;
+}
+
 export interface CombatUnitState extends UnitInstance {
   // Runtime combat simulation state
   currentPosX: number; // Sub-tile precision x (0..7)
@@ -44,6 +59,7 @@ export interface CombatUnitState extends UnitInstance {
   comboStep: number; // 0: Punch 1/2, 1: Punch 2/2, 2: Kick Finisher
   currentAnimation?: 'idle' | 'walk' | 'punch1' | 'punch2' | 'punch3' | 'punch4' | 'kick1' | 'kick2' | 'kick3' | 'attack' | 'slash1' | 'turnLeft' | 'turnRight' | 'death' | 'monster_invoke';
   attackAnimTimer: number; // Duration of current attack animation in seconds
+  pendingAttackHit?: PendingAttackHit;
   lastAttackTimestamp: number;
   lastStrikeName?: string;
   lastStrikePoints?: number;

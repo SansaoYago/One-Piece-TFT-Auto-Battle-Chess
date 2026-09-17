@@ -430,6 +430,93 @@ export function simulateCombatTick(
       }
     }
 
+    // Handle scheduled attack hit collision (antepenultimate frame of strike animation)
+    if (unit.pendingAttackHit) {
+      if (unit.isStunned || unit.isDefeated) {
+        unit.pendingAttackHit = undefined;
+      } else {
+        unit.pendingAttackHit.hitDelay -= deltaSeconds * speedMultiplier;
+        if (unit.pendingAttackHit.hitDelay <= 0) {
+          const hit = unit.pendingAttackHit;
+          unit.pendingAttackHit = undefined;
+
+          // Target resolution
+          const targetUnit = livingUnits.find((u) => u.instanceId === hit.targetInstanceId);
+          if (targetUnit && targetUnit.hp > 0 && !targetUnit.isDefeated) {
+            applyDamageToTarget(unit, targetUnit, hit.damage, hit.attackType, hit.isCrit, newFloatingTexts);
+
+            // Life Steal
+            if (hit.lifestealPercent > 0 && hit.attackType === 'PHYSICAL') {
+              const healAmount = Math.round(hit.damage * hit.lifestealPercent);
+              unit.hp = Math.min(unit.maxHp, unit.hp + healAmount);
+              unit.totalHealing += healAmount;
+              newFloatingTexts.push({
+                id: `heal_${unit.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
+                x: unit.currentPosX,
+                y: unit.currentPosY,
+                value: `+${healAmount}`,
+                type: 'HEAL',
+                color: '#10B981',
+                timestamp: now,
+              });
+            }
+
+            // Mana Generation: Attacker gains +10 mana, Target gains +5 mana
+            unit.mana = Math.min(unit.maxMana, unit.mana + 10);
+            targetUnit.mana = Math.min(targetUnit.maxMana, targetUnit.mana + 5);
+
+            // Orb Special Generation (250 pts required): Only for units equipped with orb
+            if (unit.hasSpecialItem) {
+              unit.orbMana = Math.min(unit.maxOrbMana || 250, (unit.orbMana || 0) + 20);
+            }
+            if (targetUnit.hasSpecialItem) {
+              targetUnit.orbMana = Math.min(targetUnit.maxOrbMana || 250, (targetUnit.orbMana || 0) + 10);
+            }
+
+            // Visual Attack Effect (Slash / Projectile / Punch impact)
+            newAttackEffects.push({
+              id: `atk_${unit.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
+              fromX: unit.currentPosX,
+              fromY: unit.currentPosY,
+              toX: targetUnit.currentPosX,
+              toY: targetUnit.currentPosY,
+              type: unit.unitId === 'mihawk' ? 'PROJECTILE' : hit.isComboFinisher ? 'MELEE_SLASH' : hit.isMelee ? 'PUNCH_EXTEND' : 'PROJECTILE',
+              color: hit.effectColor || '#38BDF8',
+              icon: hit.effectIcon || '⚔️',
+              timestamp: now,
+              durationMs: unit.unitId === 'mihawk' ? 280 : hit.isComboFinisher ? 340 : 250,
+            });
+
+            // Process Thief Trait / Synergy Theft Check
+            checkAndApplyTheft(
+              unit,
+              targetUnit,
+              livingUnits,
+              theftTracker,
+              newTheftEvents,
+              newFloatingTexts,
+              playerGold,
+              enemyGold,
+              now
+            );
+
+            // Double Attack Synergy (Espadachim)
+            if (hit.doubleAttackChance && hit.doubleAttackChance > 0 && Math.random() < hit.doubleAttackChance) {
+              setTimeout(() => {
+                if (unit.hp > 0 && targetUnit.hp > 0) {
+                  applyDamageToTarget(unit, targetUnit, Math.round(hit.damage * 0.7), hit.attackType, false, newFloatingTexts);
+                  unit.mana = Math.min(unit.maxMana, unit.mana + 10);
+                  if (unit.hasSpecialItem) {
+                    unit.orbMana = Math.min(unit.maxOrbMana || 250, (unit.orbMana || 0) + 15);
+                  }
+                }
+              }, 150);
+            }
+          }
+        }
+      }
+    }
+
     // Cooldown reductions
     unit.attackCooldown = Math.max(0, unit.attackCooldown - deltaSeconds * speedMultiplier);
     unit.moveCooldown = Math.max(0, unit.moveCooldown - deltaSeconds * speedMultiplier);
@@ -524,9 +611,9 @@ export function simulateCombatTick(
           enemyGold,
           unitLifesteal,
           unitDoubleAttack,
-          now
+          now,
+          speedMultiplier
         );
-        unit.attackCooldown = (1 / Math.max(0.2, unit.attackSpeed)) * (1 / speedMultiplier);
       } else if (unit.attackAnimTimer <= 0) {
         unit.currentAnimation = 'idle';
       }
@@ -649,9 +736,9 @@ export function simulateCombatTick(
                 enemyGold,
                 unitLifesteal,
                 unitDoubleAttack,
-                now
+                now,
+                speedMultiplier
               );
-              unit.attackCooldown = (1 / Math.max(0.2, unit.attackSpeed)) * (1 / speedMultiplier);
             } else {
               unit.currentAnimation = 'idle';
             }
@@ -874,6 +961,75 @@ function checkAndApplyTheft(
   }
 }
 
+// Calculate exact attack animation duration and antepenultimate frame hit timing
+export function getAttackTiming(attacker: CombatUnitState, strikeKey: string): { animDuration: number; hitDelay: number } {
+  const normId = attacker.unitId?.toLowerCase() || '';
+  const isMonster = (normId.includes('chopper') && Boolean(attacker.isTransformed)) || normId.includes('chopper_monster');
+  const isMihawk = normId.includes('mihawk');
+  const isCrocodile = normId.includes('crocodile');
+  const isUsopp = normId.includes('usopp');
+  const isSanji = normId === 'sanji';
+  const isSwordUser = normId.includes('zoro') || normId.startsWith('marine') || normId.includes('tashigi');
+  const isNami = normId.includes('nami');
+
+  if (isNami) {
+    return { animDuration: 0.40, hitDelay: 0.20 };
+  }
+
+  // Exact durations from .glb files:
+  // MihawkAtk: 1.467s (45 frames) -> antepenultimate frame 42 = 1.400s
+  // CrocodileATK: 1.567s (48 frames) -> antepenultimate frame 45 = 1.500s
+  // MonsterChopperAtk: 1.000s (31 frames) -> antepenultimate frame 28 = 0.933s
+  // Slash1: 1.067s (33 frames) -> antepenultimate frame 30 = 1.000s
+  // UsoppAtk: 1.033s (32 frames) -> antepenultimate frame 29 = 0.967s
+  // Sanji: Kick1 = 1.033s (hit: 0.967s), SanjiKick1 = 1.000s (hit: 0.933s), SanjiKick2 = 1.133s (hit: 1.067s)
+  // Punch: Punch1 = 0.767s (hit: 0.700s), Punch2 = 0.833s (hit: 0.767s), Punch3 = 0.600s (hit: 0.533s)
+  let animDuration = 0.767;
+  let hitDelay = 0.700;
+
+  if (isMihawk) {
+    animDuration = 1.467;
+    hitDelay = 1.400;
+  } else if (isCrocodile) {
+    animDuration = 1.567;
+    hitDelay = 1.500;
+  } else if (isMonster) {
+    animDuration = 1.000;
+    hitDelay = 0.933;
+  } else if (isSwordUser) {
+    animDuration = 1.067;
+    hitDelay = 1.000;
+  } else if (isUsopp) {
+    animDuration = 1.033;
+    hitDelay = 0.967;
+  } else if (isSanji) {
+    if (strikeKey === 'kick2') {
+      animDuration = 1.000;
+      hitDelay = 0.933;
+    } else if (strikeKey === 'kick3') {
+      animDuration = 1.133;
+      hitDelay = 1.067;
+    } else {
+      animDuration = 1.033;
+      hitDelay = 0.967;
+    }
+  } else {
+    // Punches (Luffy, etc.)
+    if (strikeKey === 'punch2') {
+      animDuration = 0.833;
+      hitDelay = 0.767;
+    } else if (strikeKey === 'punch3') {
+      animDuration = 0.600;
+      hitDelay = 0.533;
+    } else {
+      animDuration = 0.767;
+      hitDelay = 0.700;
+    }
+  }
+
+  return { animDuration, hitDelay };
+}
+
 // --- BASIC ATTACK & COMBO EXECUTION ---
 function executeBasicAttack(
   attacker: CombatUnitState,
@@ -887,7 +1043,8 @@ function executeBasicAttack(
   enemyGold: number,
   lifestealPercent: number,
   doubleAttackChance: number,
-  now: number
+  now: number,
+  speedMultiplier: number = 1
 ) {
   const baseData = CHAMPION_DATABASE[attacker.unitId];
   const isMelee = attacker.range === 1;
@@ -967,8 +1124,13 @@ function executeBasicAttack(
     ? strikeKey
     : strikeKey;
 
-  attacker.attackAnimTimer = 0.52;
+  const timing = getAttackTiming(attacker, strikeKey);
+  attacker.attackAnimTimer = timing.animDuration / speedMultiplier;
   attacker.lastAttackTimestamp = now;
+
+  // Respiro considerável após o último frame do golpe antes de armar o próximo ataque
+  const respiro = 0.45;
+  attacker.attackCooldown = (timing.animDuration + respiro) / speedMultiplier;
 
   // Strike names
   attacker.lastStrikeName = isMarine
@@ -1026,82 +1188,27 @@ function executeBasicAttack(
     finalDamage = Math.max(12, Math.round(rawDamage * mrReduction));
   }
 
-  // Apply Damage to Shield first, then HP
-  applyDamageToTarget(attacker, target, finalDamage, attacker.attackType, isCrit, floatingTexts);
-
-  // Life Steal (Brigão Trait - Active for any brawler with synergy)
-  if (lifestealPercent > 0 && attacker.attackType === 'PHYSICAL') {
-    const healAmount = Math.round(finalDamage * lifestealPercent);
-    attacker.hp = Math.min(attacker.maxHp, attacker.hp + healAmount);
-    attacker.totalHealing += healAmount;
-    floatingTexts.push({
-      id: `heal_${attacker.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
-      x: attacker.currentPosX,
-      y: attacker.currentPosY,
-      value: `+${healAmount}`,
-      type: 'HEAL',
-      color: '#10B981',
-      timestamp: now,
-    });
-  }
-
-  // Mana Generation: Attacker gains +10 mana, Target gains +5 mana
-  attacker.mana = Math.min(attacker.maxMana, attacker.mana + 10);
-  target.mana = Math.min(target.maxMana, target.mana + 5);
-
-  // Orb Special Generation (250 pts required): Only for units equipped with orb
-  if (attacker.hasSpecialItem) {
-    attacker.orbMana = Math.min(attacker.maxOrbMana || 250, (attacker.orbMana || 0) + 20);
-  }
-  if (target.hasSpecialItem) {
-    target.orbMana = Math.min(target.maxOrbMana || 250, (target.orbMana || 0) + 10);
-  }
-
-  // Visual Attack Effect
+  // Schedule attack collision specifically for the antepenultimate frame of the attack animation
   const effectColor = isMihawk
     ? '#10B981' // Signature Kokuto Emerald Flying Slash
     : isComboFinisher
     ? '#F59E0B'
     : (attacker.accentColor || (attacker.isEnemy ? '#F43F5E' : '#38BDF8'));
 
-  attackEffects.push({
-    id: `atk_${attacker.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
-    fromX: attacker.currentPosX,
-    fromY: attacker.currentPosY,
-    toX: target.currentPosX,
-    toY: target.currentPosY,
-    type: isMihawk ? 'PROJECTILE' : isComboFinisher ? 'MELEE_SLASH' : isMelee ? 'PUNCH_EXTEND' : 'PROJECTILE',
-    color: effectColor,
-    icon: isMihawk ? '🗡️' : strikeConfig.icon || baseData?.avatarUrl || '⚔️',
-    timestamp: now,
-    durationMs: isMihawk ? 280 : isComboFinisher ? 340 : 250,
-  });
-
-  // Process Thief Trait / Synergy Theft Check
-  checkAndApplyTheft(
-    attacker,
-    target,
-    allLivingUnits,
-    theftTracker,
-    theftEvents,
-    floatingTexts,
-    playerGold,
-    enemyGold,
-    now
-  );
-
-  // Double Attack Synergy (Espadachim - Active for any swordsman with synergy)
-  if (doubleAttackChance > 0 && Math.random() < doubleAttackChance) {
-    setTimeout(() => {
-      if (attacker.hp > 0 && target.hp > 0) {
-        applyDamageToTarget(attacker, target, Math.round(finalDamage * 0.7), attacker.attackType, false, floatingTexts);
-        attacker.mana = Math.min(attacker.maxMana, attacker.mana + 10);
-        if (attacker.hasSpecialItem) {
-          attacker.orbMana = Math.min(attacker.maxOrbMana || 250, (attacker.orbMana || 0) + 15);
-        }
-      }
-    }, 150);
-  }
+  attacker.pendingAttackHit = {
+    targetInstanceId: target.instanceId,
+    damage: finalDamage,
+    attackType: attacker.attackType,
+    isCrit,
+    strikeName: attacker.lastStrikeName || strikeConfig.name,
+    lifestealPercent,
+    hitDelay: timing.hitDelay / speedMultiplier,
+    isComboFinisher,
+    isMelee,
+    effectColor,
+    effectIcon: isMihawk ? '🗡️' : strikeConfig.icon || baseData?.avatarUrl || '⚔️',
+    doubleAttackChance,
+  };
 }
 
 // --- ACTIVE / SPECIAL SKILL EXECUTION ---
