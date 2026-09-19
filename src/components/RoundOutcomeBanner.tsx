@@ -33,7 +33,7 @@ export const RoundOutcomeBanner: React.FC<RoundOutcomeBannerProps> = ({
 
   const aliveCommanders = commanders.filter((c) => !c.isEliminated);
   const fightingCount = aliveCommanders.filter(
-    (c) => !c.roundCombatStatus || c.roundCombatStatus === 'FIGHTING'
+    (c) => c.roundCombatStatus === 'FIGHTING'
   ).length;
 
   const isWin = outcome === 'VICTORY';

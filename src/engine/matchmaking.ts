@@ -92,7 +92,10 @@ export function generateRoundMatchmaking(
       botAId: bot.id,
       botBId: 'PVE_ENEMIES',
       isGhost: false,
-      finishCountdown: Math.floor(Math.random() * 12) + 12,
+      finishCountdown:
+        totalRound === 1
+          ? 35 - (Math.floor(Math.random() * 3) + 3) // In Round 1, minions die in 3-5s (countdown 32..29)
+          : Math.floor(Math.random() * 8) + 16,
       winnerId: bot.id,
       damageA: 0,
       damageB: 0,

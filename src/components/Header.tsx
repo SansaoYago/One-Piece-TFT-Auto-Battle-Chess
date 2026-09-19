@@ -23,6 +23,7 @@ interface HeaderProps {
   onToggleTestMode: () => void;
   onClearBoard?: () => void;
   onQuickDuel?: () => void;
+  onReturnToPlayerArena?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -46,6 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleTestMode,
   onClearBoard,
   onQuickDuel,
+  onReturnToPlayerArena,
 }) => {
   const isOvertime = countdown <= 15 && phase === 'COMBAT';
   const diffConfig = DIFFICULTY_CONFIGS[difficulty];
@@ -107,22 +109,8 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               )}
 
-              {/* Next Opponent Indicator - ONLY shown during PREPARATION phase (pré-battle) as requested */}
-              {isViewingOpponentArena ? (
-                <div
-                  id="header-opponent-indicator"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-md bg-purple-950/80 border-purple-500/60 text-purple-200"
-                  title={`Visualizando Arena de: ${opponentName}`}
-                >
-                  <Eye className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                  <span className="hidden sm:inline text-[10px] font-bold text-purple-300/80 uppercase tracking-wide">
-                    Espiando:
-                  </span>
-                  <span className="font-black text-xs text-purple-100 truncate max-w-[140px] sm:max-w-[200px]">
-                    {opponentName}
-                  </span>
-                </div>
-              ) : phase === 'PREPARATION' ? (
+              {/* Next Opponent Indicator - ALWAYS visible during PREPARATION phase (pré-batalha) */}
+              {phase === 'PREPARATION' && (
                 opponentInfo?.isBoss ? (
                   <div
                     id="header-opponent-indicator"
@@ -137,7 +125,7 @@ export const Header: React.FC<HeaderProps> = ({
                         <Crown className="w-3 h-3 text-amber-400 fill-amber-400" />
                         <span>{opponentInfo.bossTitle || 'Mestre de Fase'}</span>
                       </span>
-                      <span className="font-black text-xs text-amber-100 drop-shadow truncate max-w-[140px] sm:max-w-[220px]">
+                      <span className="font-black text-xs text-amber-100 drop-shadow truncate max-w-[130px] sm:max-w-[200px]">
                         {opponentInfo.name}
                       </span>
                     </div>
@@ -146,7 +134,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <div
                     id="header-opponent-indicator"
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-md bg-slate-900/90 border-slate-700/80 text-slate-200 hover:border-slate-600"
-                    title={`Próximo Adversário: ${opponentInfo?.name || opponentName}`}
+                    title={`Próximo Adversário da Rodada: ${opponentInfo?.name || 'Inimigo'}`}
                   >
                     <span className="text-sm shrink-0 leading-none drop-shadow">
                       {opponentInfo?.avatar || '⚔️'}
@@ -155,8 +143,8 @@ export const Header: React.FC<HeaderProps> = ({
                       <span className="hidden sm:inline text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">
                         Próximo:
                       </span>
-                      <span className="font-black text-xs text-slate-100 truncate max-w-[130px] sm:max-w-[200px]">
-                        {opponentInfo?.name || opponentName}
+                      <span className="font-black text-xs text-slate-100 truncate max-w-[120px] sm:max-w-[180px]">
+                        {opponentInfo?.name || 'Inimigo'}
                       </span>
                       {opponentInfo?.isGhost && (
                         <span className="px-1.5 py-0.2 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-500/40 text-[9px] font-bold shrink-0">
@@ -166,7 +154,24 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                   </div>
                 )
-              ) : null}
+              )}
+
+              {/* Scouting indicator tag when player is inspecting an opponent */}
+              {isViewingOpponentArena && (
+                <div
+                  id="header-scouting-indicator"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-md bg-cyan-950/90 border-cyan-500/60 text-cyan-200 animate-pulse"
+                  title={`Visualizando Arena de: ${opponentName}`}
+                >
+                  <Eye className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span className="hidden sm:inline text-[10px] font-bold text-cyan-300/90 uppercase tracking-wide">
+                    Espiando:
+                  </span>
+                  <span className="font-black text-xs text-cyan-100 truncate max-w-[110px] sm:max-w-[160px]">
+                    {opponentName}
+                  </span>
+                </div>
+              )}
             </>
           ) : (
             /* Test Mode Badge & Return Button */
@@ -282,12 +287,14 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Right Side: Mode Toggle Button or Opponent View */}
         <div className="flex items-center gap-2.5">
           {isViewingOpponentArena ? (
-            <div className="flex items-center gap-2 bg-slate-900/95 border border-cyan-500/50 rounded-xl px-3.5 py-1.5 shadow-lg backdrop-blur-md">
-              <Eye className="w-4 h-4 text-cyan-400 animate-pulse" />
-              <span className="text-xs font-black text-cyan-300 uppercase tracking-wider">
-                Espionando: {opponentName}
-              </span>
-            </div>
+            <button
+              onClick={onReturnToPlayerArena}
+              title="Retornar à visualização da sua própria arena"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-500/80 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs shadow-md transition-all cursor-pointer hover:scale-105 active:scale-95"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-slate-950" />
+              <span>Voltar ao Meu Campo</span>
+            </button>
           ) : !isTestMode ? (
             /* Game Mode: Button to Switch to Test Mode */
             <button

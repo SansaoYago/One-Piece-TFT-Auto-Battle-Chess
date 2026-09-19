@@ -115,7 +115,17 @@ export default function App() {
   const [isSpectating, setIsSpectating] = useState<boolean>(false);
   const [userPlacementRank, setUserPlacementRank] = useState<number>(8);
   const [viewingCommanderId, setViewingCommanderId] = useState<string>('p1_human');
-  const [botPlayerStates, setBotPlayerStates] = useState<Record<string, BotPlayerData>>({});
+  const [botPlayerStates, setBotPlayerStates] = useState<Record<string, BotPlayerData>>(() => {
+    const states: Record<string, BotPlayerData> = {};
+    INITIAL_COMMANDERS.forEach((cmd) => {
+      if (!cmd.isHuman) {
+        states[cmd.id] = generateIndividualBotState(cmd.id, 1, 'medium');
+      }
+    });
+    return states;
+  });
+  const botPlayerStatesRef = useRef<Record<string, BotPlayerData>>(botPlayerStates);
+  botPlayerStatesRef.current = botPlayerStates;
 
   // === Units and Board State ===
   const [boardUnits, setBoardUnits] = useState<UnitInstance[]>(() => {
@@ -146,6 +156,7 @@ export default function App() {
   const [roundDamageTaken, setRoundDamageTaken] = useState<number>(0);
   const scheduledBotMatchesRef = useRef<ScheduledBotMatch[]>([]);
   const autoAdvanceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const combatEndTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const combatLoopRef = useRef<number | null>(null);
   const lastTickTimeRef = useRef<number>(Date.now());
   const [activeTheftEvent, setActiveTheftEvent] = useState<TheftEvent | null>(null);
@@ -156,7 +167,9 @@ export default function App() {
   // === Dynamic Matchmaking & Opponent Tracking ===
   const currentOpponentCommanderIdRef = useRef<string | null>(null);
   const isHumanFightingGhostRef = useRef<boolean>(false);
-  const scheduledMatchmakingRef = useRef<RoundMatchmakingResult | null>(null);
+  const scheduledMatchmakingRef = useRef<RoundMatchmakingResult>(
+    generateRoundMatchmaking(INITIAL_COMMANDERS, 1, 1, 1, 'medium', botPlayerStates)
+  );
   const [currentOpponentInfo, setCurrentOpponentInfo] = useState<OpponentDisplayInfo>({
     name: '2 Recrutas da Marinha',
     avatar: '⚓',
@@ -226,16 +239,10 @@ export default function App() {
     return commanders.find((c) => c.id === viewingCommanderId) || commanders[0];
   }, [commanders, viewingCommanderId]);
 
-  // Keep bot states updated for each round
+  // Keep botPlayerStatesRef synchronized with botPlayerStates state
   useEffect(() => {
-    const states: Record<string, BotPlayerData> = {};
-    commanders.forEach((cmd) => {
-      if (!cmd.isHuman) {
-        states[cmd.id] = generateIndividualBotState(cmd.id, totalRound, difficultyRef.current || 'medium');
-      }
-    });
-    setBotPlayerStates(states);
-  }, [totalRound, commanders]);
+    botPlayerStatesRef.current = botPlayerStates;
+  }, [botPlayerStates]);
 
   // Global drag cleanup listener to prevent drag state getting stuck if mouse is released anywhere
   useEffect(() => {
@@ -287,9 +294,34 @@ export default function App() {
     if (isViewingOpponentArena) {
       const botData = botPlayerStates[viewingCommanderId];
       if (botData) {
-        return botData.boardUnits;
+        // Mirror the scouted opponent's units onto the OPPONENT / ENEMY side (columns 4..7)
+        // following competitive auto-battler conventions (TFT/Auto-Chess):
+        // Col 0 (back) -> Col 7 (enemy back)
+        // Col 1 (mid-back) -> Col 6 (enemy mid-back)
+        // Col 2 (mid-front) -> Col 5 (enemy mid-front)
+        // Col 3 (front) -> Col 4 (enemy front facing player)
+        const mirroredOpponentUnits: UnitInstance[] = botData.boardUnits
+          .filter((u) => u.gridX >= 0 && u.gridY >= 0)
+          .map((u) => {
+            const base = CHAMPION_DATABASE[u.unitId];
+            return {
+              ...u,
+              instanceId: `scout_${u.instanceId}`,
+              isEnemy: true,
+              gridX: Math.min(7, Math.max(4, 7 - Math.round(u.gridX))),
+              gridY: Math.min(4, Math.max(0, Math.round(u.gridY))),
+              hp: u.maxHp,
+              shield: 0,
+              mana: base?.startMana || 0,
+            };
+          });
+
+        // Keep player's own team visible in their territory (columns 0..3)
+        // so the player can directly compare positioning against the opponent's mirrored formation!
+        const playerSideUnits = boardUnits.filter((u) => !u.isEnemy && u.gridX >= 0 && u.gridY >= 0);
+        return [...playerSideUnits, ...mirroredOpponentUnits];
       }
-      return [];
+      return boardUnits;
     }
     return boardUnits;
   }, [isViewingOpponentArena, viewingCommanderId, botPlayerStates, boardUnits]);
@@ -310,10 +342,16 @@ export default function App() {
   const maxBoardUnits = LEVEL_MAX_SLOTS[level] || 1;
   const playerUnitsOnBoard = displayedBoardUnits.filter((u) => !u.isEnemy && u.gridX >= 0 && u.gridY >= 0);
 
-  // Calculate active synergies dynamically
+  // Calculate active synergies dynamically (reflecting scouted opponent when spying)
   const activeSynergies = useMemo(() => {
-    return calculateActiveSynergies(displayedBoardUnits);
-  }, [displayedBoardUnits]);
+    if (isViewingOpponentArena) {
+      const botData = botPlayerStates[viewingCommanderId];
+      if (botData) {
+        return calculateActiveSynergies(botData.boardUnits);
+      }
+    }
+    return calculateActiveSynergies(boardUnits.filter((u) => !u.isEnemy));
+  }, [isViewingOpponentArena, viewingCommanderId, botPlayerStates, boardUnits]);
 
   // Is Overtime active (at 15s remaining or less during combat)
   const isOvertime = phase === 'COMBAT' && countdown <= 15;
@@ -353,6 +391,9 @@ export default function App() {
 
   // === Phase Transition Helper ===
   const startCombatPhase = () => {
+    if (phaseRef.current === 'COMBAT') return;
+    phaseRef.current = 'COMBAT';
+
     // Clear any previous warmup or auto-advance timers
     warmupTimersRef.current.forEach(clearTimeout);
     warmupTimersRef.current = [];
@@ -363,6 +404,9 @@ export default function App() {
 
     // Retract shop drawer when combat commences so the battlefield is clear and unhindered
     setIsShopOpen(false);
+
+    // Return camera/view to player's home arena when combat starts
+    setViewingCommanderId('p1_human');
 
     setPhase('COMBAT');
     setCountdown(35); // 35s combat timer
@@ -424,19 +468,22 @@ export default function App() {
       boardUnitsRef.current = updatedBoard;
     }
 
-    // Run Matchmaking Engine according to user rules:
-    // - Even alive player counts: 100% direct 1v1, NO ghosts!
-    // - Odd alive player counts: exactly 1 ghost fighter (last/penultimate player), fighting a random player clone
-    // - PvE rounds: PvE bosses and minions
-    const matchmaking = scheduledMatchmakingRef.current || generateRoundMatchmaking(
-      commanders,
-      stageRef.current,
-      roundInStageRef.current,
-      totalRoundRef.current,
-      difficultyRef.current || 'medium',
-      botPlayerStates
-    );
-    scheduledMatchmakingRef.current = null;
+    // STRICT OPPONENT PERSISTENCE:
+    // Consume the pre-calculated matchmaking scheduled at the start of the round.
+    // NEVER nullify or re-roll matchmaking here so the opponent displayed in the UI (e.g. Trafalgar Law)
+    // is 100% the exact opponent and roster fought in combat!
+    let matchmaking = scheduledMatchmakingRef.current;
+    if (!matchmaking) {
+      matchmaking = generateRoundMatchmaking(
+        commandersRef.current,
+        stageRef.current,
+        roundInStageRef.current,
+        totalRoundRef.current,
+        difficultyRef.current || 'medium',
+        botPlayerStatesRef.current
+      );
+      scheduledMatchmakingRef.current = matchmaking;
+    }
 
     currentOpponentCommanderIdRef.current = matchmaking.humanOpponentId;
     isHumanFightingGhostRef.current = matchmaking.isHumanFightingGhost;
@@ -454,33 +501,31 @@ export default function App() {
         : `Batalha PvP: ${matchmaking.opponentName}`
     );
 
-    // Setup enemies on board
-    let combatBoardUnits = [...updatedBoard];
-    const existingEnemies = combatBoardUnits.filter((u) => u.isEnemy && u.gridX >= 0 && u.gridY >= 0);
+    // Setup enemies on board: Keep player's own units and load the scheduled match's enemies
+    let combatBoardUnits = updatedBoard.filter((u) => !u.isEnemy);
 
-    if (existingEnemies.length === 0) {
-      if (matchmaking.isPvE) {
-        const generatedEnemies = generateEnemyBoardUnits(
-          stageRef.current,
-          roundInStageRef.current,
+    if (matchmaking.isPvE) {
+      const generatedEnemies = generateEnemyBoardUnits(
+        stageRef.current,
+        roundInStageRef.current,
+        totalRoundRef.current,
+        difficultyRef.current || 'medium'
+      );
+      combatBoardUnits = [...combatBoardUnits, ...generatedEnemies];
+    } else if (matchmaking.humanOpponentId) {
+      const oppState =
+        botPlayerStatesRef.current[matchmaking.humanOpponentId] ||
+        botPlayerStates[matchmaking.humanOpponentId] ||
+        generateIndividualBotState(
+          matchmaking.humanOpponentId,
           totalRoundRef.current,
           difficultyRef.current || 'medium'
         );
-        combatBoardUnits = [...combatBoardUnits, ...generatedEnemies];
-      } else if (matchmaking.humanOpponentId) {
-        const oppState =
-          botPlayerStates[matchmaking.humanOpponentId] ||
-          generateIndividualBotState(
-            matchmaking.humanOpponentId,
-            totalRoundRef.current,
-            difficultyRef.current || 'medium'
-          );
-        const enemyUnits = convertBotBoardToEnemyUnits(
-          oppState.boardUnits,
-          matchmaking.isHumanFightingGhost
-        );
-        combatBoardUnits = [...combatBoardUnits, ...enemyUnits];
-      }
+      const enemyUnits = convertBotBoardToEnemyUnits(
+        oppState.boardUnits,
+        matchmaking.isHumanFightingGhost
+      );
+      combatBoardUnits = [...combatBoardUnits, ...enemyUnits];
     }
 
     // Lock difficulty once combat begins
@@ -536,6 +581,14 @@ export default function App() {
   };
 
   const endCombatAndAdvanceRound = (winner: 'PLAYER' | 'ENEMY' | 'DRAW') => {
+    // Strictly prevent running if we are no longer in COMBAT phase
+    if (phaseRef.current !== 'COMBAT') return;
+
+    if (combatEndTimeoutRef.current) {
+      clearTimeout(combatEndTimeoutRef.current);
+      combatEndTimeoutRef.current = null;
+    }
+
     if (combatLoopRef.current) {
       cancelAnimationFrame(combatLoopRef.current);
       combatLoopRef.current = null;
@@ -755,6 +808,32 @@ export default function App() {
           }
         }
 
+        // Guaranteed resolution fallback: ensure NO bot remains in 'FIGHTING' status once combat concludes
+        if (c.roundCombatStatus === 'FIGHTING' || !c.roundCombatStatus) {
+          if (isPvERound) {
+            return {
+              ...c,
+              winStreak: c.winStreak + 1,
+              lossStreak: 0,
+              roundCombatStatus: 'WON' as const,
+              damageTakenThisRound: 0,
+            };
+          } else {
+            const botWon = Math.random() >= 0.5;
+            const fallbackDmg = stageRef.current * 2 + 2;
+            const nextHp = botWon ? c.hp : Math.max(0, c.hp - fallbackDmg);
+            return {
+              ...c,
+              hp: nextHp,
+              isEliminated: nextHp <= 0,
+              winStreak: botWon ? c.winStreak + 1 : 0,
+              lossStreak: botWon ? 0 : c.lossStreak + 1,
+              roundCombatStatus: botWon ? ('WON' as const) : ('LOST' as const),
+              damageTakenThisRound: botWon ? 0 : fallbackDmg,
+            };
+          }
+        }
+
         return c;
       });
 
@@ -857,10 +936,39 @@ export default function App() {
     setAttackEffects([]);
     setBattleOutcome(null);
     setShopCards(generateShopCards(1));
-    scheduledMatchmakingRef.current = null;
+
+    const initialStates: Record<string, BotPlayerData> = {};
+    INITIAL_COMMANDERS.forEach((cmd) => {
+      if (!cmd.isHuman) {
+        initialStates[cmd.id] = generateIndividualBotState(cmd.id, 1, difficultyRef.current || 'medium');
+      }
+    });
+    botPlayerStatesRef.current = initialStates;
+    setBotPlayerStates(initialStates);
+
+    if (combatEndTimeoutRef.current) {
+      clearTimeout(combatEndTimeoutRef.current);
+      combatEndTimeoutRef.current = null;
+    }
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+
+    const initialRound1Match = generateRoundMatchmaking(
+      INITIAL_COMMANDERS,
+      1,
+      1,
+      1,
+      difficultyRef.current || 'medium',
+      initialStates
+    );
+    scheduledMatchmakingRef.current = initialRound1Match;
+    currentOpponentCommanderIdRef.current = null;
+    isHumanFightingGhostRef.current = false;
     setCurrentOpponentInfo({
-      name: '2 Recrutas da Marinha',
-      avatar: '⚓',
+      name: initialRound1Match.opponentName,
+      avatar: initialRound1Match.opponentAvatar,
       isGhost: false,
       isBoss: false,
       isPvE: true,
@@ -876,6 +984,10 @@ export default function App() {
       return;
     }
 
+    if (combatEndTimeoutRef.current) {
+      clearTimeout(combatEndTimeoutRef.current);
+      combatEndTimeoutRef.current = null;
+    }
     warmupTimersRef.current.forEach(clearTimeout);
     warmupTimersRef.current = [];
     if (autoAdvanceTimerRef.current) {
@@ -886,6 +998,7 @@ export default function App() {
     setCombatWarmupCountdown(3);
 
     setPhase('PREPARATION');
+    phaseRef.current = 'PREPARATION';
     setCountdown(30); // 30s preparation
     setBattleOutcome(null);
     setRoundDamageTaken(0);
@@ -929,6 +1042,19 @@ export default function App() {
     const stageCode = `${nextStage}-${nextRoundInStage}`;
     setRoundStage(stageCode);
 
+    // Generate fresh bot states for the upcoming round immediately so scouting and matchmaking share the identical units
+    const nextBotStates: Record<string, BotPlayerData> = {};
+    commandersRef.current.forEach((cmd) => {
+      if (!cmd.isHuman) {
+        nextBotStates[cmd.id] = generateIndividualBotState(
+          cmd.id,
+          nextTotalRound,
+          difficultyRef.current || 'medium'
+        );
+      }
+    });
+    setBotPlayerStates(nextBotStates);
+
     // Pre-calculate matchmaking for the upcoming round so Header accurately displays next opponent & boss status
     const upcomingMatch = generateRoundMatchmaking(
       commandersRef.current,
@@ -936,9 +1062,10 @@ export default function App() {
       nextRoundInStage,
       nextTotalRound,
       difficultyRef.current || 'medium',
-      botPlayerStates
+      nextBotStates
     );
     scheduledMatchmakingRef.current = upcomingMatch;
+    currentOpponentCommanderIdRef.current = upcomingMatch.humanOpponentId;
     setCurrentOpponentInfo({
       name: upcomingMatch.opponentName,
       avatar: upcomingMatch.opponentAvatar,
@@ -1083,9 +1210,12 @@ export default function App() {
           if (isTestModeRef.current) {
             setBattleOutcome(tickResult.winner);
           } else {
-            setTimeout(() => {
+            if (combatEndTimeoutRef.current) {
+              clearTimeout(combatEndTimeoutRef.current);
+            }
+            combatEndTimeoutRef.current = setTimeout(() => {
               endCombatAndAdvanceRound(tickResult.winner!);
-            }, 800);
+            }, 600);
           }
         }
 
@@ -1111,6 +1241,10 @@ export default function App() {
         cancelAnimationFrame(combatLoopRef.current);
         combatLoopRef.current = null;
       }
+      if (combatEndTimeoutRef.current) {
+        clearTimeout(combatEndTimeoutRef.current);
+        combatEndTimeoutRef.current = null;
+      }
     };
   }, [phase, isTimerPaused, isCombatStarting, isTestMode, activeSynergies, isOvertime]);
 
@@ -1120,105 +1254,101 @@ export default function App() {
 
     const timerInterval = setInterval(() => {
       setTotalGameTime((prev) => prev + 1);
-
-      setCountdown((prevCountdown) => {
-        const nextCd = prevCountdown - 1;
-
-        if (phaseRef.current === 'COMBAT') {
-          // Progress scheduled bot matches in other arenas
-          if (scheduledBotMatchesRef.current.length > 0) {
-            let matchesUpdated = false;
-            scheduledBotMatchesRef.current.forEach((m) => {
-              if (!m.isResolved && nextCd <= m.finishCountdown) {
-                m.isResolved = true;
-                matchesUpdated = true;
-              }
-            });
-
-            if (matchesUpdated) {
-              setCommanders((prevCmds) => {
-                const updated = prevCmds.map((c) => {
-                  const match = scheduledBotMatchesRef.current.find(
-                    (m) =>
-                      (m.botAId === c.id || m.botBId === c.id) &&
-                      m.isResolved &&
-                      c.roundCombatStatus === 'FIGHTING'
-                  );
-                  if (!match) return c;
-
-                  const isWinner = match.winnerId === c.id;
-                  const dmg = match.botAId === c.id ? match.damageA : match.damageB;
-
-                  if (isWinner || match.winnerId === 'PVE_WIN') {
-                    return {
-                      ...c,
-                      winStreak: c.winStreak + 1,
-                      lossStreak: 0,
-                      roundCombatStatus: 'WON' as const,
-                      damageTakenThisRound: 0,
-                    };
-                  } else {
-                    const nextHp = Math.max(0, c.hp - dmg);
-                    return {
-                      ...c,
-                      hp: nextHp,
-                      isEliminated: nextHp <= 0,
-                      winStreak: 0,
-                      lossStreak: c.lossStreak + 1,
-                      roundCombatStatus: 'LOST' as const,
-                      damageTakenThisRound: dmg,
-                    };
-                  }
-                });
-
-                const livingCommanders = updated.filter((c) => c.hp > 0 && !c.isEliminated);
-                const isHumanAlive = updated.some((c) => c.isHuman && c.hp > 0 && !c.isEliminated);
-
-                if (isHumanAlive && livingCommanders.length === 1) {
-                  // Victory triggered by bot elimination!
-                  setUserPlacementRank(1);
-                  setIsGameOverModalOpen(true);
-                } else {
-                  // Check if all alive commanders have finished
-                  const allDone = updated
-                    .filter((c) => !c.isEliminated)
-                    .every((c) => c.roundCombatStatus && c.roundCombatStatus !== 'FIGHTING');
-
-                  if (allDone && !autoAdvanceTimerRef.current) {
-                    autoAdvanceTimerRef.current = setTimeout(() => {
-                      handleProceedToNextRound();
-                    }, 1800);
-                  }
-                }
-
-                return updated;
-              });
-            }
-          }
-        }
-
-        if (nextCd <= 0) {
-          // Timer reached 0s -> Switch phase or resolve draws
-          if (phaseRef.current === 'PREPARATION') {
-            startCombatPhase();
-            return 35;
-          } else {
-            // Combat reached 0s: Force draw resolution for any remaining battles
-            if (battleOutcome === null) {
-              endCombatAndAdvanceRound('DRAW');
-            } else {
-              handleProceedToNextRound();
-            }
-            return 30;
-          }
-        }
-
-        return nextCd;
-      });
+      setCountdown((prev) => Math.max(0, prev - 1));
     }, 1000);
 
     return () => clearInterval(timerInterval);
-  }, [isTimerPaused, isCombatStarting, phase, battleOutcome]);
+  }, [isTimerPaused, isCombatStarting, isTestMode]);
+
+  // === Phase Progression & Scheduled Match Progression on Clock Ticks ===
+  useEffect(() => {
+    if (isTimerPaused || isCombatStarting || isTestMode) return;
+
+    if (phase === 'COMBAT') {
+      // Progress scheduled bot matches in other arenas
+      if (scheduledBotMatchesRef.current.length > 0) {
+        let matchesUpdated = false;
+        scheduledBotMatchesRef.current.forEach((m) => {
+          if (!m.isResolved && countdown <= m.finishCountdown) {
+            m.isResolved = true;
+            matchesUpdated = true;
+          }
+        });
+
+        if (matchesUpdated) {
+          setCommanders((prevCmds) => {
+            const updated = prevCmds.map((c) => {
+              const match = scheduledBotMatchesRef.current.find(
+                (m) =>
+                  (m.botAId === c.id || m.botBId === c.id) &&
+                  m.isResolved &&
+                  c.roundCombatStatus === 'FIGHTING'
+              );
+              if (!match) return c;
+
+              const isWinner = match.winnerId === c.id;
+              const dmg = match.botAId === c.id ? match.damageA : match.damageB;
+
+              if (isWinner || match.winnerId === 'PVE_WIN') {
+                return {
+                  ...c,
+                  winStreak: c.winStreak + 1,
+                  lossStreak: 0,
+                  roundCombatStatus: 'WON' as const,
+                  damageTakenThisRound: 0,
+                };
+              } else {
+                const nextHp = Math.max(0, c.hp - dmg);
+                return {
+                  ...c,
+                  hp: nextHp,
+                  isEliminated: nextHp <= 0,
+                  winStreak: 0,
+                  lossStreak: c.lossStreak + 1,
+                  roundCombatStatus: 'LOST' as const,
+                  damageTakenThisRound: dmg,
+                };
+              }
+            });
+
+            const livingCommanders = updated.filter((c) => c.hp > 0 && !c.isEliminated);
+            const isHumanAlive = updated.some((c) => c.isHuman && c.hp > 0 && !c.isEliminated);
+
+            if (isHumanAlive && livingCommanders.length === 1) {
+              // Victory triggered by bot elimination!
+              setUserPlacementRank(1);
+              setIsGameOverModalOpen(true);
+            } else {
+              // Check if all alive commanders have finished
+              const allDone = updated
+                .filter((c) => !c.isEliminated)
+                .every((c) => c.roundCombatStatus && c.roundCombatStatus !== 'FIGHTING');
+
+              if (allDone && !autoAdvanceTimerRef.current) {
+                autoAdvanceTimerRef.current = setTimeout(() => {
+                  handleProceedToNextRound();
+                }, 1800);
+              }
+            }
+
+            return updated;
+          });
+        }
+      }
+    }
+
+    if (countdown <= 0) {
+      if (phase === 'PREPARATION') {
+        startCombatPhase();
+      } else if (phase === 'COMBAT') {
+        if (battleOutcome === null) {
+          endCombatAndAdvanceRound('DRAW');
+        } else {
+          handleProceedToNextRound();
+        }
+      }
+    }
+  }, [countdown, phase, isTimerPaused, isCombatStarting, isTestMode, battleOutcome]);
 
   // === Keyboard Shortcuts (D for Shop/Reroll, F for XP, Space for Pause) ===
   useEffect(() => {
@@ -2144,6 +2274,7 @@ export default function App() {
         onOpenDifficultyModal={() => setIsDifficultyModalOpen(true)}
         onTogglePause={() => setIsTimerPaused((prev) => !prev)}
         onResetTimer={() => setCountdown(30)}
+        onReturnToPlayerArena={() => setViewingCommanderId('p1_human')}
         onTogglePhase={
           isTestMode
             ? handleToggleCombatPhase
@@ -2171,6 +2302,8 @@ export default function App() {
                 commanders={commanders}
                 viewingCommanderId={viewingCommanderId}
                 onSelectCommander={(cmdId) => setViewingCommanderId(cmdId)}
+                scheduledOpponentId={scheduledMatchmakingRef.current?.humanOpponentId || currentOpponentCommanderIdRef.current}
+                gamePhase={phase}
               />
             </div>
           </div>
@@ -2396,18 +2529,20 @@ export default function App() {
       )}
 
       {/* Round Resolution Banner (Victory / Defeat / Draw with TFT Economy & Automatic Waiting Status) */}
-      <RoundOutcomeBanner
-        outcome={battleOutcome}
-        roundStage={roundStage}
-        roundTitle={roundTitle}
-        income={lastRoundIncome}
-        damageTaken={roundDamageTaken}
-        xpGained={lastRoundXp}
-        commanders={commanders}
-        isAllBattlesFinished={commanders
-          .filter((c) => !c.isEliminated)
-          .every((c) => c.roundCombatStatus && c.roundCombatStatus !== 'FIGHTING')}
-      />
+      {phase === 'COMBAT' && (
+        <RoundOutcomeBanner
+          outcome={battleOutcome}
+          roundStage={roundStage}
+          roundTitle={roundTitle}
+          income={lastRoundIncome}
+          damageTaken={roundDamageTaken}
+          xpGained={lastRoundXp}
+          commanders={commanders}
+          isAllBattlesFinished={commanders
+            .filter((c) => !c.isEliminated)
+            .every((c) => c.roundCombatStatus && c.roundCombatStatus !== 'FIGHTING')}
+        />
+      )}
 
       {/* Item Draft Selection Modal (Rounds 3, 6, 9, 12, 15, 18, 21, 24) */}
       <ItemDraftModal

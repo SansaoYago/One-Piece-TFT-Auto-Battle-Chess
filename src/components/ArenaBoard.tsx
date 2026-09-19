@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { UnitInstance } from '../types/game';
 import { AttackEffect, CombatUnitState, FloatingText } from '../types/combat';
-import { Swords, User, Anchor, Crown, Flame, Zap, Coins } from 'lucide-react';
+import { Swords, User, Anchor, Crown, Flame, Zap, Coins, Eye } from 'lucide-react';
 import { SYNERGY_DATABASE } from '../data/synergies';
 import { CHAMPION_DATABASE } from '../data/units';
 import { ITEM_DATABASE } from '../data/items';
@@ -879,6 +879,16 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
           )}
         </div>
       </div>
+
+      {/* SCOUTING ARENA FLOATING HUD INDICATOR (FLAT 2D UPRIGHT HUD) */}
+      {isViewingOpponentArena && viewingCommander && !isCombatPhase && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 pointer-events-none flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-slate-950/95 border border-cyan-500/60 shadow-[0_0_25px_rgba(6,182,212,0.35)] backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200">
+          <Eye className="w-4 h-4 text-cyan-400 animate-pulse shrink-0" />
+          <span className="text-xs text-slate-200">
+            Espionando: <strong className="text-cyan-300 font-black">{viewingCommander.name}</strong> • Posicionamento espelhado no lado inimigo (Direita)
+          </span>
+        </div>
+      )}
 
       {/* COMBAT WARMUP & START COUNTDOWN OVERLAY (FLAT 2D, VERTICALLY UPRIGHT & PERFECTLY CENTERED) */}
       {isCombatStarting && (

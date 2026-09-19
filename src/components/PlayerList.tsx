@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Commander } from '../types/game';
-import { Crown, Flame, Heart, Skull, ChevronLeft, ChevronRight, Check, X, Swords, Scale } from 'lucide-react';
+import { Crown, Flame, Heart, Skull, ChevronLeft, ChevronRight, Check, X, Swords, Scale, Eye } from 'lucide-react';
 
 interface PlayerListProps {
   commanders: Commander[];
@@ -8,6 +8,7 @@ interface PlayerListProps {
   onSelectCommander: (commanderId: string) => void;
   isInitiallyCollapsed?: boolean;
   gamePhase?: 'PREPARATION' | 'COMBAT';
+  scheduledOpponentId?: string | null;
 }
 
 export const PlayerList: React.FC<PlayerListProps> = ({
@@ -16,6 +17,7 @@ export const PlayerList: React.FC<PlayerListProps> = ({
   onSelectCommander,
   isInitiallyCollapsed = true,
   gamePhase = 'PREPARATION',
+  scheduledOpponentId = null,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(isInitiallyCollapsed);
 
@@ -95,6 +97,7 @@ export const PlayerList: React.FC<PlayerListProps> = ({
               const hpPercent = Math.max(0, (cmd.hp / cmd.maxHp) * 100);
               const isAlive = cmd.hp > 0 && !cmd.isEliminated;
               const isViewing = cmd.id === viewingCommanderId;
+              const isScheduledOpponent = Boolean(scheduledOpponentId && cmd.id === scheduledOpponentId && !cmd.isHuman);
               const rankPosition = rankIdx + 1;
               const hpColorClass =
                 hpPercent > 50
@@ -112,6 +115,8 @@ export const PlayerList: React.FC<PlayerListProps> = ({
                   className={`relative rounded-xl p-2.5 border transition-all duration-300 cursor-pointer ${
                     isViewing
                       ? 'bg-gradient-to-r from-amber-950/70 via-slate-900/90 to-slate-900/90 border-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.4)] ring-2 ring-amber-400 scale-[1.02]'
+                      : isScheduledOpponent
+                      ? 'bg-gradient-to-r from-rose-950/40 via-slate-900/90 to-slate-900/90 border-rose-500/70 shadow-[0_0_15px_rgba(244,63,94,0.3)] ring-1 ring-rose-500/40 hover:border-rose-400 hover:scale-[1.01]'
                       : cmd.isHuman
                       ? 'bg-gradient-to-r from-amber-950/30 via-slate-900/90 to-slate-900/90 border-amber-500/40 hover:border-amber-400 hover:scale-[1.01]'
                       : isAlive
@@ -121,6 +126,8 @@ export const PlayerList: React.FC<PlayerListProps> = ({
                   title={
                     cmd.isHuman
                       ? 'Sua arena (Clique para retornar)'
+                      : isScheduledOpponent
+                      ? `⚔️ Seu próximo adversário nesta rodada! Clique para espionar a arena de ${cmd.name}`
                       : `Espionar a arena de ${cmd.name}`
                   }
                 >
@@ -164,18 +171,32 @@ export const PlayerList: React.FC<PlayerListProps> = ({
                     </div>
 
                     {/* Level & Win/Loss Streak */}
-                    <div className="flex flex-col items-end flex-shrink-0">
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 border border-slate-700">
-                        Lv.{cmd.level}
-                      </span>
+                    <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
+                      <div className="flex items-center gap-1">
+                        {isScheduledOpponent && isAlive && (
+                          <span className="px-1.5 py-0.2 rounded bg-rose-950/90 text-rose-300 border border-rose-500/80 text-[8px] font-black uppercase tracking-wider flex items-center gap-0.5 shadow-sm animate-pulse">
+                            <Swords className="w-2.5 h-2.5 text-rose-400" />
+                            Próximo
+                          </span>
+                        )}
+                        {isViewing && !cmd.isHuman && (
+                          <span className="px-1.5 py-0.2 rounded bg-cyan-950/90 text-cyan-300 border border-cyan-500/80 text-[8px] font-black uppercase tracking-wider flex items-center gap-0.5 shadow-sm">
+                            <Eye className="w-2.5 h-2.5 text-cyan-400" />
+                            Espiando
+                          </span>
+                        )}
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 border border-slate-700">
+                          Lv.{cmd.level}
+                        </span>
+                      </div>
                       {cmd.winStreak > 1 && (
-                        <span className="flex items-center gap-0.5 text-[9px] font-bold text-amber-400 mt-0.5">
+                        <span className="flex items-center gap-0.5 text-[9px] font-bold text-amber-400">
                           <Flame className="w-2.5 h-2.5 fill-amber-400" />
                           {cmd.winStreak}W
                         </span>
                       )}
                       {!isAlive && (
-                        <span className="flex items-center gap-0.5 text-[8px] font-bold text-rose-400 mt-0.5">
+                        <span className="flex items-center gap-0.5 text-[8px] font-bold text-rose-400">
                           <Skull className="w-2.5 h-2.5 text-rose-400" /> Eliminado
                         </span>
                       )}
