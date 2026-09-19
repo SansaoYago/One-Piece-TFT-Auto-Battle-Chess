@@ -414,10 +414,11 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
           const isNami = normId === 'nami';
           const isUsopp = normId === 'usopp';
           const isMihawk = normId === 'mihawk';
+          const isShanks = normId === 'shanks';
           const isMarine = normId.startsWith('marine_recruit');
           const isChopper = normId === 'chopper' || normId === 'chopper_monster';
 
-          if (!isLuffy && !isZoro && !isNami && !isUsopp && !isMihawk && !isChopper && !customSkin) {
+          if (!isLuffy && !isZoro && !isNami && !isUsopp && !isMihawk && !isShanks && !isChopper && !customSkin) {
             fallbackToProcedural();
             return;
           }
@@ -543,8 +544,8 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
 
             const walkAction = getRetargetedAction(walkClipToUse);
 
-            // Dedicated attack clips: Swordsmen (Zoro, Marines, Tashigi) use Slash1, Mihawk uses MihawkAtk, Monster Chopper uses MonsterChopperAtk, Nami uses her staff strike, Usopp uses slingshot
-            const isSwordUser = isZoro || isMarine || isTashigi;
+            // Dedicated attack clips: Swordsmen (Zoro, Shanks, Marines, Tashigi) use Slash1, Mihawk uses MihawkAtk, Monster Chopper uses MonsterChopperAtk, Nami uses her staff strike, Usopp uses slingshot
+            const isSwordUser = isZoro || isMarine || isTashigi || normId === 'shanks';
             const championAttackClip = isMihawk
               ? (customSkin?.customAnimations?.attack || customSkin?.customAnimations?.slash1 || customAttackClip)
               : isMonster
@@ -667,8 +668,8 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
               if (customAttackAction) {
                 actions['attack'] = customAttackAction;
                 actions['slash1'] = customAttackAction;
-                if (isMarine || normId === 'buggy' || isTashigi || isNami) {
-                  // Standard attack for all common marines, Tashigi, Buggy, and Nami is strictly their weapon strike
+                if (isMarine || normId === 'buggy' || isTashigi || isNami || normId === 'shanks') {
+                  // Standard attack for all common marines, Tashigi, Buggy, Shanks, and Nami is strictly their weapon strike
                   actions['punch'] = customAttackAction;
                   actions['punch1'] = customAttackAction;
                   actions['punch2'] = customAttackAction;

@@ -969,7 +969,7 @@ export function getAttackTiming(attacker: CombatUnitState, strikeKey: string): {
   const isCrocodile = normId.includes('crocodile');
   const isUsopp = normId.includes('usopp');
   const isSanji = normId === 'sanji';
-  const isSwordUser = normId.includes('zoro') || normId.startsWith('marine') || normId.includes('tashigi');
+  const isSwordUser = normId.includes('zoro') || normId.startsWith('marine') || normId.includes('tashigi') || normId.includes('shanks');
   const isNami = normId.includes('nami');
 
   if (isNami) {

@@ -104,7 +104,9 @@ export function attachChampionWeapons(
     });
     return attachZoroSwordsByTier(rightHandBone || model, leftHandBone || model, headBone || model, hipsBone || model, isEnemy, stars);
   } else if (normId === 'shanks') {
-    return attachShanksGryphonSaber(rightHandBone || model, isEnemy);
+    // Model SkinShanks.glb already includes his signature saber modeled on his waist.
+    // Avoid attaching a duplicate procedural saber that would overlap with the model.
+    return null;
   } else if (normId === 'usopp') {
     // If model already has built-in slingshot (e.g. SkinUsopp.glb), do not attach duplicate
     let hasBuiltinWeapon = false;

@@ -846,13 +846,17 @@ export async function loadChampionSkinModel(
       '/models/Shanks.glb',
     ];
     const res = await tryLoadCandidateModel(candidateUrls);
-    const slashClip = await tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1');
+    const [walkClip, slashClip] = await Promise.all([
+      tryLoadAnimationClip(['./models/Walk.glb', '/models/Walk.glb', './models/ZoroWalk.glb', '/models/ZoroWalk.glb'], 'walk'),
+      tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1'),
+    ]);
     if (res) {
       return {
         ...res.data,
         url: res.url,
         isDedicatedSkin: true,
         customAnimations: {
+          walk: walkClip || undefined,
           slash1: slashClip || undefined,
           attack: slashClip || undefined,
         },
