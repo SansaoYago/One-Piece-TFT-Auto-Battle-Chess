@@ -1,7 +1,7 @@
 {
   "name": "one-piece-tactics",
   "private": true,
-  "version": "0.0.7",
+  "version": "0.1.2",
   "main": "electron.cjs",
   "type": "module",
   "scripts": {
@@ -20,11 +20,13 @@
     "@capacitor/android": "^8.5.1",
     "@capacitor/cli": "^8.5.1",
     "@capacitor/core": "^8.5.1",
+    "@emotion/is-prop-valid": "^1.4.0",
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/three": "^0.185.4",
     "@vitejs/plugin-react": "^5.0.4",
     "dotenv": "^17.2.3",
+    "electron-updater": "^6.8.9",
     "express": "^4.21.2",
     "fflate": "^0.8.3",
     "firebase": "^12.19.0",
@@ -54,6 +56,12 @@
         "nsis",
         "portable"
       ]
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "SansaoYago",
+      "repo": "One-Piece-TFT-Auto-Battle-Chess",
+      "releaseType": "release"
     }
   },
   "devDependencies": {

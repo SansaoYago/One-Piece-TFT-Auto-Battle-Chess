@@ -33,6 +33,7 @@ taskkill /F /IM 7za.exe /T 2>$null
 taskkill /F /IM electron.exe /T 2>$null
 
 # Gera NSIS e portable fora do projeto para evitar locks e empacotamento recursivo.
+# Para publicar automaticamente no GitHub Releases, defina GH_TOKEN antes e use --publish always.
 
 npx electron-builder --win nsis portable --config.directories.output=$TEMP_OUTPUT
 
@@ -68,6 +69,27 @@ Get-ChildItem "dist-electron\*0.1.0*" | Select-Object Name,Length,LastWriteTime
 ```
 
 Troque `0.1.0` pelo valor usado em `$VERSION`.
+
+## Publicar para o launcher atualizar sozinho
+
+O launcher consulta as releases do repositório GitHub configurado no `package.json`.
+Cada nova versão precisa ser publicada como uma **Release** com os arquivos gerados pelo electron-builder, incluindo o `latest.yml` e o `.blockmap`.
+
+### Publicação automática pelo electron-builder
+
+Crie um token do GitHub com permissão para publicar releases, informe-o somente no terminal e execute o fluxo acima com `--publish always`:
+
+```powershell
+$env:GH_TOKEN = "COLE_SEU_TOKEN_AQUI"
+npx electron-builder --win nsis portable --publish always --config.directories.output=$TEMP_OUTPUT
+Remove-Item Env:\GH_TOKEN
+```
+
+Não salve o token no projeto nem faça commit dele. Depois que a release for publicada, o launcher verifica a versão ao abrir, baixa a atualização e só então oferece o botão para reiniciar e instalar. Se o GitHub estiver indisponível, ele permite entrar offline.
+
+### Publicação manual
+
+Se preferir não usar token no terminal, gere os instaladores sem `--publish`, abra uma release no GitHub e anexe os arquivos `latest.yml`, `*.exe`, `*.blockmap` e, quando existir, `*.yml`/`*.zip` gerados na pasta temporária. A tag da release deve corresponder à versão do `package.json`, por exemplo `v0.1.0`.
 
 ## Se o build falhar com arquivo bloqueado
 
