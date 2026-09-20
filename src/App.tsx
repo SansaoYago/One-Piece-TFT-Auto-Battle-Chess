@@ -1489,6 +1489,7 @@ export default function App() {
     multiplayerClient.onRoomJoined = (room, pId) => {
       setMultiplayerRoom(room);
       setLocalPlayerId(pId);
+      localPlayerIdRef.current = pId;
       setIsMultiplayerActive(true);
       isMultiplayerActiveRef.current = true;
     };

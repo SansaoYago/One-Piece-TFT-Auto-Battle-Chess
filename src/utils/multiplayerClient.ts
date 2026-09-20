@@ -6,6 +6,10 @@ import {
   EmoteMessage,
   AvailableRoomSummary,
 } from '../types/multiplayer';
+import {
+  firestoreMultiplayerEngine,
+} from '../services/firestoreMultiplayer';
+import { fetchActiveRoomsFirestore } from '../services/firebase';
 
 export const CENTRAL_SERVER_URL = 'https://ais-dev-4jri3d5iut235w662qvv2e-167791983539.us-east1.run.app';
 
@@ -14,6 +18,7 @@ class MultiplayerClientService {
   private currentRoom: MultiplayerRoomState | null = null;
   private localPlayerId: string | null = null;
   private currentServerUrl: string = CENTRAL_SERVER_URL;
+  private usingFirestoreSync: boolean = true;
 
   // Event callbacks
   public onRoomJoined?: (room: MultiplayerRoomState, localPlayerId: string) => void;
@@ -42,6 +47,7 @@ class MultiplayerClientService {
 
   constructor() {
     this.currentServerUrl = this.resolveServerUrl();
+    this.localPlayerId = firestoreMultiplayerEngine.getPlayerId();
   }
 
   public resolveServerUrl(): string {
@@ -82,23 +88,26 @@ class MultiplayerClientService {
     }
   }
 
-  public connect(): Socket {
+  public connect(): Socket | null {
     if (this.socket && this.socket.connected) {
       return this.socket;
     }
 
     const serverUrl = this.getServerUrl();
-    console.log('[MultiplayerClient] Connecting to socket server:', serverUrl);
-
-    this.socket = io(serverUrl, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-    });
-
-    this.setupListeners();
-    return this.socket;
+    // Do not attempt socket connection if we are running in file:// without an accessible remote server
+    try {
+      this.socket = io(serverUrl, {
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionAttempts: 3,
+        reconnectionDelay: 2000,
+        timeout: 5000,
+      });
+      this.setupListeners();
+      return this.socket;
+    } catch {
+      return null;
+    }
   }
 
   private setupListeners() {
@@ -168,10 +177,21 @@ class MultiplayerClientService {
   }
 
   public fetchRoomsList() {
-    const s = this.connect();
-    s.emit('c2s_get_rooms');
+    // 1. Fetch from Firestore (universal across .exe, PWA and Web)
+    fetchActiveRoomsFirestore()
+      .then((rooms) => {
+        if (rooms && rooms.length > 0) {
+          this.onRoomsListUpdated?.(rooms);
+        }
+      })
+      .catch(() => {});
 
-    // Also attempt quick REST fetch in parallel
+    // 2. Fetch via Socket if available
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('c2s_get_rooms');
+    }
+
+    // 3. Quick REST fetch
     const url = `${this.getServerUrl()}/api/multiplayer/rooms`;
     fetch(url)
       .then((res) => res.json())
@@ -180,58 +200,152 @@ class MultiplayerClientService {
           this.onRoomsListUpdated?.(data.rooms);
         }
       })
-      .catch(() => {
-        // Fallback to socket event
-      });
+      .catch(() => {});
   }
 
-  public createRoom(playerName: string, avatar: string, commanderId: string) {
-    const s = this.connect();
-    s.emit('c2s_create_room', { playerName, avatar, commanderId });
+  public async createRoom(playerName: string, avatar: string, commanderId: string) {
+    // Try via socket if connected
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('c2s_create_room', { playerName, avatar, commanderId });
+    }
+
+    // Always create in Cloud Firestore (ensures .exe cross-play works immediately)
+    try {
+      const room = await firestoreMultiplayerEngine.createRoom(playerName, avatar, commanderId);
+      this.currentRoom = room;
+      this.localPlayerId = firestoreMultiplayerEngine.getPlayerId();
+      this.subscribeFirestoreRoom(room.roomId);
+      this.onRoomJoined?.(room, this.localPlayerId);
+    } catch (err: any) {
+      console.warn('[MultiplayerClient] Fallback ao criar sala no Firestore:', err);
+      this.onError?.(err?.message || 'Falha ao criar sala no Cloud Firestore.');
+    }
   }
 
-  public joinRoom(roomCode: string, playerName: string, avatar: string, commanderId: string) {
-    const s = this.connect();
-    s.emit('c2s_join_room', { roomCode, playerName, avatar, commanderId });
+  public async joinRoom(roomCode: string, playerName: string, avatar: string, commanderId: string) {
+    // Try via socket if connected
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('c2s_join_room', { roomCode, playerName, avatar, commanderId });
+    }
+
+    // Join via Cloud Firestore
+    try {
+      const room = await firestoreMultiplayerEngine.joinRoom(roomCode, playerName, avatar, commanderId);
+      this.currentRoom = room;
+      this.localPlayerId = firestoreMultiplayerEngine.getPlayerId();
+      this.subscribeFirestoreRoom(room.roomId);
+      this.onRoomJoined?.(room, this.localPlayerId);
+    } catch (err: any) {
+      console.warn('[MultiplayerClient] Erro ao entrar na sala pelo Firestore:', err);
+      this.onError?.(err?.message || 'Não foi possível entrar na sala selecionada.');
+    }
+  }
+
+  private subscribeFirestoreRoom(roomId: string) {
+    firestoreMultiplayerEngine.subscribeToRoom(roomId, {
+      onRoomStateUpdated: (room) => {
+        this.currentRoom = room;
+        this.onRoomStateUpdated?.(room);
+      },
+      onGameStarted: (room) => {
+        this.currentRoom = room;
+        this.onGameStarted?.(room);
+      },
+      onPhaseTick: (data) => {
+        this.onPhaseTick?.(data);
+      },
+      onStartCombat: async (data) => {
+        // Tenta buscar o tabuleiro real do adversário no Firestore
+        if (data.opponent && data.opponent.id && !data.opponent.isBot) {
+          const opponentUnits = await firestoreMultiplayerEngine.fetchOpponentBoard(
+            roomId,
+            data.opponent.id
+          );
+          if (opponentUnits && opponentUnits.length > 0) {
+            data.opponent.boardUnits = opponentUnits;
+          }
+        }
+        this.onStartCombat?.(data);
+      },
+      onResolutionPhase: (data) => {
+        this.onResolutionPhase?.(data);
+      },
+      onNewRoundStarted: (data) => {
+        this.currentRoom = data.room;
+        this.onNewRoundStarted?.(data);
+      },
+      onEmoteReceived: (emote) => {
+        this.onEmoteReceived?.(emote);
+      },
+    });
   }
 
   public startGame() {
-    this.socket?.emit('c2s_start_game');
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('c2s_start_game');
+    }
+    if (this.currentRoom) {
+      firestoreMultiplayerEngine.startGame(this.currentRoom.roomId).catch((err) => {
+        console.warn('[MultiplayerClient] Erro ao iniciar jogo no Firestore:', err);
+      });
+    }
   }
 
   public submitBoard(submission: Omit<CombatSubmission, 'roomId' | 'playerId'>) {
     if (!this.currentRoom || !this.localPlayerId) return;
-    this.socket?.emit('c2s_submit_board', {
-      roomId: this.currentRoom.roomId,
-      playerId: this.localPlayerId,
-      ...submission,
-    });
+
+    // Send to Firestore
+    firestoreMultiplayerEngine.submitBoard(this.currentRoom.roomId, submission).catch(() => {});
+
+    // Send to Socket if connected
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('c2s_submit_board', {
+        roomId: this.currentRoom.roomId,
+        playerId: this.localPlayerId,
+        ...submission,
+      });
+    }
   }
 
   public submitCombatResult(result: Omit<CombatResultSubmission, 'roomId' | 'playerId'>) {
     if (!this.currentRoom || !this.localPlayerId) return;
-    this.socket?.emit('c2s_submit_combat_result', {
-      roomId: this.currentRoom.roomId,
-      playerId: this.localPlayerId,
-      ...result,
-    });
+
+    // Send to Firestore
+    firestoreMultiplayerEngine.submitCombatResult(this.currentRoom.roomId, result).catch(() => {});
+
+    // Send to Socket if connected
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('c2s_submit_combat_result', {
+        roomId: this.currentRoom.roomId,
+        playerId: this.localPlayerId,
+        ...result,
+      });
+    }
   }
 
   public updatePool(unitId: string, action: 'BUY' | 'SELL') {
-    this.socket?.emit('c2s_update_pool', { unitId, action });
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('c2s_update_pool', { unitId, action });
+    }
   }
 
   public sendEmote(text: string, icon?: string) {
-    this.socket?.emit('c2s_send_emote', { text, icon });
+    if (this.currentRoom) {
+      firestoreMultiplayerEngine.sendEmote(this.currentRoom.roomId, text, icon).catch(() => {});
+    }
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('c2s_send_emote', { text, icon });
+    }
   }
 
   public disconnect() {
+    firestoreMultiplayerEngine.cleanup();
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
-      this.currentRoom = null;
-      this.localPlayerId = null;
     }
+    this.currentRoom = null;
+    this.localPlayerId = null;
   }
 
   public getRoomState(): MultiplayerRoomState | null {
@@ -239,8 +353,9 @@ class MultiplayerClientService {
   }
 
   public getLocalPlayerId(): string | null {
-    return this.localPlayerId;
+    return this.localPlayerId || firestoreMultiplayerEngine.getPlayerId();
   }
 }
 
 export const multiplayerClient = new MultiplayerClientService();
+

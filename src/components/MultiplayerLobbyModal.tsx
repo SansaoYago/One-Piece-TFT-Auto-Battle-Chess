@@ -71,6 +71,8 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
   const [roomCodeInput, setRoomCodeInput] = useState('');
   const [copiedCode, setCopiedCode] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [joiningRoomId, setJoiningRoomId] = useState<string | null>(null);
   const [showManualCode, setShowManualCode] = useState(false);
   const [showServerConfig, setShowServerConfig] = useState(false);
   const [customServerInput, setCustomServerInput] = useState(serverUrl);
@@ -379,13 +381,33 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
                           </div>
 
                           <button
-                            onClick={() => {
-                              onJoinRoom(room.roomId || room.roomCode, playerName, selectedAvatar.avatar, selectedAvatar.id);
+                            disabled={joiningRoomId === (room.roomId || room.roomCode)}
+                            onClick={async () => {
+                              const targetId = room.roomId || room.roomCode;
+                              setJoiningRoomId(targetId);
+                              try {
+                                await onJoinRoom(targetId, playerName, selectedAvatar.avatar, selectedAvatar.id);
+                              } finally {
+                                setTimeout(() => setJoiningRoomId(null), 2000);
+                              }
                             }}
-                            className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition active:scale-95"
+                            className={`w-full sm:w-auto px-6 py-2.5 rounded-xl font-black text-xs sm:text-sm shadow-lg flex items-center justify-center gap-2 transition active:scale-95 ${
+                              joiningRoomId === (room.roomId || room.roomCode)
+                                ? 'bg-emerald-700/60 text-emerald-200 cursor-wait'
+                                : 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 shadow-emerald-500/20'
+                            }`}
                           >
-                            <Play className="w-4 h-4 fill-current" />
-                            ENTRAR AGORA
+                            {joiningRoomId === (room.roomId || room.roomCode) ? (
+                              <>
+                                <RefreshCw className="w-4 h-4 animate-spin" />
+                                Entrando...
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-4 h-4 fill-current" />
+                                ENTRAR AGORA
+                              </>
+                            )}
                           </button>
                         </div>
                       ))}
@@ -446,17 +468,32 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
                             className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-amber-400 font-mono text-xs uppercase tracking-widest focus:border-amber-400 focus:outline-none"
                           />
                           <button
-                            disabled={!roomCodeInput.trim()}
-                            onClick={() => {
-                              onJoinRoom(roomCodeInput.trim(), playerName, selectedAvatar.avatar, selectedAvatar.id);
+                            disabled={!roomCodeInput.trim() || joiningRoomId === roomCodeInput.trim()}
+                            onClick={async () => {
+                              const code = roomCodeInput.trim();
+                              setJoiningRoomId(code);
+                              try {
+                                await onJoinRoom(code, playerName, selectedAvatar.avatar, selectedAvatar.id);
+                              } finally {
+                                setTimeout(() => setJoiningRoomId(null), 2000);
+                              }
                             }}
-                            className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
-                              roomCodeInput.trim()
-                                ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
-                                : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                              !roomCodeInput.trim()
+                                ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                                : joiningRoomId === roomCodeInput.trim()
+                                ? 'bg-amber-600 text-amber-100 cursor-wait'
+                                : 'bg-amber-500 hover:bg-amber-400 text-slate-950'
                             }`}
                           >
-                            Entrar
+                            {joiningRoomId === roomCodeInput.trim() ? (
+                              <>
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                Entrando...
+                              </>
+                            ) : (
+                              'Entrar'
+                            )}
                           </button>
                         </div>
                       </div>
@@ -479,13 +516,32 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
                   </div>
 
                   <button
-                    onClick={() => {
-                      onCreateRoom(playerName, selectedAvatar.avatar, selectedAvatar.id);
+                    disabled={isCreating}
+                    onClick={async () => {
+                      setIsCreating(true);
+                      try {
+                        await onCreateRoom(playerName, selectedAvatar.avatar, selectedAvatar.id);
+                      } finally {
+                        setTimeout(() => setIsCreating(false), 2000);
+                      }
                     }}
-                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/20 transition flex items-center justify-center gap-2 active:scale-95"
+                    className={`w-full py-3.5 rounded-2xl font-black text-sm shadow-xl transition flex items-center justify-center gap-2 active:scale-95 ${
+                      isCreating
+                        ? 'bg-amber-600/60 text-amber-200 cursor-wait'
+                        : 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/20'
+                    }`}
                   >
-                    <Crown className="w-4 h-4 fill-slate-950" />
-                    CRIAR SALA ONLINE AGORA
+                    {isCreating ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        CRIANDO SALA...
+                      </>
+                    ) : (
+                      <>
+                        <Crown className="w-4 h-4 fill-slate-950" />
+                        CRIAR SALA ONLINE AGORA
+                      </>
+                    )}
                   </button>
                 </div>
               )}
