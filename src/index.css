@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+/* Touch and mobile responsiveness defaults */
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 /* Custom Scrollbar minimalista, translúcida e sem setas de rolagem */
 ::-webkit-scrollbar {
   width: 5px;

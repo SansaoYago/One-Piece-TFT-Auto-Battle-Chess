@@ -51,6 +51,9 @@ import { preloadAllGameAssets, warmupRoundCombatAssets, loadChampionModularRig }
 import { Sparkles, Trophy, Skull, Coins, Zap } from 'lucide-react';
 import { RoundOutcomeBanner } from './components/RoundOutcomeBanner';
 import { ChampionVisual } from './components/ChampionVisual';
+import { multiplayerClient } from './utils/multiplayerClient';
+import { MultiplayerRoomState, EmoteMessage } from './types/multiplayer';
+import { MultiplayerLobbyModal } from './components/MultiplayerLobbyModal';
 
 export default function App() {
   // === Global Preloading Pipeline State ===
@@ -128,6 +131,24 @@ export default function App() {
   });
   const botPlayerStatesRef = useRef<Record<string, BotPlayerData>>(botPlayerStates);
   botPlayerStatesRef.current = botPlayerStates;
+
+  // === Multiplayer Online Networking State ===
+  const [isMultiplayerModalOpen, setIsMultiplayerModalOpen] = useState<boolean>(false);
+  const [isMultiplayerActive, setIsMultiplayerActive] = useState<boolean>(false);
+  const isMultiplayerActiveRef = useRef<boolean>(false);
+  isMultiplayerActiveRef.current = isMultiplayerActive;
+  const [multiplayerRoom, setMultiplayerRoom] = useState<MultiplayerRoomState | null>(null);
+  const [localPlayerId, setLocalPlayerId] = useState<string | null>(null);
+  const localPlayerIdRef = useRef<string | null>(null);
+  localPlayerIdRef.current = localPlayerId;
+  const [multiplayerError, setMultiplayerError] = useState<string | null>(null);
+  const [activeEmotes, setActiveEmotes] = useState<EmoteMessage[]>([]);
+  const multiplayerOpponentRef = useRef<{
+    id: string;
+    name: string;
+    avatar: string;
+    units: UnitInstance[];
+  } | null>(null);
 
   // === Units and Board State ===
   const [boardUnits, setBoardUnits] = useState<UnitInstance[]>(() => {
@@ -509,7 +530,18 @@ export default function App() {
     // Setup enemies on board: Keep player's own units and load the scheduled match's enemies
     let combatBoardUnits = updatedBoard.filter((u) => !u.isEnemy);
 
-    if (matchmaking.isPvE) {
+    if (isMultiplayerActiveRef.current && multiplayerOpponentRef.current) {
+      const opp = multiplayerOpponentRef.current;
+      const oppUnits = opp.units || [];
+      const enemyUnits: UnitInstance[] = oppUnits.map((u, idx) => ({
+        ...u,
+        instanceId: `net_opp_${u.unitId}_${idx}_${Date.now()}`,
+        gridX: Math.max(4, Math.min(7, 7 - (u.gridX >= 0 ? u.gridX : 1))),
+        gridY: u.gridY >= 0 ? u.gridY : idx % 5,
+        isEnemy: true,
+      }));
+      combatBoardUnits = [...combatBoardUnits, ...enemyUnits];
+    } else if (matchmaking.isPvE) {
       const generatedEnemies = generateEnemyBoardUnits(
         stageRef.current,
         roundInStageRef.current,
@@ -699,6 +731,17 @@ export default function App() {
       const baseDmg = stageRef.current * 2 + Math.max(1, survivingEnemies * 2);
       dmgTaken = Math.max(1, Math.round(baseDmg * currentDiffConfig.playerLossDamageMultiplier));
       setRoundDamageTaken(dmgTaken);
+    }
+
+    if (isMultiplayerActiveRef.current) {
+      const survivingPlayerUnits = combatUnits.filter((u) => !u.isEnemy && u.hp > 0).length;
+      multiplayerClient.submitCombatResult({
+        opponentId: currentOpponentCommanderIdRef.current || 'opponent',
+        won: isWin,
+        isDraw: isDraw,
+        survivingUnitsCount: survivingPlayerUnits,
+        damageDealtToOpponent: isWin ? (stageRef.current * 2 + Math.max(1, survivingPlayerUnits * 2)) : 0,
+      });
     }
 
     setCommanders((prevCmds) => {
@@ -1304,7 +1347,7 @@ export default function App() {
 
   // === Game Clock & Dynamic Countdown Timer ===
   useEffect(() => {
-    if (isTimerPaused || isCombatStarting || isTestMode) return;
+    if (isTimerPaused || isCombatStarting || isTestMode || isMultiplayerActive) return;
 
     const timerInterval = setInterval(() => {
       setTotalGameTime((prev) => prev + 1);
@@ -1312,11 +1355,11 @@ export default function App() {
     }, 1000);
 
     return () => clearInterval(timerInterval);
-  }, [isTimerPaused, isCombatStarting, isTestMode]);
+  }, [isTimerPaused, isCombatStarting, isTestMode, isMultiplayerActive]);
 
   // === Phase Progression & Scheduled Match Progression on Clock Ticks ===
   useEffect(() => {
-    if (isTimerPaused || isCombatStarting || isTestMode) return;
+    if (isTimerPaused || isCombatStarting || isTestMode || isMultiplayerActive) return;
 
     if (phase === 'COMBAT') {
       // Progress scheduled bot matches in other arenas
@@ -1402,7 +1445,139 @@ export default function App() {
         }
       }
     }
-  }, [countdown, phase, isTimerPaused, isCombatStarting, isTestMode, battleOutcome]);
+  }, [countdown, phase, isTimerPaused, isCombatStarting, isTestMode, isMultiplayerActive, battleOutcome]);
+
+  // === Multiplayer Socket Event Subscriptions ===
+  useEffect(() => {
+    multiplayerClient.onRoomJoined = (room, pId) => {
+      setMultiplayerRoom(room);
+      setLocalPlayerId(pId);
+      setIsMultiplayerActive(true);
+      isMultiplayerActiveRef.current = true;
+    };
+
+    multiplayerClient.onRoomStateUpdated = (room) => {
+      setMultiplayerRoom(room);
+    };
+
+    multiplayerClient.onGameStarted = (room) => {
+      setMultiplayerRoom(room);
+      setIsMultiplayerModalOpen(false);
+      setIsMultiplayerActive(true);
+      isMultiplayerActiveRef.current = true;
+
+      // Update commanders from room's 8 players
+      const newCommanders: Commander[] = room.players.map((p, idx) => ({
+        id: p.id,
+        name: p.name,
+        avatar: p.avatar,
+        title: p.isBot ? 'Bot do Grand Line' : 'Capitão Pirata',
+        isHuman: p.id === localPlayerIdRef.current,
+        hp: p.hp,
+        maxHp: 100,
+        gold: p.gold,
+        level: p.level,
+        xp: 0,
+        xpToNextLevel: 4,
+        winStreak: p.streak,
+        lossStreak: 0,
+        rank: p.placement || idx + 1,
+        isEliminated: p.isEliminated,
+        roundCombatStatus: undefined,
+        damageTakenThisRound: 0,
+      }));
+      setCommanders(newCommanders);
+      commandersRef.current = newCommanders;
+
+      setPhase(room.phase);
+      setCountdown(room.countdown);
+      setStage(room.stage);
+      setRoundInStage(room.roundInStage);
+      setRoundStage(room.roundStage);
+      const computedTotalRound = (room.stage - 1) * 4 + room.roundInStage;
+      setTotalRound(computedTotalRound);
+      totalRoundRef.current = computedTotalRound;
+    };
+
+    multiplayerClient.onPhaseTick = (data) => {
+      if (!isMultiplayerActiveRef.current) return;
+      setPhase(data.phase);
+      setCountdown(data.countdown);
+      setStage(data.stage);
+      setRoundInStage(data.roundInStage);
+      setRoundStage(data.roundStage);
+
+      // Auto-submit board right before preparation ends
+      if (data.phase === 'PREPARATION' && data.countdown === 2) {
+        const myUnits = boardUnitsRef.current.filter((u) => !u.isEnemy && u.gridX >= 0 && u.gridY >= 0);
+        multiplayerClient.submitBoard({
+          units: myUnits,
+          level: levelRef.current,
+          gold: goldRef.current,
+        });
+      }
+    };
+
+    multiplayerClient.onStartCombat = (data) => {
+      if (!isMultiplayerActiveRef.current) return;
+      if (data.opponent) {
+        multiplayerOpponentRef.current = data.opponent;
+        setCurrentOpponentInfo({
+          name: data.opponent.name,
+          avatar: data.opponent.avatar,
+          isGhost: data.isGhost,
+          isBoss: false,
+          bossTitle: '',
+          isPvE: false,
+        });
+        setRoundTitle(`Batalha PvP Online: ${data.opponent.name}`);
+        currentOpponentCommanderIdRef.current = data.opponent.id;
+      }
+      startCombatPhase();
+    };
+
+    multiplayerClient.onResolutionPhase = () => {
+      if (!isMultiplayerActiveRef.current) return;
+      if (phaseRef.current === 'COMBAT' && battleOutcome === null) {
+        endCombatAndAdvanceRound('DRAW');
+      }
+    };
+
+    multiplayerClient.onNewRoundStarted = (data) => {
+      if (!isMultiplayerActiveRef.current) return;
+      setMultiplayerRoom(data.room);
+      handleProceedToNextRound();
+    };
+
+    multiplayerClient.onLeaderboardUpdated = (data) => {
+      if (!isMultiplayerActiveRef.current) return;
+      setCommanders((prev) =>
+        prev.map((c) => {
+          const matched = data.players.find((p: any) => p.id === c.id);
+          if (matched) {
+            return {
+              ...c,
+              hp: matched.hp,
+              isEliminated: matched.isEliminated,
+              placement: matched.placement,
+            };
+          }
+          return c;
+        })
+      );
+    };
+
+    multiplayerClient.onEmoteReceived = (emote) => {
+      setActiveEmotes((prev) => [...prev, emote]);
+      setTimeout(() => {
+        setActiveEmotes((prev) => prev.filter((e) => e.id !== emote.id));
+      }, 4000);
+    };
+
+    multiplayerClient.onError = (msg) => {
+      setMultiplayerError(msg);
+    };
+  }, []);
 
   // === Keyboard Shortcuts (D for Shop/Reroll, F for XP, Space for Pause) ===
   useEffect(() => {
@@ -1546,6 +1721,10 @@ export default function App() {
     const nextShop = [...shopCards];
     nextShop[cardIndex] = null;
     setShopCards(nextShop);
+
+    if (isMultiplayerActiveRef.current) {
+      multiplayerClient.updatePool(card.id, 'BUY');
+    }
 
     // Check for automatic star synthesis upgrades (1★ -> 2★, 2★ -> 3★ and cascading)
     applyStarUpgrades(nextBench, boardUnitsRef.current);
@@ -1944,6 +2123,11 @@ export default function App() {
     // 4. Clear selection if selected
     if (selectedUnit && selectedUnit.instanceId === targetUnit.instanceId) {
       setSelectedUnit(null);
+    }
+
+    // 5. Update shared multiplayer pool
+    if (isMultiplayerActiveRef.current) {
+      multiplayerClient.updatePool(targetUnit.unitId, 'SELL');
     }
   };
 
@@ -2523,6 +2707,13 @@ export default function App() {
         onToggleTestMode={handleToggleTestMode}
         onClearBoard={handleClearTestBoard}
         onQuickDuel={handleQuickDuelTest}
+        onOpenMultiplayerModal={() => setIsMultiplayerModalOpen(true)}
+        isMultiplayerActive={isMultiplayerActive}
+        roomCode={multiplayerRoom?.roomCode}
+        onSendEmote={(text, icon) => {
+          multiplayerClient.sendEmote(text, icon);
+        }}
+        activeEmotes={activeEmotes}
       />
 
       {/* Main Tactical Split Layout with Arena Expanding to Full Screen */}
@@ -2893,6 +3084,39 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Multiplayer Online Lobby Modal */}
+      <MultiplayerLobbyModal
+        isOpen={isMultiplayerModalOpen}
+        onClose={() => setIsMultiplayerModalOpen(false)}
+        roomState={multiplayerRoom}
+        localPlayerId={localPlayerId}
+        isMultiplayerActive={isMultiplayerActive}
+        onSelectSoloMode={() => {
+          setIsMultiplayerActive(false);
+          isMultiplayerActiveRef.current = false;
+          multiplayerClient.disconnect();
+          setMultiplayerRoom(null);
+        }}
+        onCreateRoom={(playerName, avatar, commanderId) => {
+          setMultiplayerError(null);
+          multiplayerClient.createRoom(playerName, avatar, commanderId);
+        }}
+        onJoinRoom={(roomCode, playerName, avatar, commanderId) => {
+          setMultiplayerError(null);
+          multiplayerClient.joinRoom(roomCode, playerName, avatar, commanderId);
+        }}
+        onStartGame={() => {
+          multiplayerClient.startGame();
+        }}
+        onLeaveRoom={() => {
+          multiplayerClient.disconnect();
+          setMultiplayerRoom(null);
+          setIsMultiplayerActive(false);
+          isMultiplayerActiveRef.current = false;
+        }}
+        errorMessage={multiplayerError}
+      />
 
     </div>
   );

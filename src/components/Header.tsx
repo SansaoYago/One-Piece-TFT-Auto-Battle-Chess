@@ -1,6 +1,9 @@
 import React from 'react';
 import { GamePhase, GameDifficulty, DIFFICULTY_CONFIGS, OpponentDisplayInfo } from '../types/game';
-import { Shield, Swords, RefreshCw, Play, Pause, AlertTriangle, Eye, FlaskConical, RotateCcw, Trash2, Zap, Lock, ChevronDown, Crown } from 'lucide-react';
+import { EmoteMessage } from '../types/multiplayer';
+import { Shield, Swords, RefreshCw, Play, Pause, AlertTriangle, Eye, FlaskConical, RotateCcw, Trash2, Zap, Lock, ChevronDown, Crown, Globe, Users } from 'lucide-react';
+import { PWAInstallButton } from './PWAInstallButton';
+import { MultiplayerEmoteBar } from './MultiplayerEmoteBar';
 
 interface HeaderProps {
   phase: GamePhase;
@@ -24,6 +27,11 @@ interface HeaderProps {
   onClearBoard?: () => void;
   onQuickDuel?: () => void;
   onReturnToPlayerArena?: () => void;
+  onOpenMultiplayerModal?: () => void;
+  isMultiplayerActive?: boolean;
+  roomCode?: string | null;
+  onSendEmote?: (text: string, icon?: string) => void;
+  activeEmotes?: EmoteMessage[];
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -48,6 +56,11 @@ export const Header: React.FC<HeaderProps> = ({
   onClearBoard,
   onQuickDuel,
   onReturnToPlayerArena,
+  onOpenMultiplayerModal,
+  isMultiplayerActive = false,
+  roomCode = null,
+  onSendEmote,
+  activeEmotes = [],
 }) => {
   const isOvertime = countdown <= 15 && phase === 'COMBAT';
   const diffConfig = DIFFICULTY_CONFIGS[difficulty];
@@ -284,8 +297,38 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Right Side: Mode Toggle Button or Opponent View */}
-        <div className="flex items-center gap-2.5">
+        {/* Right Side: Mode Toggle Button, Multiplayer, PWA Install or Opponent View */}
+        <div className="flex items-center gap-2">
+          {/* PWA Install Button (auto hides if already installed) */}
+          <PWAInstallButton />
+
+          {/* Multiplayer Online Lobby Launcher */}
+          {onOpenMultiplayerModal && (
+            <button
+              id="header-multiplayer-btn"
+              onClick={onOpenMultiplayerModal}
+              title="Salas Online, Multiplayer e Modo de Jogo"
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-md cursor-pointer hover:scale-105 active:scale-95 ${
+                isMultiplayerActive
+                  ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300 shadow-emerald-950/40 animate-pulse'
+                  : 'bg-slate-900 border-amber-500/40 text-amber-300 hover:border-amber-400'
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">
+                {isMultiplayerActive ? `Sala: ${roomCode || 'Online'}` : 'Multiplayer'}
+              </span>
+              <span className="sm:hidden">
+                {isMultiplayerActive ? 'Online' : 'Multi'}
+              </span>
+            </button>
+          )}
+
+          {/* Emote Quick Bar in Multiplayer */}
+          {onSendEmote && isMultiplayerActive && (
+            <MultiplayerEmoteBar onSendEmote={onSendEmote} activeEmotes={activeEmotes} />
+          )}
+
           {isViewingOpponentArena ? (
             <button
               onClick={onReturnToPlayerArena}
