@@ -103,7 +103,7 @@ export const Bench: React.FC<BenchProps> = ({
               data-unit-slot="true"
               data-bench-index={index}
               onPointerDown={(e) => {
-                if (!isViewingOpponentArena && unit && e.button === 0) {
+                if (!isViewingOpponentArena && unit && (e.button === 0 || e.pointerType === 'touch')) {
                   onStartPointerDrag?.(unit, e.clientX, e.clientY);
                 }
               }}
@@ -151,12 +151,9 @@ export const Bench: React.FC<BenchProps> = ({
                     : 'bg-slate-900/60 border-slate-700/80 hover:border-amber-500/80 hover:scale-105 shadow-md backdrop-blur-sm cursor-grab active:cursor-grabbing'
                   : 'bg-slate-950/30 border-slate-800/50 border-dashed hover:border-slate-700 justify-center cursor-default'
               }`}
-              draggable={!isViewingOpponentArena && !!unit}
+              draggable={false}
               onDragStart={(e) => {
-                if (!isViewingOpponentArena && unit) {
-                  e.dataTransfer.effectAllowed = 'move';
-                  onDragStart(e, unit);
-                }
+                e.preventDefault();
               }}
               onDragEnd={() => {
                 setHoveredIndex(null);

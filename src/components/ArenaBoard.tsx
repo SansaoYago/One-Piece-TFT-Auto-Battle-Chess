@@ -6,7 +6,7 @@ import { SYNERGY_DATABASE } from '../data/synergies';
 import { CHAMPION_DATABASE } from '../data/units';
 import { ITEM_DATABASE } from '../data/items';
 import { ChampionVisual } from './ChampionVisual';
-import { Champion3DModel } from './Champion3DModel';
+import { Champion3DModel, ChampionHitTester } from './Champion3DModel';
 import { Commander } from '../types/game';
 import { getChampionTokenDimensions, isUnitEquippedWithOrb } from '../utils/gameUtils';
 
@@ -173,6 +173,41 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
   const showUnitHud = true;
   const [isHoldingUnit, setIsHoldingUnit] = useState(false);
   const [isGlobalDragging, setIsGlobalDragging] = useState(false);
+  const [isHoveringChampionBody, setIsHoveringChampionBody] = useState(false);
+  const hitTestersRef = React.useRef<Map<string, ChampionHitTester>>(new Map());
+
+  const registerHitTester = (instanceId: string, tester: ChampionHitTester | null) => {
+    if (tester) {
+      hitTestersRef.current.set(instanceId, tester);
+    } else {
+      hitTestersRef.current.delete(instanceId);
+    }
+  };
+
+  const findChampionAtPoint = (clientX: number, clientY: number): UnitInstance | null => {
+    const activeUnits = (isCombatPhase ? combatUnits : boardUnits) as UnitInstance[];
+    let bestUnit: UnitInstance | null = null;
+    let minDistance = Infinity;
+
+    // Prioritize units closer to the camera (higher Y coordinates)
+    const sorted = [...activeUnits].sort((a, b) => {
+      const posYa = (a as any).currentPosY ?? a.gridY ?? 0;
+      const posYb = (b as any).currentPosY ?? b.gridY ?? 0;
+      return posYb - posYa;
+    });
+
+    for (const unit of sorted) {
+      const tester = hitTestersRef.current.get(unit.instanceId);
+      if (!tester) continue;
+      const res = tester(clientX, clientY);
+      if (res.hit && res.distance < minDistance) {
+        minDistance = res.distance;
+        bestUnit = unit;
+      }
+    }
+
+    return bestUnit;
+  };
 
   React.useEffect(() => {
     const handleDragStart = () => setIsGlobalDragging(true);
@@ -197,7 +232,8 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
   const renderUnitToken = (
     unit: UnitInstance | CombatUnitState,
     isCombat: boolean,
-    isDraggingAllowed: boolean
+    isDraggingAllowed: boolean,
+    onRegisterHitTester?: (tester: ChampionHitTester | null) => void
   ) => {
     const isSelected = unit.instanceId === selectedUnitId;
     const hasOrb = isUnitEquippedWithOrb(unit);
@@ -410,6 +446,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                 ? combatState.currentAnimation
                 : 'idle'
             }
+            onRegisterHitTester={onRegisterHitTester}
             className="w-full h-full"
           />
 
@@ -459,6 +496,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
       <div className="relative transform-gpu transition-transform duration-500 ease-out [perspective:1400px] flex items-center justify-center -translate-y-8 sm:-translate-y-12 lg:-translate-y-14 mt-4 mb-auto scale-95 lg:scale-100">
         {/* 3D Arena Stadium Floor */}
         <div
+          data-arena-stadium="true"
           onDragOver={(e) => {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
@@ -466,6 +504,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
           onMouseLeave={() => {
             setHoveredTile(null);
             hoveredTileRef.current = null;
+            setIsHoveringChampionBody(false);
           }}
           onDrop={(e) => {
             const target = hoveredTile || hoveredTileRef.current;
@@ -476,7 +515,42 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
               hoveredTileRef.current = null;
             }
           }}
-          className="relative grid grid-cols-8 gap-2 sm:gap-2.5 p-6 sm:p-7 rounded-[2.5rem] bg-gradient-to-b from-slate-950/95 via-slate-900/90 to-slate-950/95 border-[3px] border-amber-500/30 shadow-[0_30px_70px_-15px_rgba(0,0,0,0.95),0_0_60px_rgba(245,158,11,0.12)] backdrop-blur-2xl ring-1 ring-white/5 select-none"
+          onPointerDown={(e) => {
+            if (isCombatPhase || isViewingOpponentArena) return;
+            if (e.button !== 0 && e.pointerType !== 'touch') return;
+            const hitUnit = findChampionAtPoint(e.clientX, e.clientY);
+            if (hitUnit && !hitUnit.isEnemy) {
+              onStartPointerDrag?.(hitUnit, e.clientX, e.clientY);
+            }
+          }}
+          onClick={(e) => {
+            const hitUnit = findChampionAtPoint(e.clientX, e.clientY);
+            if (hitUnit) {
+              if (isCombatPhase || isViewingOpponentArena) {
+                onUnitSelect(hitUnit);
+                return;
+              }
+              if (selectedUnitId && selectedUnitId !== hitUnit.instanceId) {
+                onTileClick(hitUnit.gridX, hitUnit.gridY);
+              } else {
+                onUnitSelect(hitUnit);
+              }
+            }
+          }}
+          onPointerMove={(e) => {
+            if (isCombatPhase || isViewingOpponentArena || isDraggingActive) {
+              if (isHoveringChampionBody) setIsHoveringChampionBody(false);
+              return;
+            }
+            const hitUnit = findChampionAtPoint(e.clientX, e.clientY);
+            const isPlayable = Boolean(hitUnit && !hitUnit.isEnemy);
+            if (isPlayable !== isHoveringChampionBody) {
+              setIsHoveringChampionBody(isPlayable);
+            }
+          }}
+          className={`relative grid grid-cols-8 gap-2 sm:gap-2.5 p-6 sm:p-7 rounded-[2.5rem] bg-gradient-to-b from-slate-950/95 via-slate-900/90 to-slate-950/95 border-[3px] border-amber-500/30 shadow-[0_30px_70px_-15px_rgba(0,0,0,0.95),0_0_60px_rgba(245,158,11,0.12)] backdrop-blur-2xl ring-1 ring-white/5 select-none ${
+            isHoveringChampionBody && !isCombatPhase && !isViewingOpponentArena ? 'cursor-grab' : ''
+          }`}
           style={{
             transform: 'rotateX(55deg) rotateZ(-30deg)',
             transformStyle: 'preserve-3d',
@@ -506,20 +580,27 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                   data-tile-x={col}
                   data-tile-y={row}
                   data-unit-tile={prepUnit ? 'true' : undefined}
-                  draggable={Boolean(prepUnit && isPlayerHalf && !isCombatPhase && !isViewingOpponentArena)}
-                  onPointerDown={(e) => {
-                    if (!isCombatPhase && !isViewingOpponentArena && prepUnit && isPlayerHalf && e.button === 0) {
-                      onStartPointerDrag?.(prepUnit, e.clientX, e.clientY);
-                    }
-                  }}
+                  draggable={false}
                   onDragStart={(e) => {
-                    if (prepUnit && isPlayerHalf && !isCombatPhase && !isViewingOpponentArena) {
-                      setIsHoldingUnit(true);
-                      e.dataTransfer.effectAllowed = 'move';
-                      try {
-                        e.dataTransfer.setData('text/plain', prepUnit.instanceId);
-                      } catch (_) {}
-                      onDragStartUnit(e, prepUnit);
+                    e.preventDefault();
+                  }}
+                  onPointerDown={(e) => {
+                    if (isCombatPhase || isViewingOpponentArena) return;
+                    if (e.button !== 0 && e.pointerType !== 'touch') return;
+
+                    // 1. First priority: Check if pointer is on any champion's 3D body mesh!
+                    const hitUnit = findChampionAtPoint(e.clientX, e.clientY);
+                    if (hitUnit) {
+                      if (!hitUnit.isEnemy) {
+                        e.stopPropagation();
+                        onStartPointerDrag?.(hitUnit, e.clientX, e.clientY);
+                      }
+                      return;
+                    }
+
+                    // 2. Second priority: If clicking the floor tile under a player unit
+                    if (prepUnit && isPlayerHalf) {
+                      onStartPointerDrag?.(prepUnit, e.clientX, e.clientY);
                     }
                   }}
                   onDragEnd={() => {
@@ -535,7 +616,24 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                   onMouseLeave={() => {
                     // Do not eagerly clear so micro gaps between tiles do not break dragover/drop
                   }}
-                  onClick={() => {
+                  onClick={(e) => {
+                    // 1. First priority: Check if pointer hit a champion's 3D body mesh!
+                    const hitUnit = findChampionAtPoint(e.clientX, e.clientY);
+                    if (hitUnit) {
+                      e.stopPropagation();
+                      if (isCombatPhase || isViewingOpponentArena) {
+                        onUnitSelect(hitUnit);
+                        return;
+                      }
+                      if (selectedUnitId && selectedUnitId !== hitUnit.instanceId) {
+                        onTileClick(hitUnit.gridX, hitUnit.gridY);
+                      } else {
+                        onUnitSelect(hitUnit);
+                      }
+                      return;
+                    }
+
+                    // 2. Standard floor tile interaction
                     if (isCombatPhase || isViewingOpponentArena) {
                       if (prepUnit) onUnitSelect(prepUnit);
                       return;
@@ -714,11 +812,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                     key={pUnit.instanceId}
                     data-champion-token="true"
                     data-unit-slot="true"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onUnitSelect(pUnit);
-                    }}
-                    className={`absolute transition-all duration-200 ease-out pointer-events-auto cursor-pointer ${
+                    className={`absolute transition-all duration-200 ease-out pointer-events-none ${
                       isBeingDragged ? 'opacity-30 scale-95 ring-2 ring-amber-400 rounded-2xl' : ''
                     }`}
                     style={{
@@ -744,7 +838,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                     )}
 
                     {/* Upright 3D Tactical Billboarding Unit Token */}
-                    {renderUnitToken(pUnit, false, !isViewingOpponentArena && !pUnit.isEnemy)}
+                    {renderUnitToken(pUnit, false, !isViewingOpponentArena && !pUnit.isEnemy, (tester) => registerHitTester(pUnit.instanceId, tester))}
                   </div>
                 );
               })}
@@ -778,11 +872,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                     key={cUnit.instanceId}
                     data-champion-token="true"
                     data-unit-slot="true"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onUnitSelect(cUnit);
-                    }}
-                    className="absolute pointer-events-auto cursor-pointer transition-[left,top] duration-150 ease-linear"
+                    className="absolute pointer-events-none transition-[left,top] duration-150 ease-linear"
                     style={{
                       left: `${leftPercent}%`,
                       top: `${topPercent}%`,
@@ -812,7 +902,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                     )}
 
                     {/* Upright 3D Tactical Billboarding Unit Token */}
-                    {renderUnitToken(cUnit, true, false)}
+                    {renderUnitToken(cUnit, true, false, (tester) => registerHitTester(cUnit.instanceId, tester))}
                   </div>
                 );
               })}

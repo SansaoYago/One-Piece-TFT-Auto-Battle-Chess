@@ -1171,9 +1171,9 @@ export default function App() {
       if (!isShopLockedRef.current) {
         let newCards = generateShopCards(levelRef.current, restoredPlayerUnits);
         // Garante que a nova rolagem não seja uma repetição idêntica das cartas anteriores
-        const prevCardIds = shopCardsRef.current.map((c) => c?.id).filter(Boolean).join(',');
+        const prevCardIds = (shopCardsRef.current || []).map((c) => c?.id).filter(Boolean).join(',');
         let attempts = 0;
-        while (newCards.map((c) => c?.id).filter(Boolean).join(',') === prevCardIds && attempts < 4) {
+        while ((newCards || []).map((c) => c?.id).filter(Boolean).join(',') === prevCardIds && attempts < 4) {
           newCards = generateShopCards(levelRef.current, restoredPlayerUnits);
           attempts++;
         }
@@ -1455,6 +1455,7 @@ export default function App() {
         target.closest('[data-unit-slot="true"]') ||
         target.closest('[data-unit-tile="true"]') ||
         target.closest('[data-arena-tile="true"]') ||
+        target.closest('[data-arena-stadium="true"]') ||
         target.closest('[data-champion-token="true"]')
       ) {
         return;
@@ -1560,6 +1561,9 @@ export default function App() {
     e.dataTransfer.effectAllowed = 'move';
     try {
       e.dataTransfer.setData('text/plain', unit.instanceId);
+      const emptyImg = new Image();
+      emptyImg.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+      e.dataTransfer.setDragImage(emptyImg, 0, 0);
     } catch (_) {}
   };
 
@@ -1692,11 +1696,17 @@ export default function App() {
       const playerUnitsNow = currentBoard.filter((u) => !u.isEnemy && u.gridX >= 0 && u.gridY >= 0);
       const maxSlots = LEVEL_MAX_SLOTS[levelRef.current] || 1;
 
+      // Se o campo está cheio e o alvo é um tile vazio, recolhe a unidade aliada mais distante para abrir espaço
+      let unitToRecall: UnitInstance | null = null;
       if (!anyTargetUnit && playerUnitsNow.length >= maxSlots) {
-        alert(
-          `Limite de unidades atingido (${playerUnitsNow.length}/${maxSlots})! Aumente o nível para colocar mais campeões.`
-        );
-        return;
+        let maxDist = -1;
+        for (const u of playerUnitsNow) {
+          const dist = Math.hypot(u.gridX - targetX, u.gridY - targetY);
+          if (dist > maxDist) {
+            maxDist = dist;
+            unitToRecall = u;
+          }
+        }
       }
 
       // Place onto board
@@ -1709,19 +1719,20 @@ export default function App() {
 
       const nextBench = [...currentBench];
 
-      if (anyTargetUnit) {
-        // Swap target unit from board to bench slot
+      if (anyTargetUnit || unitToRecall) {
+        const unitToSwap = anyTargetUnit || unitToRecall!;
+        // Swap target or recalled unit from board to bench slot
         const swappedUnit: UnitInstance = {
-          ...anyTargetUnit,
+          ...unitToSwap,
           gridX: -1,
           gridY: -1,
           benchIndex: benchIdx,
         };
         nextBench[benchIdx] = swappedUnit;
 
-        // Replace anyTargetUnit on the board with updatedUnit
+        // Replace unitToSwap on the board with updatedUnit
         const filteredBoard = currentBoard.filter(
-          (u) => u.instanceId !== anyTargetUnit.instanceId && u.instanceId !== unitToPlace.instanceId
+          (u) => u.instanceId !== unitToSwap.instanceId && u.instanceId !== unitToPlace.instanceId
         );
         const nextBoard = [...filteredBoard, updatedUnit];
 
@@ -1729,6 +1740,21 @@ export default function App() {
         benchSlotsRef.current = nextBench;
         setBoardUnits(nextBoard);
         boardUnitsRef.current = nextBoard;
+
+        if (unitToRecall) {
+          setFloatingTexts((prev) => [
+            ...prev,
+            {
+              id: `swap-bench-${Date.now()}`,
+              x: unitToRecall!.gridX,
+              y: unitToRecall!.gridY,
+              value: `${unitToRecall!.name} voltou ao banco`,
+              type: 'SKILL',
+              color: '#f59e0b',
+              timestamp: Date.now(),
+            },
+          ]);
+        }
       } else {
         // Vacate bench slot and add unit to board
         nextBench[benchIdx] = null;
@@ -1970,23 +1996,47 @@ export default function App() {
           draggedUnitRef.current = state.unit;
         }
 
-        const el = document.elementFromPoint(e.clientX, e.clientY);
-        const tileEl = el?.closest('[data-arena-tile="true"]');
-        const benchEl = el?.closest('[data-bench-index]');
-        const sellEl = el?.closest('[data-sell-zone="true"]');
+        // Use elementsFromPoint to pierce through any overlays, tokens, HUDs, and borders
+        const elements = typeof document.elementsFromPoint === 'function'
+          ? document.elementsFromPoint(e.clientX, e.clientY)
+          : [document.elementFromPoint(e.clientX, e.clientY)].filter(Boolean) as Element[];
 
-        if (sellEl) {
+        let foundSellEl: Element | null = null;
+        let foundTileEl: Element | null = null;
+        let foundBenchEl: Element | null = null;
+
+        for (const element of elements) {
+          if (!foundSellEl && element.closest('[data-sell-zone="true"]')) {
+            foundSellEl = element.closest('[data-sell-zone="true"]');
+          }
+          if (!foundTileEl && element.closest('[data-arena-tile="true"]')) {
+            foundTileEl = element.closest('[data-arena-tile="true"]');
+          }
+          if (!foundBenchEl && element.closest('[data-bench-index]')) {
+            foundBenchEl = element.closest('[data-bench-index]');
+          }
+        }
+
+        if (foundSellEl) {
           hoverTarget = { type: 'sell' };
-        } else if (tileEl) {
-          const tx = Number(tileEl.getAttribute('data-tile-x'));
-          const ty = Number(tileEl.getAttribute('data-tile-y'));
+        } else if (foundTileEl) {
+          const tx = Number(foundTileEl.getAttribute('data-tile-x'));
+          const ty = Number(foundTileEl.getAttribute('data-tile-y'));
           if (!isNaN(tx) && !isNaN(ty)) {
             hoverTarget = { type: 'tile', x: tx, y: ty };
           }
-        } else if (benchEl) {
-          const bIdx = Number(benchEl.getAttribute('data-bench-index'));
+        } else if (foundBenchEl) {
+          const bIdx = Number(foundBenchEl.getAttribute('data-bench-index'));
           if (!isNaN(bIdx)) {
             hoverTarget = { type: 'bench', benchIndex: bIdx };
+          }
+        } else {
+          // If cursor is moving across tile gaps on the arena stadium floor, preserve previous tile hover
+          const isOverArena = elements.some(
+            (el) => el.closest?.('[data-arena-stadium="true"]') || el.classList?.contains('grid')
+          );
+          if (isOverArena && state.hoverTarget?.type === 'tile') {
+            hoverTarget = state.hoverTarget;
           }
         }
       }
@@ -2510,7 +2560,7 @@ export default function App() {
             maxUnits={maxBoardUnits}
             playerUnitsCount={playerUnitsOnBoard.length}
             selectedUnitId={selectedUnit?.instanceId || null}
-            draggedUnit={draggedUnit}
+            draggedUnit={draggedUnit || (pointerDragState?.isDragging ? pointerDragState.unit : null)}
             isViewingOpponentArena={isViewingOpponentArena}
             viewingCommander={viewingCommander}
             isTestMode={isTestMode}
@@ -2666,8 +2716,8 @@ export default function App() {
 
       </div>
 
-      {/* Unit Inspector Modal (for Skill A / Skill B switching, 2 Battle + 1 Special Slots & Removal) - Hidden in Test Mode */}
-      {!isTestMode && selectedUnit && (
+      {/* Unit Inspector Modal (for Skill A / Skill B switching, 2 Battle + 1 Special Slots & Removal) - Hidden in Test Mode or while Dragging */}
+      {!isTestMode && selectedUnit && !pointerDragState?.isDragging && (
         <UnitInspector
           unit={selectedUnit}
           gamePhase={phase}
@@ -2808,29 +2858,38 @@ export default function App() {
         onClose={() => setActiveTheftEvent(null)}
       />
 
-      {/* Floating Dragged Champion Ghost (Follows Pointer / Touch) */}
+      {/* Floating Dragged Champion Ghost (Elevated above Pointer / Touch for clear board visibility) */}
       {pointerDragState?.isDragging && (
         <div
-          className="fixed pointer-events-none z-[100] transform -translate-x-1/2 -translate-y-1/2 select-none"
+          className="fixed pointer-events-none z-[100] select-none"
           style={{
             left: `${pointerDragState.currentX}px`,
             top: `${pointerDragState.currentY}px`,
           }}
         >
-          <div className="flex flex-col items-center justify-center p-1 rounded-2xl bg-slate-950/95 border-2 border-amber-400 shadow-[0_0_30px_rgba(245,158,11,0.9)] scale-110">
-            <div className="w-14 h-14 relative flex items-center justify-center">
+          {/* Ground Contact Target Reticle (Directly at cursor location) */}
+          <div className="absolute -translate-x-1/2 -translate-y-1/2 w-6 h-6 rounded-full border-2 border-amber-400 bg-amber-400/30 shadow-[0_0_14px_rgba(245,158,11,1)] animate-ping pointer-events-none" />
+          <div className="absolute -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(245,158,11,1)] ring-2 ring-amber-300 pointer-events-none" />
+
+          {/* Elevated Minimalist Champion Token (Suspended comfortably above the pointer so the tile below is 100% visible) */}
+          <div className="absolute -translate-x-1/2 -translate-y-[calc(100%+16px)] flex flex-col items-center pointer-events-none">
+            <div className="relative w-11 h-11 rounded-full p-0.5 bg-slate-950/85 border border-amber-400/90 shadow-[0_4px_16px_rgba(0,0,0,0.8),0_0_12px_rgba(245,158,11,0.6)] flex items-center justify-center backdrop-blur-sm">
               <ChampionVisual
                 unitId={pointerDragState.unit.unitId}
-                customVisual={pointerDragState.unit.customVisual}
-                stars={pointerDragState.unit.stars}
-                size="md"
-                isEnemy={false}
+                avatarFallback={pointerDragState.unit.avatarUrl}
+                visualAssets={pointerDragState.unit.visualAssets}
+                mode="portrait"
+                alt={pointerDragState.unit.name}
+                className="w-10 h-10 rounded-full"
               />
+              {/* Star Badge */}
+              <span className="absolute -top-1.5 -right-1.5 px-1 py-0.2 rounded-full bg-amber-500 text-slate-950 font-black text-[8px] leading-tight shadow">
+                {pointerDragState.unit.stars}★
+              </span>
             </div>
-            <div className="flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black text-[9px] uppercase tracking-wider">
-              <span>{pointerDragState.unit.stars}★</span>
-              <span>{pointerDragState.unit.name}</span>
-            </div>
+
+            {/* Subtle downward indicator pointing to ground target */}
+            <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[5px] border-t-amber-400/90 mt-0.5 drop-shadow" />
           </div>
         </div>
       )}

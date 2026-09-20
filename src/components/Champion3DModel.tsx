@@ -7,7 +7,9 @@ import { enrichMixamoModelIfNeeded } from '../utils/mixamoBodyEnricher';
 import { attachChampionWeapons } from '../utils/championWeapons';
 import { getChampionLoreHeightMeters } from '../utils/gameUtils';
 
-interface Champion3DModelProps {
+export type ChampionHitTester = (clientX: number, clientY: number) => { hit: boolean; distance: number };
+
+export interface Champion3DModelProps {
   unitId: string;
   unitColor?: string;
   isEnemy?: boolean;
@@ -24,6 +26,7 @@ interface Champion3DModelProps {
   targetPos?: { x: number; y: number } | null;
   facingAngle?: number;
   className?: string;
+  onRegisterHitTester?: (tester: ChampionHitTester | null) => void;
 }
 
 // Shortest angle difference to avoid spinning 360 degrees
@@ -94,9 +97,12 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
   targetPos,
   facingAngle,
   className = 'w-full h-full',
+  onRegisterHitTester,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const modelGroupRef = useRef<THREE.Group | null>(null);
+  const onRegisterHitTesterRef = useRef(onRegisterHitTester);
+  onRegisterHitTesterRef.current = onRegisterHitTester;
   const clonedRigRef = useRef<THREE.Group | null>(null);
   const restBoneTransformsRef = useRef<Map<THREE.Bone, { position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 }>>(new Map());
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
@@ -858,6 +864,16 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
           const rootWrapper = new THREE.Group();
           rootWrapper.rotation.y = targetRotationYRef.current;
           rootWrapper.add(clonedRig);
+
+          // Dedicated 3D body volume hit proxy (matches lore height and character body radius)
+          const bodyRadius = Math.max(0.25, 0.32 * (loreHeight / 1.74));
+          const bodyCylinderGeo = new THREE.CylinderGeometry(bodyRadius, bodyRadius, targetHeight, 10);
+          const bodyCylinderMat = new THREE.MeshBasicMaterial({ visible: false });
+          const bodyHitProxy = new THREE.Mesh(bodyCylinderGeo, bodyCylinderMat);
+          bodyHitProxy.position.set(0, targetHeight / 2, 0);
+          bodyHitProxy.name = 'champion_hit_proxy';
+          rootWrapper.add(bodyHitProxy);
+
           scene.add(rootWrapper);
           modelGroupRef.current = rootWrapper;
 
@@ -888,6 +904,15 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
       const mannequin = createProceduralMannequin(unitColor, isEnemy, hasOrb);
       mannequin.root.rotation.y = targetRotationYRef.current;
       mannequin.root.position.y = 0.08;
+
+      const bodyRadius = Math.max(0.25, 0.32 * (loreHeight / 1.74));
+      const bodyCylinderGeo = new THREE.CylinderGeometry(bodyRadius, bodyRadius, targetHeight, 10);
+      const bodyCylinderMat = new THREE.MeshBasicMaterial({ visible: false });
+      const bodyHitProxy = new THREE.Mesh(bodyCylinderGeo, bodyCylinderMat);
+      bodyHitProxy.position.set(0, targetHeight / 2, 0);
+      bodyHitProxy.name = 'champion_hit_proxy';
+      mannequin.root.add(bodyHitProxy);
+
       scene.add(mannequin.root);
       modelGroupRef.current = mannequin.root;
       mannequinRef.current = mannequin;
@@ -971,9 +996,49 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
       renderer.render(scene, camera);
     };
 
+    // Raycasting Hit Tester strictly constrained to the champion's 3D mesh and body boundary
+    const raycaster = new THREE.Raycaster();
+    const pointerVec = new THREE.Vector2();
+    const hitTester: ChampionHitTester = (clientX: number, clientY: number) => {
+      if (!renderer.domElement) return { hit: false, distance: Infinity };
+      const rect = renderer.domElement.getBoundingClientRect();
+      if (
+        clientX < rect.left ||
+        clientX > rect.right ||
+        clientY < rect.top ||
+        clientY > rect.bottom
+      ) {
+        return { hit: false, distance: Infinity };
+      }
+
+      const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
+      const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+      pointerVec.set(ndcX, ndcY);
+      raycaster.setFromCamera(pointerVec, camera);
+      const targetGroup = modelGroupRef.current || mannequinRef.current?.root;
+      if (!targetGroup) return { hit: false, distance: Infinity };
+
+      const intersects = raycaster.intersectObject(targetGroup, true);
+      const meshHit = intersects.find((h) => {
+        if (h.object.name === 'champion_hit_proxy') return true;
+        if (!h.object.visible) return false;
+        if (h.object.name?.includes('shadow') || h.object.name?.includes('Floor')) return false;
+        return (h.object as THREE.Mesh).isMesh || (h.object as THREE.SkinnedMesh).isSkinnedMesh;
+      });
+
+      if (meshHit) {
+        return { hit: true, distance: meshHit.distance };
+      }
+      return { hit: false, distance: Infinity };
+    };
+
+    onRegisterHitTesterRef.current?.(hitTester);
+
     animate();
 
     return () => {
+      onRegisterHitTesterRef.current?.(null);
       isMounted = false;
       cancelAnimationFrame(animFrameId);
       resizeObserver.disconnect();

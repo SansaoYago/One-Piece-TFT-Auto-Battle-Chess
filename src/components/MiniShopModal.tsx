@@ -207,17 +207,17 @@ export const MiniShopModal: React.FC<MiniShopModalProps> = ({
                   {champ.name}
                 </h3>
 
-                {/* Synergies */}
+                {/* Traits / Synergies */}
                 <div className="flex items-center justify-center gap-1 flex-wrap my-1.5 min-h-[22px]">
-                  {champ.synergies.map((synId) => {
-                    const syn = SYNERGY_DATABASE[synId];
+                  {(champ.traits || []).map((traitId) => {
+                    const syn = SYNERGY_DATABASE[traitId];
                     return (
                       <span
-                        key={synId}
+                        key={traitId}
                         className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-800/90 text-slate-200 border border-slate-700 flex items-center gap-1 shadow-xs"
                       >
                         <span>{syn?.icon || '⚔️'}</span>
-                        <span>{syn?.name || synId}</span>
+                        <span>{syn?.name || traitId}</span>
                       </span>
                     );
                   })}
