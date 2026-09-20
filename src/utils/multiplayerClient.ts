@@ -4,16 +4,21 @@ import {
   CombatSubmission,
   CombatResultSubmission,
   EmoteMessage,
+  AvailableRoomSummary,
 } from '../types/multiplayer';
+
+export const CENTRAL_SERVER_URL = 'https://ais-dev-4jri3d5iut235w662qvv2e-167791983539.us-east1.run.app';
 
 class MultiplayerClientService {
   private socket: Socket | null = null;
   private currentRoom: MultiplayerRoomState | null = null;
   private localPlayerId: string | null = null;
+  private currentServerUrl: string = CENTRAL_SERVER_URL;
 
   // Event callbacks
   public onRoomJoined?: (room: MultiplayerRoomState, localPlayerId: string) => void;
   public onRoomStateUpdated?: (room: MultiplayerRoomState) => void;
+  public onRoomsListUpdated?: (rooms: AvailableRoomSummary[]) => void;
   public onGameStarted?: (room: MultiplayerRoomState) => void;
   public onPhaseTick?: (data: {
     phase: 'PREPARATION' | 'COMBAT' | 'RESOLUTION';
@@ -35,17 +40,55 @@ class MultiplayerClientService {
   public onError?: (message: string) => void;
   public onPoolUpdated?: (data: { unitId: string; remaining: number }) => void;
 
+  constructor() {
+    this.currentServerUrl = this.resolveServerUrl();
+  }
+
+  public resolveServerUrl(): string {
+    if (typeof window === 'undefined') return CENTRAL_SERVER_URL;
+
+    // Check localStorage first
+    const saved = localStorage.getItem('OPT_MULTIPLAYER_SERVER_URL');
+    if (saved && saved.trim().startsWith('http')) {
+      return saved.trim().replace(/\/+$/, '');
+    }
+
+    // Check if running from file:// (Electron package) or null origin
+    const isFileProtocol = window.location.protocol === 'file:' || !window.location.origin || window.location.origin === 'null';
+    if (isFileProtocol) {
+      return CENTRAL_SERVER_URL;
+    }
+
+    // In web browser / PWA: default to current host
+    return window.location.origin;
+  }
+
+  public getServerUrl(): string {
+    return this.currentServerUrl;
+  }
+
+  public setServerUrl(url: string) {
+    const cleanUrl = (url || '').trim().replace(/\/+$/, '');
+    if (!cleanUrl) return;
+    this.currentServerUrl = cleanUrl;
+    try {
+      localStorage.setItem('OPT_MULTIPLAYER_SERVER_URL', cleanUrl);
+    } catch {
+      // Ignore localStorage errors
+    }
+    if (this.socket) {
+      this.disconnect();
+      this.connect();
+    }
+  }
+
   public connect(): Socket {
     if (this.socket && this.socket.connected) {
       return this.socket;
     }
 
-    // In browser or PWA, window.location.origin connects to same host/port 3000
-    // In Electron standalone or mobile wrapper, falls back to origin or localhost
-    const serverUrl =
-      typeof window !== 'undefined' && window.location && window.location.origin
-        ? window.location.origin
-        : 'http://localhost:3000';
+    const serverUrl = this.getServerUrl();
+    console.log('[MultiplayerClient] Connecting to socket server:', serverUrl);
 
     this.socket = io(serverUrl, {
       transports: ['websocket', 'polling'],
@@ -63,6 +106,11 @@ class MultiplayerClientService {
 
     this.socket.on('connect', () => {
       console.log('[MultiplayerClient] Connected to socket server, id:', this.socket?.id);
+      this.fetchRoomsList();
+    });
+
+    this.socket.on('s2c_rooms_list', (data: { rooms: AvailableRoomSummary[] }) => {
+      this.onRoomsListUpdated?.(data.rooms || []);
     });
 
     this.socket.on('s2c_room_joined', (data: { room: MultiplayerRoomState; localPlayerId: string }) => {
@@ -117,6 +165,24 @@ class MultiplayerClientService {
     this.socket.on('s2c_error', (data: { message: string }) => {
       this.onError?.(data.message);
     });
+  }
+
+  public fetchRoomsList() {
+    const s = this.connect();
+    s.emit('c2s_get_rooms');
+
+    // Also attempt quick REST fetch in parallel
+    const url = `${this.getServerUrl()}/api/multiplayer/rooms`;
+    fetch(url)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && Array.isArray(data.rooms)) {
+          this.onRoomsListUpdated?.(data.rooms);
+        }
+      })
+      .catch(() => {
+        // Fallback to socket event
+      });
   }
 
   public createRoom(playerName: string, avatar: string, commanderId: string) {

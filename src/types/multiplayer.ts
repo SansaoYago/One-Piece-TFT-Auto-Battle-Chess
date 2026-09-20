@@ -70,3 +70,15 @@ export interface CombatResultSubmission {
   survivingUnitsCount: number;
   damageDealtToOpponent: number;
 }
+
+export interface AvailableRoomSummary {
+  roomId: string;
+  roomCode: string;
+  hostId: string;
+  hostName: string;
+  hostAvatar: string;
+  playerCount: number;
+  maxPlayers: number;
+  status: RoomStatus;
+}
+

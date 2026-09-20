@@ -52,7 +52,7 @@ import { Sparkles, Trophy, Skull, Coins, Zap } from 'lucide-react';
 import { RoundOutcomeBanner } from './components/RoundOutcomeBanner';
 import { ChampionVisual } from './components/ChampionVisual';
 import { multiplayerClient } from './utils/multiplayerClient';
-import { MultiplayerRoomState, EmoteMessage } from './types/multiplayer';
+import { MultiplayerRoomState, EmoteMessage, AvailableRoomSummary } from './types/multiplayer';
 import { MultiplayerLobbyModal } from './components/MultiplayerLobbyModal';
 
 export default function App() {
@@ -142,6 +142,8 @@ export default function App() {
   const localPlayerIdRef = useRef<string | null>(null);
   localPlayerIdRef.current = localPlayerId;
   const [multiplayerError, setMultiplayerError] = useState<string | null>(null);
+  const [availableRooms, setAvailableRooms] = useState<AvailableRoomSummary[]>([]);
+  const [serverUrl, setServerUrl] = useState<string>(() => multiplayerClient.getServerUrl());
   const [activeEmotes, setActiveEmotes] = useState<EmoteMessage[]>([]);
   const multiplayerOpponentRef = useRef<{
     id: string;
@@ -1574,10 +1576,21 @@ export default function App() {
       }, 4000);
     };
 
+    multiplayerClient.onRoomsListUpdated = (rooms) => {
+      setAvailableRooms(rooms);
+    };
+
     multiplayerClient.onError = (msg) => {
       setMultiplayerError(msg);
     };
   }, []);
+
+  // Fetch available rooms whenever the multiplayer modal is opened
+  useEffect(() => {
+    if (isMultiplayerModalOpen) {
+      multiplayerClient.fetchRoomsList();
+    }
+  }, [isMultiplayerModalOpen]);
 
   // === Keyboard Shortcuts (D for Shop/Reroll, F for XP, Space for Pause) ===
   useEffect(() => {
@@ -3092,6 +3105,16 @@ export default function App() {
         roomState={multiplayerRoom}
         localPlayerId={localPlayerId}
         isMultiplayerActive={isMultiplayerActive}
+        availableRooms={availableRooms}
+        onRefreshRooms={() => {
+          multiplayerClient.fetchRoomsList();
+        }}
+        serverUrl={serverUrl}
+        onUpdateServerUrl={(url) => {
+          multiplayerClient.setServerUrl(url);
+          setServerUrl(multiplayerClient.getServerUrl());
+          multiplayerClient.fetchRoomsList();
+        }}
         onSelectSoloMode={() => {
           setIsMultiplayerActive(false);
           isMultiplayerActiveRef.current = false;
@@ -3102,9 +3125,9 @@ export default function App() {
           setMultiplayerError(null);
           multiplayerClient.createRoom(playerName, avatar, commanderId);
         }}
-        onJoinRoom={(roomCode, playerName, avatar, commanderId) => {
+        onJoinRoom={(roomCodeOrId, playerName, avatar, commanderId) => {
           setMultiplayerError(null);
-          multiplayerClient.joinRoom(roomCode, playerName, avatar, commanderId);
+          multiplayerClient.joinRoom(roomCodeOrId, playerName, avatar, commanderId);
         }}
         onStartGame={() => {
           multiplayerClient.startGame();
@@ -3114,6 +3137,7 @@ export default function App() {
           setMultiplayerRoom(null);
           setIsMultiplayerActive(false);
           isMultiplayerActiveRef.current = false;
+          multiplayerClient.fetchRoomsList();
         }}
         errorMessage={multiplayerError}
       />

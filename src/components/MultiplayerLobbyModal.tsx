@@ -1,6 +1,23 @@
 import React, { useState } from 'react';
-import { MultiplayerRoomState } from '../types/multiplayer';
-import { Users, Globe, Play, Copy, Check, LogOut, Shield, Smartphone, Monitor, Crown, Bot, Sparkles } from 'lucide-react';
+import { MultiplayerRoomState, AvailableRoomSummary } from '../types/multiplayer';
+import {
+  Users,
+  Globe,
+  Play,
+  Copy,
+  Check,
+  LogOut,
+  Smartphone,
+  Monitor,
+  Crown,
+  Bot,
+  Sparkles,
+  RefreshCw,
+  LogIn,
+  Server,
+  Settings,
+  AlertCircle,
+} from 'lucide-react';
 
 interface MultiplayerLobbyModalProps {
   isOpen: boolean;
@@ -8,9 +25,13 @@ interface MultiplayerLobbyModalProps {
   roomState: MultiplayerRoomState | null;
   localPlayerId: string | null;
   isMultiplayerActive: boolean;
+  availableRooms: AvailableRoomSummary[];
+  onRefreshRooms: () => void;
+  serverUrl: string;
+  onUpdateServerUrl: (url: string) => void;
   onSelectSoloMode: () => void;
   onCreateRoom: (playerName: string, avatar: string, commanderId: string) => void;
-  onJoinRoom: (roomCode: string, playerName: string, avatar: string, commanderId: string) => void;
+  onJoinRoom: (roomCodeOrId: string, playerName: string, avatar: string, commanderId: string) => void;
   onStartGame: () => void;
   onLeaveRoom: () => void;
   errorMessage?: string | null;
@@ -32,7 +53,11 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
   onClose,
   roomState,
   localPlayerId,
-  isMultiplayerActive,
+  isMultiplayerActive: _isMultiplayerActive,
+  availableRooms,
+  onRefreshRooms,
+  serverUrl,
+  onUpdateServerUrl,
   onSelectSoloMode,
   onCreateRoom,
   onJoinRoom,
@@ -40,11 +65,15 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
   onLeaveRoom,
   errorMessage,
 }) => {
-  const [tab, setTab] = useState<'SELECT' | 'CREATE' | 'JOIN'>('SELECT');
+  const [tab, setTab] = useState<'SELECT' | 'CREATE' | 'JOIN'>('JOIN');
   const [playerName, setPlayerName] = useState('Capitão');
   const [selectedAvatar, setSelectedAvatar] = useState(PIRATE_AVATARS[0]);
   const [roomCodeInput, setRoomCodeInput] = useState('');
   const [copiedCode, setCopiedCode] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showManualCode, setShowManualCode] = useState(false);
+  const [showServerConfig, setShowServerConfig] = useState(false);
+  const [customServerInput, setCustomServerInput] = useState(serverUrl);
 
   if (!isOpen) return null;
 
@@ -57,8 +86,14 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
+  const handleRefreshClick = () => {
+    setIsRefreshing(true);
+    onRefreshRooms();
+    setTimeout(() => setIsRefreshing(false), 700);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-5 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-3 sm:p-5 backdrop-blur-md animate-fadeIn">
       <div className="relative w-full max-w-2xl rounded-3xl bg-slate-900/95 border-2 border-amber-500/40 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-slate-950 via-slate-900 to-amber-950/40 border-b border-amber-500/30">
@@ -71,7 +106,7 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
                 MODO DE JOGO & SALAS ONLINE
               </h2>
               <p className="text-xs text-slate-400">
-                Jogue Solo vs Bots ou dispute partidas com amigos no Desktop e Celular
+                Dispute partidas em tempo real com amigos no Desktop (.exe) e Celular
               </p>
             </div>
           </div>
@@ -86,7 +121,8 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
 
         {errorMessage && (
           <div className="mx-6 mt-4 p-3 rounded-xl bg-red-950/80 border border-red-500/60 text-red-200 text-xs flex items-center gap-2 animate-shake">
-            <span className="text-red-400 font-bold">Aviso:</span> {errorMessage}
+            <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+            <span><strong className="text-red-400">Aviso:</strong> {errorMessage}</span>
           </div>
         )}
 
@@ -98,10 +134,11 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
               {/* Room Code Banner */}
               <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-950 to-amber-950/40 border border-amber-500/40 flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div>
-                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Código da Sala (Compartilhe para entrar)
+                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                    Sala Aberta em Tempo Real
                   </div>
-                  <div className="text-2xl sm:text-3xl font-black text-amber-400 tracking-widest font-mono">
+                  <div className="text-2xl sm:text-3xl font-black text-amber-400 tracking-widest font-mono mt-0.5">
                     {roomState.roomCode}
                   </div>
                 </div>
@@ -120,7 +157,7 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
                     className="flex items-center gap-1 px-3 py-2 rounded-xl bg-red-950/60 hover:bg-red-900/80 text-red-300 border border-red-500/30 text-xs font-bold transition"
                   >
                     <LogOut className="w-4 h-4" />
-                    Sair
+                    Sair da Sala
                   </button>
                 </div>
               </div>
@@ -162,7 +199,7 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
                               {p.name}
                             </div>
                             <div className="text-[10px] text-amber-400/80 mt-0.5">
-                              {p.isHost ? 'Capitão (Host)' : 'Pronto'}
+                              {p.isHost ? 'Capitão (Host)' : 'Tripulante'}
                             </div>
                           </>
                         ) : (
@@ -182,14 +219,14 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
               <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div className="text-xs text-slate-400">
                   {isHost
-                    ? 'Você é o Capitão desta sala! Clique abaixo para iniciar a partida quando todos estiverem prontos.'
+                    ? 'Você é o Capitão desta sala! Clique abaixo para iniciar a batalha quando os jogadores entrarem.'
                     : 'Aguardando o Capitão da sala iniciar a partida...'}
                 </div>
 
                 {isHost && (
                   <button
                     onClick={onStartGame}
-                    className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-600 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2 transition-all active:scale-95 animate-bounce-short"
+                    className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-600 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2 transition-all active:scale-95 animate-pulse"
                   >
                     <Play className="w-5 h-5 fill-slate-950" />
                     INICIAR BATALHA ONLINE
@@ -200,52 +237,266 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
           ) : (
             /* Mode Selection & Create/Join */
             <div className="space-y-6">
+              {/* Profile Config (Name & Avatar) */}
+              <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <div className="flex-1">
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      Seu Nome de Pirata
+                    </label>
+                    <input
+                      type="text"
+                      value={playerName}
+                      onChange={(e) => setPlayerName(e.target.value)}
+                      placeholder="Ex: Luffy do Chapéu de Palha"
+                      className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-sm focus:border-amber-400 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      Avatar Selecionado
+                    </label>
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
+                      {PIRATE_AVATARS.map((p) => (
+                        <button
+                          key={p.id}
+                          onClick={() => setSelectedAvatar(p)}
+                          title={p.name}
+                          className={`p-1.5 rounded-xl border transition ${
+                            selectedAvatar.id === p.id
+                              ? 'bg-amber-500/25 border-amber-400 scale-110 shadow-sm'
+                              : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                          }`}
+                        >
+                          <span className="text-xl">{p.avatar}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Tabs */}
               <div className="grid grid-cols-3 gap-2 bg-slate-950/60 p-1.5 rounded-2xl border border-slate-800">
                 <button
+                  onClick={() => setTab('JOIN')}
+                  className={`py-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 ${
+                    tab === 'JOIN'
+                      ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                  }`}
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  Entrar em Sala
+                </button>
+                <button
+                  onClick={() => setTab('CREATE')}
+                  className={`py-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 ${
+                    tab === 'CREATE'
+                      ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                  }`}
+                >
+                  <Crown className="w-3.5 h-3.5" />
+                  Criar Sala
+                </button>
+                <button
                   onClick={() => setTab('SELECT')}
-                  className={`py-2 text-xs font-bold rounded-xl transition ${
+                  className={`py-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 ${
                     tab === 'SELECT'
-                      ? 'bg-amber-500 text-slate-950 shadow-md'
+                      ? 'bg-amber-500 text-slate-950 shadow-md font-black'
                       : 'text-slate-400 hover:text-white hover:bg-slate-900'
                   }`}
                 >
                   Modo Solo
                 </button>
-                <button
-                  onClick={() => setTab('CREATE')}
-                  className={`py-2 text-xs font-bold rounded-xl transition ${
-                    tab === 'CREATE'
-                      ? 'bg-amber-500 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-900'
-                  }`}
-                >
-                  Criar Sala Online
-                </button>
-                <button
-                  onClick={() => setTab('JOIN')}
-                  className={`py-2 text-xs font-bold rounded-xl transition ${
-                    tab === 'JOIN'
-                      ? 'bg-amber-500 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-900'
-                  }`}
-                >
-                  Entrar em Sala
-                </button>
               </div>
 
-              {/* Tab 1: Solo Mode */}
+              {/* Tab: JOIN (Room Discovery & Instant Entry) */}
+              {tab === 'JOIN' && (
+                <div className="space-y-4">
+                  {/* Top Bar with Refresh Button */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        Salas Abertas em Tempo Real
+                      </h3>
+                      <p className="text-[11px] text-slate-400">
+                        Não precisa de código. Se houver uma sala disponível, ela aparece abaixo:
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={handleRefreshClick}
+                      disabled={isRefreshing}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-semibold transition active:scale-95"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-amber-400' : ''}`} />
+                      {isRefreshing ? 'Atualizando...' : 'Atualizar'}
+                    </button>
+                  </div>
+
+                  {/* Available Rooms List */}
+                  {availableRooms && availableRooms.length > 0 ? (
+                    <div className="space-y-3">
+                      {availableRooms.map((room) => (
+                        <div
+                          key={room.roomId}
+                          className="p-4 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-amber-950/30 border-2 border-amber-500/50 hover:border-amber-400 flex flex-col sm:flex-row items-center justify-between gap-4 transition shadow-lg"
+                        >
+                          <div className="flex items-center gap-3.5 w-full sm:w-auto">
+                            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-3xl shadow-inner">
+                              {room.hostAvatar || '👒'}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-bold text-slate-100">
+                                  Sala de {room.hostName}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                  {room.roomCode}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3 mt-1 text-xs text-slate-400">
+                                <span className="flex items-center gap-1 text-emerald-400 font-medium">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                                  Aguardando Jogadores
+                                </span>
+                                <span>•</span>
+                                <span className="flex items-center gap-1 text-slate-300">
+                                  <Users className="w-3.5 h-3.5 text-amber-400" />
+                                  {room.playerCount} / {room.maxPlayers} Jogadores
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => {
+                              onJoinRoom(room.roomId || room.roomCode, playerName, selectedAvatar.avatar, selectedAvatar.id);
+                            }}
+                            className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition active:scale-95"
+                          >
+                            <Play className="w-4 h-4 fill-current" />
+                            ENTRAR AGORA
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    /* Empty State */
+                    <div className="p-6 rounded-2xl bg-slate-950/60 border border-slate-800 text-center space-y-3">
+                      <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-2xl mx-auto text-slate-400">
+                        ⛵
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-200">Nenhuma sala aberta no momento</h4>
+                        <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                          Nenhum jogador está com sala aguardando no momento. Você pode criar a sala na aba <strong>&apos;Criar Sala&apos;</strong> ou clicar em Atualizar.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-1">
+                        <button
+                          onClick={handleRefreshClick}
+                          disabled={isRefreshing}
+                          className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 text-xs font-bold transition flex items-center gap-1.5"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                          Atualizar Lista
+                        </button>
+                        <button
+                          onClick={() => setTab('CREATE')}
+                          className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition flex items-center gap-1.5"
+                        >
+                          <Crown className="w-3.5 h-3.5" />
+                          Criar Uma Sala Agora
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Optional Manual Code entry toggle */}
+                  <div className="pt-2">
+                    <button
+                      onClick={() => setShowManualCode(!showManualCode)}
+                      className="text-[11px] text-slate-500 hover:text-slate-400 underline transition"
+                    >
+                      {showManualCode ? '▲ Ocultar entrada por código' : '▼ Possui um código manual específico? Clique aqui'}
+                    </button>
+
+                    {showManualCode && (
+                      <div className="mt-2.5 p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
+                        <label className="block text-xs font-medium text-slate-400">
+                          Digite o código da sala (Ex: LUFFY-481)
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={roomCodeInput}
+                            onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
+                            placeholder="CÓDIGO"
+                            className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-amber-400 font-mono text-xs uppercase tracking-widest focus:border-amber-400 focus:outline-none"
+                          />
+                          <button
+                            disabled={!roomCodeInput.trim()}
+                            onClick={() => {
+                              onJoinRoom(roomCodeInput.trim(), playerName, selectedAvatar.avatar, selectedAvatar.id);
+                            }}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                              roomCodeInput.trim()
+                                ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
+                                : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                            }`}
+                          >
+                            Entrar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Tab: CREATE */}
+              {tab === 'CREATE' && (
+                <div className="space-y-4">
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/30 to-slate-950 border border-amber-500/40 text-xs text-amber-200 flex items-center gap-3">
+                    <Sparkles className="w-5 h-5 text-amber-400 shrink-0" />
+                    <div>
+                      <div className="font-bold text-amber-300">Crie sua sala em 1 clique!</div>
+                      <div className="text-slate-400 mt-0.5">
+                        Assim que você criar, ela aparecerá instantaneamente para qualquer amigo na aba &apos;Entrar em Sala&apos; no Desktop (.exe) ou Celular.
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      onCreateRoom(playerName, selectedAvatar.avatar, selectedAvatar.id);
+                    }}
+                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/20 transition flex items-center justify-center gap-2 active:scale-95"
+                  >
+                    <Crown className="w-4 h-4 fill-slate-950" />
+                    CRIAR SALA ONLINE AGORA
+                  </button>
+                </div>
+              )}
+
+              {/* Tab: SOLO */}
               {tab === 'SELECT' && (
                 <div className="space-y-4">
-                  <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-950 to-blue-950/30 border border-blue-500/30 flex flex-col sm:flex-row items-center gap-4">
-                    <div className="p-4 rounded-2xl bg-blue-500/20 text-blue-400 text-4xl">
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-950 to-blue-950/30 border border-blue-500/30 flex items-center gap-4">
+                    <div className="p-3 rounded-2xl bg-blue-500/20 text-blue-400 text-3xl">
                       ⚔️
                     </div>
-                    <div className="flex-1 text-center sm:text-left">
-                      <h3 className="text-base font-bold text-blue-300">Modo Solo (Treino vs 7 Bots)</h3>
+                    <div className="flex-1">
+                      <h3 className="text-sm font-bold text-blue-300">Modo Solo (Treino vs 7 Bots)</h3>
                       <p className="text-xs text-slate-400 mt-1 leading-relaxed">
                         Jogue localmente sem depender de conexão de rede. Enfrente 7 comandantes controlados
-                        pela IA inteligente com sinergias reais, compra de itens e dificuldade selecionável.
+                        pela IA inteligente com sinergias reais, itens e progressão.
                       </p>
                     </div>
                   </div>
@@ -263,143 +514,60 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
                 </div>
               )}
 
-              {/* Tab 2: Create Online Room */}
-              {tab === 'CREATE' && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                      Seu Nome de Pirata
-                    </label>
-                    <input
-                      type="text"
-                      value={playerName}
-                      onChange={(e) => setPlayerName(e.target.value)}
-                      placeholder="Ex: Luffy do Chapéu de Palha"
-                      className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-sm focus:border-amber-400 focus:outline-none"
-                    />
+              {/* Server Connection & Cross-play Footer */}
+              <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                  <div className="flex items-center gap-2">
+                    <Monitor className="w-4 h-4 text-cyan-400" />
+                    <span>Desktop (.exe)</span>
+                    <span className="text-slate-600">⇄</span>
+                    <Smartphone className="w-4 h-4 text-emerald-400" />
+                    <span>Celular (PWA)</span>
                   </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                      Escolha seu Comandante / Avatar
-                    </label>
-                    <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-                      {PIRATE_AVATARS.map((p) => (
-                        <button
-                          key={p.id}
-                          onClick={() => setSelectedAvatar(p)}
-                          className={`p-2 rounded-xl border flex flex-col items-center gap-1 transition ${
-                            selectedAvatar.id === p.id
-                              ? 'bg-amber-500/20 border-amber-400 scale-105'
-                              : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                          }`}
-                        >
-                          <span className="text-2xl">{p.avatar}</span>
-                          <span className="text-[10px] text-slate-300 truncate w-full text-center">
-                            {p.name.split(' ')[0]}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-                    Ao criar a sala, você receberá um código para convidar amigos que jogam no Celular ou Desktop (.exe)!
-                  </div>
-
                   <button
-                    onClick={() => {
-                      onCreateRoom(playerName, selectedAvatar.avatar, selectedAvatar.id);
-                    }}
-                    className="w-full py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-amber-500/30 transition flex items-center justify-center gap-2"
+                    onClick={() => setShowServerConfig(!showServerConfig)}
+                    className="flex items-center gap-1 text-[11px] text-amber-400/90 hover:text-amber-300 font-medium transition"
                   >
-                    <Crown className="w-4 h-4 fill-slate-950" />
-                    CRIAR SALA ONLINE
+                    <Server className="w-3.5 h-3.5" />
+                    <span>Servidor Nuvem</span>
+                    <Settings className="w-3 h-3 text-slate-500" />
                   </button>
                 </div>
-              )}
 
-              {/* Tab 3: Join Room */}
-              {tab === 'JOIN' && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                      Código da Sala
-                    </label>
-                    <input
-                      type="text"
-                      value={roomCodeInput}
-                      onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
-                      placeholder="Ex: LUFFY-481"
-                      className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-amber-400 font-mono text-base tracking-widest uppercase focus:border-amber-400 focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                      Seu Nome de Pirata
-                    </label>
-                    <input
-                      type="text"
-                      value={playerName}
-                      onChange={(e) => setPlayerName(e.target.value)}
-                      placeholder="Ex: Zoro Caçador de Piratas"
-                      className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-sm focus:border-amber-400 focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                      Escolha seu Avatar
-                    </label>
-                    <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-                      {PIRATE_AVATARS.map((p) => (
-                        <button
-                          key={p.id}
-                          onClick={() => setSelectedAvatar(p)}
-                          className={`p-2 rounded-xl border flex flex-col items-center gap-1 transition ${
-                            selectedAvatar.id === p.id
-                              ? 'bg-amber-500/20 border-amber-400 scale-105'
-                              : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                          }`}
-                        >
-                          <span className="text-2xl">{p.avatar}</span>
-                          <span className="text-[10px] text-slate-300 truncate w-full text-center">
-                            {p.name.split(' ')[0]}
-                          </span>
-                        </button>
-                      ))}
+                {showServerConfig && (
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-2">
+                    <div className="flex items-center justify-between text-slate-300 font-semibold">
+                      <span>URL do Servidor Central:</span>
+                      <button
+                        onClick={() => {
+                          const def = 'https://ais-dev-4jri3d5iut235w662qvv2e-167791983539.us-east1.run.app';
+                          setCustomServerInput(def);
+                          onUpdateServerUrl(def);
+                        }}
+                        className="text-[10px] text-amber-400 hover:underline"
+                      >
+                        Restaurar Padrão
+                      </button>
                     </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={customServerInput}
+                        onChange={(e) => setCustomServerInput(e.target.value)}
+                        className="flex-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-200 font-mono text-[11px] focus:outline-none focus:border-amber-400"
+                      />
+                      <button
+                        onClick={() => onUpdateServerUrl(customServerInput)}
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition"
+                      >
+                        Salvar
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-500">
+                      Tanto o executável .exe quanto a versão web se comunicam através deste mesmo servidor em nuvem.
+                    </p>
                   </div>
-
-                  <button
-                    disabled={!roomCodeInput.trim()}
-                    onClick={() => {
-                      onJoinRoom(roomCodeInput.trim(), playerName, selectedAvatar.avatar, selectedAvatar.id);
-                    }}
-                    className={`w-full py-3 rounded-2xl font-black text-xs sm:text-sm shadow-lg transition flex items-center justify-center gap-2 ${
-                      roomCodeInput.trim()
-                        ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/30'
-                        : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                    }`}
-                  >
-                    <Play className="w-4 h-4 fill-current" />
-                    ENTRAR NA SALA
-                  </button>
-                </div>
-              )}
-
-              {/* Mobile vs EXE cross-play instruction footer */}
-              <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
-                <div className="flex items-center gap-2">
-                  <Monitor className="w-4 h-4 text-cyan-400" />
-                  <span>Desktop (.exe)</span>
-                  <span className="text-slate-600">⇄</span>
-                  <Smartphone className="w-4 h-4 text-emerald-400" />
-                  <span>Celular (PWA Web)</span>
-                </div>
-                <span className="text-[11px] text-amber-400/90 font-medium">Cross-play Total</span>
+                )}
               </div>
             </div>
           )}

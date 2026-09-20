@@ -68,6 +68,11 @@ async function startServer() {
       roomManager.sendEmote(socket, data?.text, data?.icon);
     });
 
+    // List available rooms
+    socket.on('c2s_get_rooms', () => {
+      socket.emit('s2c_rooms_list', { rooms: roomManager.getAvailableRooms() });
+    });
+
     // Disconnect
     socket.on('disconnect', () => {
       roomManager.handleDisconnect(socket);
@@ -83,6 +88,12 @@ async function startServer() {
       game: 'One Piece Tactics',
       multiplayer: 'enabled',
       timestamp: Date.now(),
+    });
+  });
+
+  app.get('/api/multiplayer/rooms', (_req, res) => {
+    res.json({
+      rooms: roomManager.getAvailableRooms(),
     });
   });
 

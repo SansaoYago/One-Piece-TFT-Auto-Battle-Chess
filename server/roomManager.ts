@@ -6,6 +6,7 @@ import {
   CombatSubmission,
   CombatResultSubmission,
   EmoteMessage,
+  AvailableRoomSummary,
 } from '../src/types/multiplayer';
 import { UnitInstance } from '../src/types/game';
 
@@ -103,6 +104,32 @@ export class RoomManager {
     return undefined;
   }
 
+  // List all rooms waiting in LOBBY
+  public getAvailableRooms(): AvailableRoomSummary[] {
+    const list: AvailableRoomSummary[] = [];
+    for (const room of this.rooms.values()) {
+      if (room.status === 'LOBBY') {
+        const host = room.players.find((p) => p.isHost) || room.players[0];
+        list.push({
+          roomId: room.roomId,
+          roomCode: room.roomCode,
+          hostId: room.hostId,
+          hostName: host?.name || 'Capitão',
+          hostAvatar: host?.avatar || '👒',
+          playerCount: room.players.length,
+          maxPlayers: room.maxPlayers,
+          status: room.status,
+        });
+      }
+    }
+    return list;
+  }
+
+  // Broadcast available rooms list to all connected clients
+  public broadcastRoomsList() {
+    this.io.emit('s2c_rooms_list', { rooms: this.getAvailableRooms() });
+  }
+
   // Create a new room
   public createRoom(
     socket: Socket,
@@ -110,6 +137,12 @@ export class RoomManager {
     avatar: string,
     commanderId: string
   ): MultiplayerRoomState {
+    // If the player is already in a room, remove them first
+    const existingRoomId = this.socketToRoom.get(socket.id);
+    if (existingRoomId) {
+      this.handleDisconnect(socket);
+    }
+
     const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const roomCode = this.generateRoomCode();
 
@@ -154,20 +187,44 @@ export class RoomManager {
 
     socket.join(roomId);
     socket.emit('s2c_room_joined', { room, localPlayerId: socket.id });
+    this.broadcastRoomsList();
     return room;
   }
 
-  // Join an existing room
+  // Join an existing room (by code, roomId, or automatically the first available room)
   public joinRoom(
     socket: Socket,
-    roomCode: string,
+    roomCodeOrId: string,
     playerName: string,
     avatar: string,
     commanderId: string
   ): boolean {
-    const room = this.getRoomByCode(roomCode);
+    let room: MultiplayerRoomState | undefined;
+
+    const query = (roomCodeOrId || '').trim();
+    if (!query || query === 'auto' || query === '') {
+      // Find the first available room in LOBBY
+      for (const r of this.rooms.values()) {
+        if (r.status === 'LOBBY' && r.players.length < r.maxPlayers) {
+          room = r;
+          break;
+        }
+      }
+    } else {
+      room = this.getRoomByCode(query) || this.getRoom(query);
+      // If not matched by exact code/id, check if any open room is waiting
+      if (!room) {
+        for (const r of this.rooms.values()) {
+          if (r.status === 'LOBBY' && r.players.length < r.maxPlayers) {
+            room = r;
+            break;
+          }
+        }
+      }
+    }
+
     if (!room) {
-      socket.emit('s2c_error', { message: 'Sala não encontrada com o código informado.' });
+      socket.emit('s2c_error', { message: 'Nenhuma sala disponível encontrada no momento. Crie uma nova sala!' });
       return false;
     }
 
@@ -179,6 +236,13 @@ export class RoomManager {
     if (room.players.length >= room.maxPlayers) {
       socket.emit('s2c_error', { message: 'A sala já atingiu o limite de 8 jogadores.' });
       return false;
+    }
+
+    // Check if player already in this room
+    const existingIndex = room.players.findIndex((p) => p.id === socket.id);
+    if (existingIndex >= 0) {
+      socket.emit('s2c_room_joined', { room, localPlayerId: socket.id });
+      return true;
     }
 
     const newPlayer: MultiplayerPlayer = {
@@ -204,6 +268,7 @@ export class RoomManager {
 
     socket.emit('s2c_room_joined', { room, localPlayerId: socket.id });
     this.io.to(room.roomId).emit('s2c_room_state_updated', { room });
+    this.broadcastRoomsList();
     return true;
   }
 
@@ -255,6 +320,7 @@ export class RoomManager {
     room.roundTitle = 'Fase de Preparação: Rodada 1-1';
 
     this.io.to(roomId).emit('s2c_game_started', { room });
+    this.broadcastRoomsList();
     this.startRoomClock(room);
     return true;
   }
@@ -544,6 +610,7 @@ export class RoomManager {
         }
         this.io.to(roomId).emit('s2c_room_state_updated', { room });
       }
+      this.broadcastRoomsList();
     } else {
       // In game: mark player disconnected or convert to bot
       const player = room.players.find((p) => p.id === socket.id);
