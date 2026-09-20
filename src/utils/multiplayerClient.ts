@@ -45,6 +45,26 @@ class MultiplayerClientService {
   public onError?: (message: string) => void;
   public onPoolUpdated?: (data: { unitId: string; remaining: number }) => void;
 
+  private async emitStartCombat(data: { opponent: any; isGhost: boolean; countdown: number }) {
+    if (
+      data.opponent &&
+      data.opponent.id &&
+      !data.opponent.isBot &&
+      this.currentRoom?.roomId &&
+      (!Array.isArray(data.opponent.boardUnits) || data.opponent.boardUnits.length === 0)
+    ) {
+      const opponentUnits = await firestoreMultiplayerEngine.fetchOpponentBoard(
+        this.currentRoom.roomId,
+        data.opponent.id
+      );
+      if (opponentUnits && opponentUnits.length > 0) {
+        data.opponent.boardUnits = opponentUnits;
+      }
+    }
+
+    this.onStartCombat?.(data);
+  }
+
   constructor() {
     this.currentServerUrl = this.resolveServerUrl();
     this.localPlayerId = firestoreMultiplayerEngine.getPlayerId();
@@ -143,7 +163,7 @@ class MultiplayerClientService {
     });
 
     this.socket.on('s2c_start_combat', (data) => {
-      this.onStartCombat?.(data);
+      this.emitStartCombat(data);
     });
 
     this.socket.on('s2c_resolution_phase', (data) => {
@@ -255,17 +275,7 @@ class MultiplayerClientService {
         this.onPhaseTick?.(data);
       },
       onStartCombat: async (data) => {
-        // Tenta buscar o tabuleiro real do adversário no Firestore
-        if (data.opponent && data.opponent.id && !data.opponent.isBot) {
-          const opponentUnits = await firestoreMultiplayerEngine.fetchOpponentBoard(
-            roomId,
-            data.opponent.id
-          );
-          if (opponentUnits && opponentUnits.length > 0) {
-            data.opponent.boardUnits = opponentUnits;
-          }
-        }
-        this.onStartCombat?.(data);
+        await this.emitStartCombat(data);
       },
       onResolutionPhase: (data) => {
         this.onResolutionPhase?.(data);

@@ -558,9 +558,11 @@ export default function App() {
         }
       }
 
-      // Opponent units: retrieve from opponent or fallback to round-balanced AI enemies
+      // Prefer the synchronized remote board; only use local PvP fallback when no snapshot exists.
       const opp = multiplayerOpponentRef.current;
-      let oppUnits = (opp && opp.units && opp.units.length > 0) ? opp.units : [];
+      let oppUnits = (opp && Array.isArray(opp.boardUnits) && opp.boardUnits.length > 0)
+        ? opp.boardUnits
+        : (opp && Array.isArray(opp.units) && opp.units.length > 0 ? opp.units : []);
       if (oppUnits.length === 0) {
         oppUnits = generateEnemyBoardUnits(
           stageRef.current,
