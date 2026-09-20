@@ -56,15 +56,13 @@ export const SYNERGY_DATABASE: Record<TraitId, SynergyDef> = {
       { count: 2, description: '(2) Ao sofrer dano fatal pela 1ª vez, regeneram 40% do HP máx e ganham +30% de dano.' },
     ],
   },
-  marinha: {
-    id: 'marinha',
-    name: 'Marinha',
-    icon: '⚓',
-    color: '#0284C7',
-    description: 'Treinamento militar naval concedendo sólida proteção contra dano físico e mágico.',
-    tiers: [
-      { count: 2, description: '(2) Todas as unidades ganham +30 de Armadura e +30 de Resistência Mágica.' },
-    ],
+  navegadora: {
+    id: 'navegadora',
+    name: 'Navegadora',
+    icon: '🧭',
+    color: '#0EA5E9',
+    description: 'Especialista em climatologia marítima e navegação das correntes oceânicas da Grand Line.',
+    tiers: [],
   },
   shichibukai: {
     id: 'shichibukai',

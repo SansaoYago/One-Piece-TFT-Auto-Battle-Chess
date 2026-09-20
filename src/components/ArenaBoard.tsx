@@ -536,13 +536,31 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                     // Do not eagerly clear so micro gaps between tiles do not break dragover/drop
                   }}
                   onClick={() => {
-                    if (!isCombatPhase && !isViewingOpponentArena && selectedUnitId) {
-                      onTileClick(col, row);
-                    } else if (prepUnit) {
-                      onUnitSelect(prepUnit);
-                    } else if (!isViewingOpponentArena) {
-                      onTileClick(col, row);
+                    if (isCombatPhase || isViewingOpponentArena) {
+                      if (prepUnit) onUnitSelect(prepUnit);
+                      return;
                     }
+
+                    // Se clicou no mesmo personagem já selecionado, mantém selecionado e abre o inspector
+                    if (prepUnit && selectedUnitId === prepUnit.instanceId) {
+                      onUnitSelect(prepUnit);
+                      return;
+                    }
+
+                    // Se há outro personagem selecionado e clicou em outro tile (vazio ou outra unidade para swap)
+                    if (selectedUnitId && (!prepUnit || selectedUnitId !== prepUnit.instanceId)) {
+                      onTileClick(col, row);
+                      return;
+                    }
+
+                    // Se clicou numa unidade sem ter outra selecionada: seleciona a unidade!
+                    if (prepUnit) {
+                      onUnitSelect(prepUnit);
+                      return;
+                    }
+
+                    // Clicou em tile vazio
+                    onTileClick(col, row);
                   }}
                   onDragEnter={(e) => {
                     e.preventDefault();
@@ -694,7 +712,13 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                 return (
                   <div
                     key={pUnit.instanceId}
-                    className={`absolute transition-all duration-200 ease-out pointer-events-none ${
+                    data-champion-token="true"
+                    data-unit-slot="true"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUnitSelect(pUnit);
+                    }}
+                    className={`absolute transition-all duration-200 ease-out pointer-events-auto cursor-pointer ${
                       isBeingDragged ? 'opacity-30 scale-95 ring-2 ring-amber-400 rounded-2xl' : ''
                     }`}
                     style={{
@@ -752,7 +776,13 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                 return (
                   <div
                     key={cUnit.instanceId}
-                    className="absolute pointer-events-auto transition-[left,top] duration-150 ease-linear"
+                    data-champion-token="true"
+                    data-unit-slot="true"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUnitSelect(cUnit);
+                    }}
+                    className="absolute pointer-events-auto cursor-pointer transition-[left,top] duration-150 ease-linear"
                     style={{
                       left: `${leftPercent}%`,
                       top: `${topPercent}%`,

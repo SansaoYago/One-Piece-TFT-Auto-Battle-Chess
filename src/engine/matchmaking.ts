@@ -115,21 +115,21 @@ export function generateRoundMatchmaking(
       isBoss = true;
       const bossNum = Math.floor(totalRound / 6);
       if (bossNum === 1) {
-        pveTitle = 'Smoker & Guarda Costeira';
-        pveAvatar = '💨';
-        bossTitle = 'Mestre de Fase';
+        pveTitle = 'Morgan Mão de Machado & Capangas';
+        pveAvatar = '🪓';
+        bossTitle = '1º Boss: Shells Town';
       } else if (bossNum === 2) {
-        pveTitle = 'Sir Crocodile & Baroque Works';
-        pveAvatar = '🐊';
-        bossTitle = 'Mestre de Fase';
+        pveTitle = 'Smoker, Tashigi & Recrutas';
+        pveAvatar = '💨';
+        bossTitle = '2º Boss: Loguetown';
       } else if (bossNum === 3) {
-        pveTitle = 'Rob Lucci & CP9 Governo';
+        pveTitle = 'Rob Lucci & Agentes da CP9';
         pveAvatar = '🐆';
-        bossTitle = 'Mestre de Fase';
+        bossTitle = '3º Boss: Enies Lobby';
       } else {
-        pveTitle = 'Shanks o Ruivo (Boss Lendário)';
-        pveAvatar = '⚔️';
-        bossTitle = 'Mestre Lendário';
+        pveTitle = 'Almirante Kizaru & Elite da Marinha';
+        pveAvatar = '✨';
+        bossTitle = 'Boss Final: Elite Suprema';
       }
     }
 

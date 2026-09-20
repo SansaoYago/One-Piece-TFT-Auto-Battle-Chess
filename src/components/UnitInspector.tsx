@@ -3,7 +3,7 @@ import { UnitInstance, UnitBaseData, GamePhase } from '../types/game';
 import { CHAMPION_DATABASE } from '../data/units';
 import { SYNERGY_DATABASE } from '../data/synergies';
 import { ITEM_DATABASE } from '../data/items';
-import { calculateUnitSellValue } from '../utils/gameUtils';
+import { calculateUnitSellValue, isUnitEquippedWithOrb } from '../utils/gameUtils';
 import { ChampionVisual } from './ChampionVisual';
 import {
   X,
@@ -69,6 +69,7 @@ export const UnitInspector: React.FC<UnitInspectorProps> = ({
   // Equipped items
   const battleItems = unit.items.filter((id) => !ITEM_DATABASE[id]?.isSpecialActivation);
   const specialItem = unit.items.find((id) => ITEM_DATABASE[id]?.isSpecialActivation);
+  const hasOrbEquipped = isUnitEquippedWithOrb(unit);
 
   const handleSkillClick = (targetSkill: 'SKILL_A' | 'SKILL_B') => {
     if (!isPrepPhase) return;
@@ -404,14 +405,14 @@ export const UnitInspector: React.FC<UnitInspectorProps> = ({
       </div>
 
       {/* Golpes / Habilidades Section (招式 / 特别招式) - Image 2 & 3 */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between mb-0.5">
           <span className="text-[11px] font-black text-amber-400 uppercase tracking-wide">
             Golpes & Habilidades
           </span>
           {isPrepPhase && (
             <span className="text-[9px] text-slate-400">
-              Clique para selecionar o golpe ativo
+              Clique no golpe para alternar ativo
             </span>
           )}
         </div>
@@ -420,21 +421,21 @@ export const UnitInspector: React.FC<UnitInspectorProps> = ({
           {/* Golpe Principal (Skill A) */}
           <div
             onClick={() => handleSkillClick('SKILL_A')}
-            className={`p-2.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center text-center relative ${
+            className={`p-2 rounded-xl border transition-all cursor-pointer flex flex-col items-center text-center relative ${
               unit.activeSkill === 'SKILL_A'
                 ? 'bg-amber-950/40 border-amber-400 ring-2 ring-amber-400/40 shadow-lg'
                 : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
             }`}
           >
             {/* Circular Artwork Frame (Prepped for future custom skill images) */}
-            <div className="w-13 h-13 rounded-full border-2 border-amber-400/80 bg-slate-950 flex items-center justify-center shadow-md relative overflow-hidden mb-1.5">
-              <span className="text-2xl drop-shadow">⚔️</span>
+            <div className="w-11 h-11 rounded-full border-2 border-amber-400/80 bg-slate-950 flex items-center justify-center shadow-md relative overflow-hidden mb-1">
+              <span className="text-xl drop-shadow">⚔️</span>
               {unit.activeSkill === 'SKILL_A' && (
                 <div className="absolute inset-0 bg-amber-400/10 ring-2 ring-amber-400 rounded-full" />
               )}
             </div>
 
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 border border-slate-700 mb-1">
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 border border-slate-700 mb-0.5">
               {baseData.skillA.type === 'SPECIAL' ? 'Especial' : baseData.skillA.type === 'PASSIVE' ? 'Passiva' : 'Golpe Principal'}
             </span>
             <span className="text-xs font-black text-slate-100 truncate max-w-full">
@@ -444,37 +445,46 @@ export const UnitInspector: React.FC<UnitInspectorProps> = ({
               {baseData.skillA.manaCost} Mana
             </span>
 
-            {unit.activeSkill === 'SKILL_A' && (
-              <span className="mt-1 text-[9px] font-black text-amber-300 tracking-wider uppercase">
+            {unit.activeSkill === 'SKILL_A' ? (
+              <span className="mt-1 text-[8px] font-black text-amber-300 tracking-wider uppercase bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/40">
                 ▲ ATIVO
               </span>
+            ) : (
+              <span className="mt-1 text-[8px] font-semibold text-slate-400">
+                Disponível
+              </span>
             )}
+
+            {/* Descrição da Skill A */}
+            <p className="mt-1.5 text-[9px] text-slate-400 line-clamp-2 text-left leading-tight px-0.5">
+              {baseData.skillA.description}
+            </p>
           </div>
 
           {/* Golpe Especial (Skill B) */}
           <div
             onClick={() => handleSkillClick('SKILL_B')}
-            className={`p-2.5 rounded-xl border transition-all flex flex-col items-center text-center relative ${
+            className={`p-2 rounded-xl border transition-all flex flex-col items-center text-center relative ${
               !isEligibleForSkillB
-                ? 'opacity-70 cursor-not-allowed bg-slate-950/60 border-slate-800'
+                ? 'opacity-75 cursor-not-allowed bg-slate-950/60 border-slate-800'
                 : unit.activeSkill === 'SKILL_B'
                 ? 'bg-cyan-950/40 border-cyan-400 ring-2 ring-cyan-400/40 shadow-lg cursor-pointer'
                 : 'bg-slate-900/60 border-slate-800 hover:border-slate-700 cursor-pointer'
             }`}
           >
             {/* Circular Artwork Frame (Prepped for future custom skill images) */}
-            <div className="w-13 h-13 rounded-full border-2 border-cyan-400/80 bg-slate-950 flex items-center justify-center shadow-md relative overflow-hidden mb-1.5">
+            <div className="w-11 h-11 rounded-full border-2 border-cyan-400/80 bg-slate-950 flex items-center justify-center shadow-md relative overflow-hidden mb-1">
               {!isEligibleForSkillB ? (
                 <Lock className="w-5 h-5 text-slate-500" />
               ) : (
-                <span className="text-2xl drop-shadow">🌪️</span>
+                <span className="text-xl drop-shadow">🌪️</span>
               )}
               {unit.activeSkill === 'SKILL_B' && (
                 <div className="absolute inset-0 bg-cyan-400/10 ring-2 ring-cyan-400 rounded-full" />
               )}
             </div>
 
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700 mb-1">
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700 mb-0.5">
               {!isEligibleForSkillB ? '2★ Requerido' : 'Golpe Especial'}
             </span>
             <span className="text-xs font-black text-slate-100 truncate max-w-full">
@@ -485,16 +495,97 @@ export const UnitInspector: React.FC<UnitInspectorProps> = ({
             </span>
 
             {unit.activeSkill === 'SKILL_B' ? (
-              <span className="mt-1 text-[9px] font-black text-cyan-300 tracking-wider uppercase">
+              <span className="mt-1 text-[8px] font-black text-cyan-300 tracking-wider uppercase bg-cyan-500/20 px-1.5 py-0.5 rounded border border-cyan-500/40">
                 ▲ ATIVO
               </span>
             ) : !isEligibleForSkillB ? (
-              <span className="mt-1 text-[8px] font-bold text-slate-500">
-                Bloqueado em 1★
+              <span className="mt-1 text-[8px] font-bold text-slate-500 flex items-center gap-1">
+                <Lock className="w-2.5 h-2.5" /> Bloqueado em 1★
               </span>
-            ) : null}
+            ) : (
+              <span className="mt-1 text-[8px] font-semibold text-slate-400">
+                Disponível
+              </span>
+            )}
+
+            {/* Descrição da Skill B */}
+            <p className="mt-1.5 text-[9px] text-slate-400 line-clamp-2 text-left leading-tight px-0.5">
+              {baseData.skillB.description}
+            </p>
           </div>
         </div>
+
+        {/* HABILIDADE DE DESPERTAR (ORBE DO DESPERTAR) COM CADEADO CONDICIONAL */}
+        {baseData.skillSpecial && (
+          <div
+            className={`p-2.5 rounded-xl border transition-all relative overflow-hidden flex flex-col gap-1.5 ${
+              hasOrbEquipped
+                ? 'bg-gradient-to-r from-purple-950/70 via-purple-900/40 to-slate-900/90 border-purple-500 ring-1 ring-purple-400/50 shadow-[0_0_20px_rgba(168,85,247,0.3)]'
+                : 'bg-slate-950/80 border-purple-950/70 border-dashed'
+            }`}
+          >
+            {/* Cabeçalho da Habilidade de Orbe */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center border shrink-0 shadow-sm ${
+                    hasOrbEquipped
+                      ? 'bg-purple-900/90 border-purple-400 text-purple-200 ring-2 ring-purple-400/40 shadow-[0_0_10px_rgba(168,85,247,0.6)]'
+                      : 'bg-slate-900 border-purple-900/60 text-purple-400/70'
+                  }`}
+                >
+                  {hasOrbEquipped ? (
+                    <span className="text-base animate-pulse">🔮</span>
+                  ) : (
+                    <Lock className="w-4 h-4 text-purple-400" />
+                  )}
+                </div>
+
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-black text-purple-200 truncate">
+                      {baseData.skillSpecial.name}
+                    </span>
+                    <span className="text-[8px] font-black px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-700/60 uppercase">
+                      Despertar
+                    </span>
+                  </div>
+                  <span className="text-[9px] text-purple-400 font-semibold block">
+                    Ativação Suprema de Orbe • {baseData.skillSpecial.manaCost || 100} Mana
+                  </span>
+                </div>
+              </div>
+
+              {/* Status Badge: Cadeado para Bloqueado, ou Desbloqueado com Orbe */}
+              {hasOrbEquipped ? (
+                <span className="flex items-center gap-1 text-[9px] font-black text-fuchsia-300 bg-purple-900/90 border border-purple-400/80 px-2 py-0.5 rounded-full shadow-[0_0_8px_rgba(192,132,252,0.6)] uppercase tracking-wider shrink-0 animate-pulse">
+                  <Sparkles className="w-2.5 h-2.5 text-fuchsia-300" />
+                  Desbloqueado
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-[9px] font-black text-purple-300 bg-purple-950/90 border border-purple-800/80 px-2 py-0.5 rounded-full shadow-inner uppercase tracking-wide shrink-0">
+                  <Lock className="w-2.5 h-2.5 text-purple-400" />
+                  Bloqueado
+                </span>
+              )}
+            </div>
+
+            {/* Informações detalhadas da Habilidade (mantidas visíveis para o jogador conhecer o golpe) */}
+            <div className="bg-slate-950/70 rounded-lg p-2 border border-purple-950/60 text-[10px] text-slate-200 leading-relaxed">
+              <p>{baseData.skillSpecial.description}</p>
+            </div>
+
+            {/* Mensagem Explicativa do Cadeado */}
+            {!hasOrbEquipped && (
+              <div className="flex items-center gap-1.5 text-[9px] text-purple-300/90 bg-purple-950/40 px-2 py-1 rounded border border-purple-900/40">
+                <Lock className="w-3 h-3 text-purple-400 shrink-0" />
+                <span>
+                  Equipe o <strong className="text-purple-200 font-bold">Orbe do Despertar</strong> para liberar este golpe supremo!
+                </span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Bottom Action: Sell Unit during preparation phase */}

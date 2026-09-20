@@ -12,9 +12,9 @@ export type TraitId =
   | 'paramecia'
   | 'logia'
   | 'zoan'
-  | 'marinha'
   | 'shichibukai'
   | 'ladrao'
+  | 'navegadora'
   | 'medroso'
   | 'crush'
   | 'haki';

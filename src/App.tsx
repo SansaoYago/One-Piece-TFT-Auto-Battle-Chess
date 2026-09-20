@@ -38,6 +38,7 @@ import { RightSidebar } from './components/RightSidebar';
 import { ArenaBoard } from './components/ArenaBoard';
 import { Bench } from './components/Bench';
 import { ShopModal } from './components/ShopModal';
+import { MiniShopModal } from './components/MiniShopModal';
 import { UnitInspector } from './components/UnitInspector';
 import { AnimationTestBar } from './components/AnimationTestBar';
 import { ItemDraftModal } from './components/ItemDraftModal';
@@ -139,8 +140,8 @@ export default function App() {
   // Bench slots (8 slots)
   const [benchSlots, setBenchSlots] = useState<(UnitInstance | null)[]>(() => {
     const slots: (UnitInstance | null)[] = Array(8).fill(null);
-    // Inicia com apenas 1 personagem aleatório de Tier 1 no banco
-    const tier1Champions = ['luffy', 'nami', 'usopp', 'buggy', 'tashigi'];
+    // Inicia com apenas 1 personagem aleatório pirata de Tier 1 no banco
+    const tier1Champions = ['luffy', 'nami', 'usopp', 'buggy'];
     const randomChamp = tier1Champions[Math.floor(Math.random() * tier1Champions.length)];
     slots[0] = createUnitInstance(randomChamp, 1, -1, -1, 0, false);
     return slots;
@@ -198,10 +199,13 @@ export default function App() {
     );
   }, []);
 
-  // Shop State
-  const [isShopOpen, setIsShopOpen] = useState<boolean>(true);
+  // Shop State (Round 1: Shop is hidden/closed; unlocks from Round 2 onwards)
+  const [isShopOpen, setIsShopOpen] = useState<boolean>(false);
   const [isShopLocked, setIsShopLocked] = useState<boolean>(false);
   const [shopCards, setShopCards] = useState<(UnitBaseData | null)[]>([]);
+  const [isMiniShopOpen, setIsMiniShopOpen] = useState<boolean>(false);
+  const shopCardsRef = useRef<(UnitBaseData | null)[]>([]);
+  shopCardsRef.current = shopCards;
 
   // Drag-and-Drop Active Transfer State
   const [draggedUnit, setDraggedUnit] = useState<UnitInstance | null>(null);
@@ -856,13 +860,44 @@ export default function App() {
         .every((c) => c.roundCombatStatus && c.roundCombatStatus !== 'FIGHTING');
 
       if (allDone && !autoAdvanceTimerRef.current) {
-        autoAdvanceTimerRef.current = setTimeout(() => {
-          handleProceedToNextRound();
-        }, 1800);
+        if (totalRoundRef.current === 1 && isWin) {
+          // No Round 1: ao derrotar os marinheiros, abre a Mini Loja com 3 personagens Tier 1 e 2!
+          // O avanço para a Rodada 2 ocorrerá após o jogador escolher (ou por tempo limite).
+          setIsMiniShopOpen(true);
+        } else {
+          autoAdvanceTimerRef.current = setTimeout(() => {
+            handleProceedToNextRound();
+          }, 1800);
+        }
       }
 
       return updated;
     });
+  };
+
+  // Handler for Round 1 Victory Mini Shop Choice (Manual selection or Auto-Timeout)
+  const handleSelectMiniShopChampion = (champ: UnitBaseData) => {
+    // 1. Add chosen champion to the first available bench slot
+    const currentBench = [...benchSlotsRef.current];
+    const emptyBenchIndex = currentBench.findIndex((slot) => slot === null);
+    if (emptyBenchIndex !== -1) {
+      const newUnit = createUnitInstance(champ.id, 1, -1, -1, emptyBenchIndex, false);
+      currentBench[emptyBenchIndex] = newUnit;
+      setBenchSlots(currentBench);
+      benchSlotsRef.current = currentBench;
+    } else {
+      const currentBoard = [...boardUnitsRef.current];
+      const newUnit = createUnitInstance(champ.id, 1, 1, 2, -1, false);
+      currentBoard.push(newUnit);
+      setBoardUnits(currentBoard);
+      boardUnitsRef.current = currentBoard;
+    }
+
+    // 2. Close the Mini Shop
+    setIsMiniShopOpen(false);
+
+    // 3. Immediately proceed to Round 2 (Shop becomes visible and opens by default)
+    handleProceedToNextRound();
   };
 
   // Select item from Item Draft Modal
@@ -926,7 +961,7 @@ export default function App() {
     boardUnitsRef.current = [...pveEnemies];
 
     const slots: (UnitInstance | null)[] = Array(8).fill(null);
-    const tier1Champions = ['luffy', 'nami', 'usopp', 'buggy', 'tashigi'];
+    const tier1Champions = ['luffy', 'nami', 'usopp', 'buggy'];
     const randomChamp = tier1Champions[Math.floor(Math.random() * tier1Champions.length)];
     slots[0] = createUnitInstance(randomChamp, 1, -1, -1, 0, false);
     setBenchSlots(slots);
@@ -936,6 +971,10 @@ export default function App() {
     setFloatingTexts([]);
     setAttackEffects([]);
     setBattleOutcome(null);
+    setIsShopOpen(false);
+    setIsMiniShopOpen(false);
+    setIsShopLocked(false);
+    isShopLockedRef.current = false;
     setShopCards(generateShopCards(1));
 
     const initialStates: Record<string, BotPlayerData> = {};
@@ -1126,13 +1165,27 @@ export default function App() {
     setFloatingTexts([]);
     setAttackEffects([]);
 
-    // Always refresh shop for the new round unless locked
-    if (!isShopLockedRef.current) {
-      setShopCards(generateShopCards(levelRef.current));
+    // Da 2ª rodada em diante: loja visível e abre por padrão carregando novos personagens aleatórios
+    if (nextTotalRound >= 2) {
+      setIsShopOpen(true);
+      if (!isShopLockedRef.current) {
+        let newCards = generateShopCards(levelRef.current, restoredPlayerUnits);
+        // Garante que a nova rolagem não seja uma repetição idêntica das cartas anteriores
+        const prevCardIds = shopCardsRef.current.map((c) => c?.id).filter(Boolean).join(',');
+        let attempts = 0;
+        while (newCards.map((c) => c?.id).filter(Boolean).join(',') === prevCardIds && attempts < 4) {
+          newCards = generateShopCards(levelRef.current, restoredPlayerUnits);
+          attempts++;
+        }
+        setShopCards(newCards);
+        shopCardsRef.current = newCards;
+      } else {
+        // Manteve a loja travada nesta rodada; destrava automaticamente para rodadas subsequentes
+        setIsShopLocked(false);
+        isShopLockedRef.current = false;
+      }
     } else {
-      // Retained locked shop for this round; auto-unlock for future rounds
-      setIsShopLocked(false);
-      isShopLockedRef.current = false;
+      setIsShopOpen(false);
     }
   };
 
@@ -1357,12 +1410,14 @@ export default function App() {
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
 
       if (e.key === 'd' || e.key === 'D') {
+        if (totalRoundRef.current <= 1) return; // Loja indisponível no Round 1
         if (isShopOpen) {
           handleRerollShop();
         } else {
           setIsShopOpen(true);
         }
       } else if (e.key === 'f' || e.key === 'F') {
+        if (totalRoundRef.current <= 1) return; // Loja indisponível no Round 1
         handleBuyXp();
       } else if (e.key === ' ') {
         e.preventDefault();
@@ -1399,7 +1454,8 @@ export default function App() {
       if (
         target.closest('[data-unit-slot="true"]') ||
         target.closest('[data-unit-tile="true"]') ||
-        target.closest('[data-arena-tile="true"]')
+        target.closest('[data-arena-tile="true"]') ||
+        target.closest('[data-champion-token="true"]')
       ) {
         return;
       }
@@ -1958,12 +2014,8 @@ export default function App() {
           handleSellUnit(state.unit);
         }
       } else {
-        // Was a tap/click! Toggle unit selection
-        if (selectedUnit?.instanceId === state.unit.instanceId) {
-          setSelectedUnit(null);
-        } else {
-          setSelectedUnit(state.unit);
-        }
+        // Was a tap/click! Select unit to open inspector
+        setSelectedUnit(state.unit);
       }
 
       setPointerDragState(null);
@@ -2494,7 +2546,8 @@ export default function App() {
                   y < 5
                 ) {
                   if (u && u.instanceId === selectedUnit.instanceId) {
-                    setSelectedUnit(null);
+                    // Clicking the already selected unit keeps it selected and inspector open
+                    setSelectedUnit(u);
                   } else {
                     executePlaceOrMoveUnit(selectedUnit, x, y);
                   }
@@ -2553,29 +2606,37 @@ export default function App() {
             xpNeeded={xpNeeded}
           />
 
-          {/* Retractable Golden Shop Modal - Hidden in Test Mode */}
+          {/* Retractable Golden Shop Modal - Hidden in Round 1 & Test Mode */}
           {!isTestMode && (
-            <ShopModal
-              isOpen={isShopOpen}
-              onToggleOpen={() => setIsShopOpen(!isShopOpen)}
-              shopCards={shopCards}
-              gold={gold}
-              level={level}
-              xp={xp}
-              xpNeeded={xpNeeded}
-              isLocked={isShopLocked}
-              onToggleLock={() => setIsShopLocked(!isShopLocked)}
-              onReroll={handleRerollShop}
-              onBuyXp={handleBuyXp}
-              onBuyCard={handleBuyCard}
-              draggedUnit={draggedUnit || (pointerDragState?.isDragging ? pointerDragState.unit : null)}
-              isPointerDragOverSell={pointerDragState?.hoverTarget.type === 'sell'}
-              onSellUnit={handleSellUnit}
-              isViewingOpponentArena={isViewingOpponentArena}
-              opponentName={viewingCommander.name}
-              onReturnToPlayerArena={() => setViewingCommanderId('p1_human')}
-              ownedUnits={[...playerUnitsOnBoard, ...(displayedBenchSlots.filter(Boolean) as UnitInstance[])]}
-            />
+            totalRound <= 1 ? (
+              /* No Round 1: Loja indisponível e invisível; mantém exatamente o mesmo espaço reservado para que o baú (Bench) não escorra para as laterais! */
+              <div
+                className="invisible min-w-[168px] h-[48px] pointer-events-none select-none shrink-0"
+                aria-hidden="true"
+              />
+            ) : (
+              <ShopModal
+                isOpen={isShopOpen}
+                onToggleOpen={() => setIsShopOpen(!isShopOpen)}
+                shopCards={shopCards}
+                gold={gold}
+                level={level}
+                xp={xp}
+                xpNeeded={xpNeeded}
+                isLocked={isShopLocked}
+                onToggleLock={() => setIsShopLocked(!isShopLocked)}
+                onReroll={handleRerollShop}
+                onBuyXp={handleBuyXp}
+                onBuyCard={handleBuyCard}
+                draggedUnit={draggedUnit || (pointerDragState?.isDragging ? pointerDragState.unit : null)}
+                isPointerDragOverSell={pointerDragState?.hoverTarget.type === 'sell'}
+                onSellUnit={handleSellUnit}
+                isViewingOpponentArena={isViewingOpponentArena}
+                opponentName={viewingCommander.name}
+                onReturnToPlayerArena={() => setViewingCommanderId('p1_human')}
+                ownedUnits={[...playerUnitsOnBoard, ...(displayedBenchSlots.filter(Boolean) as UnitInstance[])]}
+              />
+            )
           )}
         </div>
 
@@ -2701,6 +2762,12 @@ export default function App() {
         roundNumber={draftRoundNumber}
         isBossReward={isBossDraft}
         onSelectItem={handleSelectDraftItem}
+      />
+
+      {/* Mini Shop Modal (Round 1 Victory: Recruit 1 of 3 Tier 1-2 Champions with Auto-Timeout) */}
+      <MiniShopModal
+        isOpen={isMiniShopOpen}
+        onSelectChampion={handleSelectMiniShopChampion}
       />
 
       {/* Game Difficulty Selection Modal */}

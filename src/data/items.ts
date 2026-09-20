@@ -96,13 +96,13 @@ export const ITEM_DATABASE: Record<string, ItemData> = {
     grantTrait: 'paramecia',
     applicableTraits: ['paramecia'],
   },
-  chip_marinha: {
-    id: 'chip_marinha',
-    name: '⚓ Emblema da Marinha',
-    icon: '⚓',
-    description: 'Item de Batalha: Concede o traço e +1 ponto de sinergia Marinha.',
-    grantTrait: 'marinha',
-    applicableTraits: ['marinha'],
+  chip_navegadora: {
+    id: 'chip_navegadora',
+    name: '🧭 Emblema da Navegadora',
+    icon: '🧭',
+    description: 'Item de Batalha: Concede o traço e +1 ponto de sinergia Navegadora.',
+    grantTrait: 'navegadora',
+    applicableTraits: ['navegadora'],
   },
   chip_shichibukai: {
     id: 'chip_shichibukai',

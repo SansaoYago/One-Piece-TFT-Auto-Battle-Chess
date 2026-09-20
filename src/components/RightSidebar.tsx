@@ -706,45 +706,56 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                 Marcos de Ativação
               </span>
-              {selectedSynergyData.trait.tiers.map((tier, idx) => {
-                const isReached = selectedSynergyData.count >= tier.count;
-
-                return (
-                  <div
-                    key={idx}
-                    className={`p-2 rounded-xl border transition-all ${
-                      isReached
-                        ? 'bg-amber-950/40 border-amber-400/70 text-amber-200'
-                        : 'bg-slate-950/40 border-slate-800/80 text-slate-500'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-[11px] font-black font-mono flex items-center gap-1.5">
-                        <span
-                          className={`w-4 h-4 rounded flex items-center justify-center text-[9px] font-bold ${
-                            isReached
-                              ? 'bg-amber-400 text-slate-950'
-                              : 'bg-slate-800 text-slate-400'
-                          }`}
-                        >
-                          {tier.count}
-                        </span>
-                        Tier {idx + 1} ({tier.count} Unidades)
-                      </span>
-                      {isReached ? (
-                        <span className="flex items-center gap-1 text-[9px] font-bold text-emerald-400">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Ativo
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-[9px] font-mono text-slate-600">
-                          <Lock className="w-2.5 h-2.5" /> Bloqueado
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[10px] leading-snug">{tier.description}</p>
+              {selectedSynergyData.trait.tiers.length === 0 ? (
+                <div className="p-3 rounded-xl border border-sky-800/60 bg-sky-950/30 text-sky-200 text-xs">
+                  <div className="font-bold text-sky-400 mb-1 flex items-center gap-1.5">
+                    <span>🧭</span> Efeito em Desenvolvimento
                   </div>
-                );
-              })}
+                  <div className="text-[11px] text-slate-300">
+                    O efeito desta classe será introduzido na próxima atualização.
+                  </div>
+                </div>
+              ) : (
+                selectedSynergyData.trait.tiers.map((tier, idx) => {
+                  const isReached = selectedSynergyData.count >= tier.count;
+
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-2 rounded-xl border transition-all ${
+                        isReached
+                          ? 'bg-amber-950/40 border-amber-400/70 text-amber-200'
+                          : 'bg-slate-950/40 border-slate-800/80 text-slate-500'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-[11px] font-black font-mono flex items-center gap-1.5">
+                          <span
+                            className={`w-4 h-4 rounded flex items-center justify-center text-[9px] font-bold ${
+                              isReached
+                                ? 'bg-amber-400 text-slate-950'
+                                : 'bg-slate-800 text-slate-400'
+                            }`}
+                          >
+                            {tier.count}
+                          </span>
+                          Tier {idx + 1} ({tier.count} Unidades)
+                        </span>
+                        {isReached ? (
+                          <span className="flex items-center gap-1 text-[9px] font-bold text-emerald-400">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Ativo
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 text-[9px] font-mono text-slate-600">
+                            <Lock className="w-2.5 h-2.5" /> Bloqueado
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] leading-snug">{tier.description}</p>
+                    </div>
+                  );
+                })
+              )}
             </div>
 
           </div>

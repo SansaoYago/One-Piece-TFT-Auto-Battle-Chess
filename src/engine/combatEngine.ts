@@ -158,12 +158,9 @@ export function initializeCombatUnits(
   // Only include units actually on the board (gridX >= 0, gridY >= 0)
   const activeUnits = boardUnits.filter((u) => u.gridX >= 0 && u.gridY >= 0);
 
-  // Calculate pre-battle synergies for innate stat boosts (Navy armor, Paramecia mana, etc.)
+  // Calculate pre-battle synergies for innate stat boosts (Paramecia mana, etc.)
   const playerSynergies = calculateActiveSynergies(activeUnits, false);
   const enemySynergies = calculateActiveSynergies(activeUnits, true);
-
-  const playerNavyActive = playerSynergies.some((s) => s.trait.id === 'marinha' && s.activeTierIndex >= 0);
-  const enemyNavyActive = enemySynergies.some((s) => s.trait.id === 'marinha' && s.activeTierIndex >= 0);
 
   const playerParameciaActive = playerSynergies.some((s) => s.trait.id === 'paramecia' && s.activeTierIndex >= 0);
   const enemyParameciaActive = enemySynergies.some((s) => s.trait.id === 'paramecia' && s.activeTierIndex >= 0);
@@ -179,10 +176,8 @@ export function initializeCombatUnits(
       finalAd = Math.round(unit.ad * difficultyMultiplier.ad);
     }
 
-    // Marinha bonus: +30 Armor and +30 MR to all units on that team
-    const teamNavy = unit.isEnemy ? enemyNavyActive : playerNavyActive;
-    const finalArmor = unit.armor + (teamNavy ? 30 : 0);
-    const finalMr = unit.mr + (teamNavy ? 30 : 0);
+    const finalArmor = unit.armor;
+    const finalMr = unit.mr;
 
     // Paramecia bonus: +20 Start Mana
     const teamParamecia = unit.isEnemy ? enemyParameciaActive : playerParameciaActive;

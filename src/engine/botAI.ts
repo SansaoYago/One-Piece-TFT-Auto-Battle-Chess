@@ -1,6 +1,12 @@
 import { GameDifficulty, StarLevel, UnitInstance } from '../types/game';
 import { CHAMPION_DATABASE } from '../data/units';
-import { createUnitInstance, THREE_STAR_CHANCE_BY_TIER } from '../utils/gameUtils';
+import {
+  createUnitInstance,
+  THREE_STAR_CHANCE_BY_TIER,
+  getEquivalentLevelForRound,
+  getAllowedTiersForLevel,
+  LEVEL_MAX_SLOTS,
+} from '../utils/gameUtils';
 
 export interface BotOpponent {
   id: string;
@@ -24,7 +30,7 @@ export const BOT_ARCHETYPES: BotSynergyArchetype[] = [
     id: 'brawlers_fury',
     name: 'Batalhão dos Punhos (Brigão + Paramecia + Zoan)',
     primarySynergies: ['brigao', 'paramecia', 'zoan'],
-    unitPriority: ['luffy', 'sanji', 'zoro', 'chopper', 'buggy', 'boa_hancock'],
+    unitPriority: ['luffy', 'buggy', 'zoro', 'sanji', 'chopper', 'boa_hancock'],
     preferredItems: {
       luffy: ['armadura_couro', 'escudo_madeira'],
       sanji: ['espada_ferro', 'orbe_despertar'],
@@ -34,22 +40,22 @@ export const BOT_ARCHETYPES: BotSynergyArchetype[] = [
     description: 'Linha de frente implacável com roubo de vida sustentado e velocidade de ataque acumulativa.',
   },
   {
-    id: 'navy_fleet',
-    name: 'Esquadra da Marinha (Marinha + Espadachim + Logia)',
-    primarySynergies: ['marinha', 'espadachim', 'logia'],
-    unitPriority: ['tashigi', 'smoker', 'marine_recruit_1', 'zoro', 'mihawk', 'marine_recruit_2'],
+    id: 'strawhat_crew',
+    name: 'Bando do Chapéu de Palha (Brigão + Zoan + Espadachim)',
+    primarySynergies: ['brigao', 'zoan', 'espadachim'],
+    unitPriority: ['luffy', 'nami', 'usopp', 'zoro', 'sanji', 'chopper'],
     preferredItems: {
-      smoker: ['armadura_couro', 'escudo_madeira'],
-      tashigi: ['espada_ferro'],
-      mihawk: ['espada_ferro', 'orbe_despertar'],
+      luffy: ['armadura_couro', 'escudo_madeira'],
+      zoro: ['espada_ferro', 'orbe_despertar'],
+      sanji: ['espada_ferro'],
     },
-    description: 'Bônus massivo de armadura e resistência mágica naval (+30), protegendo retaguarda com fumaça.',
+    description: 'Trabalho em equipe lendário dos Mugiwaras, combinando força bruta, espada afiada e agilidade.',
   },
   {
     id: 'warlords_cabal',
     name: 'Aliança dos Corsários (Shichibukai + Logia + Espadachim)',
     primarySynergies: ['shichibukai', 'logia', 'espadachim'],
-    unitPriority: ['crocodile', 'mihawk', 'smoker', 'boa_hancock', 'zoro', 'buggy'],
+    unitPriority: ['buggy', 'zoro', 'crocodile', 'boa_hancock', 'mihawk', 'sanji'],
     preferredItems: {
       crocodile: ['orbe_despertar'],
       mihawk: ['espada_ferro', 'orbe_despertar'],
@@ -59,9 +65,9 @@ export const BOT_ARCHETYPES: BotSynergyArchetype[] = [
   },
   {
     id: 'blade_masters',
-    name: 'Mestres da Lâmina (Espadachim Puro + Marinha + Haki)',
-    primarySynergies: ['espadachim', 'marinha', 'haki'],
-    unitPriority: ['zoro', 'tashigi', 'mihawk', 'shanks', 'marine_recruit_1', 'smoker'],
+    name: 'Mestres da Lâmina (Espadachim Puro + Haki + Shichibukai)',
+    primarySynergies: ['espadachim', 'haki', 'shichibukai'],
+    unitPriority: ['zoro', 'buggy', 'luffy', 'sanji', 'crocodile', 'mihawk', 'shanks'],
     preferredItems: {
       zoro: ['espada_ferro', 'orbe_despertar'],
       mihawk: ['espada_ferro'],
@@ -114,10 +120,10 @@ export const BOT_OPPONENTS: BotOpponent[] = [
   },
   {
     id: 'bot-5',
-    name: 'Smoker & Tashigi',
-    avatarUrl: '💨',
-    theme: 'Marinha G-5',
-    units: ['smoker', 'tashigi', 'coby', 'helmeppo'],
+    name: 'Trafalgar Law',
+    avatarUrl: '⚡',
+    theme: 'Piratas do Coração',
+    units: ['law', 'bepo', 'jean_bart', 'shachi'],
   },
   {
     id: 'bot-6',
@@ -128,10 +134,10 @@ export const BOT_OPPONENTS: BotOpponent[] = [
   },
   {
     id: 'bot-7',
-    name: 'Rob Lucci',
-    avatarUrl: '🐆',
-    theme: 'CP9 Governo',
-    units: ['lucci', 'kaku', 'jabra', 'blueno', 'kalifa'],
+    name: 'Eustass Kid',
+    avatarUrl: '🧲',
+    theme: 'Piratas do Kid',
+    units: ['kid', 'killer', 'heat', 'wire'],
   },
 ];
 
@@ -143,7 +149,7 @@ export function isPvEBossRound(totalRound: number): boolean {
 /**
  * Generates enemy board units matching stage, round, totalRound, and selected difficulty.
  * - On Easy: casual champion selection with basic 1-star units.
- * - On Medium: creates cohesive synergy archetypes (Brawlers, Navy, Blade Masters) with tactical front/backline placement.
+ * - On Medium: creates cohesive synergy archetypes with tactical front/backline placement.
  * - On Hard: advanced combined synergies, earlier 2-star/3-star promotions, and equipped synergy items.
  */
 export function generateEnemyBoardUnits(
@@ -152,7 +158,7 @@ export function generateEnemyBoardUnits(
   totalRound: number = 1,
   difficulty: GameDifficulty = 'medium'
 ): UnitInstance[] {
-  // Round 1: PvE Initial 2 basic recruits
+  // Round 1: PvE Initial 2 marinheiros simples
   if (totalRound === 1) {
     return [
       createUnitInstance('marine_recruit_1', 1, 5, 2, null, true),
@@ -164,46 +170,49 @@ export function generateEnemyBoardUnits(
   if (totalRound % 6 === 0) {
     const bossLevel = Math.floor(totalRound / 6);
     if (bossLevel === 1) {
-      // Round 6: Mini-Boss Smoker 2★ + Recrutas
+      // Round 6: 1º Boss - Morgan Mão de Machado e seus capangas
+      return [
+        createUnitInstance('morgan_axe_hand', 2, 5, 2, null, true),
+        createUnitInstance('marine_capanga_1', 1, 6, 1, null, true),
+        createUnitInstance('marine_capanga_2', 1, 6, 4, null, true),
+      ];
+    } else if (bossLevel === 2) {
+      // Round 12: 2º Boss - Smoker, Tashigi e marinheiros simples
       return [
         createUnitInstance('smoker', 2, 5, 2, null, true),
+        createUnitInstance('tashigi', 2, 5, 3, null, true),
         createUnitInstance('marine_recruit_1', 1, 6, 1, null, true),
         createUnitInstance('marine_recruit_2', 1, 6, 4, null, true),
       ];
-    } else if (bossLevel === 2) {
-      // Round 12: Boss Crocodile 2★ + Baroque Works
-      return [
-        createUnitInstance('crocodile', 2, 5, 2, null, true),
-        createUnitInstance('buggy', 2, 6, 1, null, true),
-        createUnitInstance('tashigi', 2, 5, 4, null, true),
-        createUnitInstance('marine_recruit_1', 2, 7, 2, null, true),
-      ];
     } else if (bossLevel === 3) {
-      // Round 18: Boss Rob Lucci / Zoro 3★
+      // Round 18: 3º Boss - Agência Secreta CP9 (Rob Lucci, Kaku, Blueno)
       return [
-        createUnitInstance('zoro', 3, 5, 2, null, true),
-        createUnitInstance('sanji', 2, 5, 1, null, true),
-        createUnitInstance('chopper', 2, 5, 4, null, true),
-        createUnitInstance('smoker', 2, 7, 3, null, true),
+        createUnitInstance('rob_lucci_cp9', 2, 5, 2, null, true),
+        createUnitInstance('cp9_agent_kaku', 2, 5, 4, null, true),
+        createUnitInstance('cp9_agent_blueno', 2, 5, 1, null, true),
+        createUnitInstance('marine_capanga_1', 2, 6, 3, null, true),
       ];
     } else {
-      // Round 24+: Boss Shanks / Mihawk
+      // Round 24+: Boss Final - Almirante Kizaru e Elite da Marinha
       return [
-        createUnitInstance('shanks', 2, 5, 2, null, true),
-        createUnitInstance('mihawk', 2, 6, 3, null, true),
-        createUnitInstance('crocodile', 2, 6, 1, null, true),
-        createUnitInstance('zoro', 2, 7, 4, null, true),
+        createUnitInstance('admiral_kizaru', 2, 6, 2, null, true),
+        createUnitInstance('marine_elite_guard_1', 2, 5, 1, null, true),
+        createUnitInstance('marine_elite_guard_2', 2, 5, 3, null, true),
+        createUnitInstance('smoker', 2, 5, 4, null, true),
       ];
     }
   }
 
   // Determine enemy board slot capacity (strictly balanced with player progression):
-  // Round 2: 2 units (player is Level 2 with 2 slots!)
-  // Round 3: 2 units (or 3 on Hard to pressure player economy!)
+  // Round 2: 2 units (player is Level 3 with 2 slots)
+  // Round 3: 2 units (or 3 on Hard)
   // Stage 2 (rounds 4-5): 3 units
   // Stage 3 (rounds 7-9): 4 units
   // Stage 4 (rounds 10-12): 4-5 units
   // Stage 5+ (rounds 13+): 5-6 units
+  const botLevel = getEquivalentLevelForRound(totalRound);
+  const allowedTiers = getAllowedTiersForLevel(botLevel);
+
   let unitCount = 2;
   if (totalRound === 2) {
     unitCount = 2;
@@ -220,18 +229,22 @@ export function generateEnemyBoardUnits(
   } else {
     unitCount = 6;
   }
-  unitCount = Math.min(6, Math.max(2, unitCount));
+  const maxSlots = LEVEL_MAX_SLOTS[botLevel] || 3;
+  unitCount = Math.min(6, Math.min(unitCount, maxSlots));
 
-  // EASY MODE: Casual, randomized pool with 1-star units
+  // EASY MODE: Casual, randomized pool with 1-star units strictly in allowed tiers
   if (difficulty === 'easy') {
-    const pool = Object.keys(CHAMPION_DATABASE).filter((k) => !CHAMPION_DATABASE[k].isEnemy);
+    const pool = Object.keys(CHAMPION_DATABASE).filter(
+      (k) => !CHAMPION_DATABASE[k].isEnemy && allowedTiers.has(CHAMPION_DATABASE[k].cost)
+    );
+    const safePool = pool.length > 0 ? pool : ['luffy', 'buggy', 'nami', 'usopp'];
     const botIdx = (stage * 3 + roundInStage + totalRound) % BOT_OPPONENTS.length;
     const enemyUnits: UnitInstance[] = [];
     const cols = [5, 6, 4, 7];
     const rows = [1, 2, 3, 0, 4];
 
     for (let i = 0; i < unitCount; i++) {
-      const champKey = pool[(botIdx * 3 + i * 2) % pool.length] || 'luffy';
+      const champKey = safePool[(botIdx * 3 + i * 2) % safePool.length] || 'luffy';
       const col = cols[i % cols.length];
       const row = rows[i % rows.length];
       const stars: StarLevel = totalRound >= 12 && i === 0 ? 2 : 1;
@@ -241,19 +254,35 @@ export function generateEnemyBoardUnits(
     return enemyUnits;
   }
 
-  // MEDIUM & HARD MODES: Intelligent synergy-based team construction
+  // MEDIUM & HARD MODES: Intelligent synergy-based team construction respecting shop tier odds
   const archetypeIdx = (stage + roundInStage + totalRound) % BOT_ARCHETYPES.length;
   const archetype = BOT_ARCHETYPES[archetypeIdx];
 
-  // Select top N units from the archetype to guarantee synergy activation
+  // Filter archetype priority strictly by allowed tiers
+  const validArchChamps = archetype.unitPriority.filter((id) => {
+    const data = CHAMPION_DATABASE[id];
+    return data && !data.isEnemy && allowedTiers.has(data.cost);
+  });
+
+  // Global fallback pool for any missing slots, strictly filtered by allowed tiers
+  const allEligiblePirates = Object.keys(CHAMPION_DATABASE).filter(
+    (k) => !CHAMPION_DATABASE[k].isEnemy && allowedTiers.has(CHAMPION_DATABASE[k].cost)
+  );
+
+  const candidateChamps = [...validArchChamps];
+  allEligiblePirates.forEach((k) => {
+    if (!candidateChamps.includes(k)) {
+      candidateChamps.push(k);
+    }
+  });
+  if (candidateChamps.length === 0) {
+    candidateChamps.push('luffy', 'buggy', 'nami', 'usopp');
+  }
+
+  // Select top N units from the archetype to guarantee synergy activation without breaking tier progression
   const selectedChamps: string[] = [];
   for (let i = 0; i < unitCount; i++) {
-    const champId = archetype.unitPriority[i] || archetype.unitPriority[i % archetype.unitPriority.length];
-    if (champId && CHAMPION_DATABASE[champId]) {
-      selectedChamps.push(champId);
-    } else {
-      selectedChamps.push('luffy');
-    }
+    selectedChamps.push(candidateChamps[i % candidateChamps.length]);
   }
 
   // Separate frontline (melee, range 1) and backline (ranged, range >= 2)

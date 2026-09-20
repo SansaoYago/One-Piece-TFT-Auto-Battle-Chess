@@ -37,6 +37,43 @@ export const SHOP_ODDS_BY_LEVEL: Record<number, number[]> = {
 };
 
 /**
+ * Retorna o nível de comandante correspondente a uma rodada do jogo,
+ * espelhando exatamente a progressão orgânica do jogador humano.
+ * - Round 1: Nível 2
+ * - Round 2-3: Nível 3 (como o jogador no início)
+ * - Round 4-5: Nível 4
+ * - Round 6-8: Nível 5
+ * - Round 9-11: Nível 6
+ * - Round 12-14: Nível 7
+ * - Round 15+: Nível 8
+ */
+export function getEquivalentLevelForRound(totalRound: number): number {
+  if (totalRound <= 1) return 2;
+  if (totalRound <= 3) return 3;
+  if (totalRound <= 5) return 4;
+  if (totalRound <= 8) return 5;
+  if (totalRound <= 11) return 6;
+  if (totalRound <= 14) return 7;
+  return 8;
+}
+
+/**
+ * Retorna os Tiers (custos de 1 a 5) que possuem probabilidade MAIOR QUE ZERO
+ * de aparecer na Loja para o nível informado (SHOP_ODDS_BY_LEVEL).
+ * Qualquer tier com 0% de probabilidade é estritamente proibido de ser gerado em bots.
+ */
+export function getAllowedTiersForLevel(level: number): Set<number> {
+  const odds = SHOP_ODDS_BY_LEVEL[level] || [100, 0, 0, 0, 0];
+  const allowed = new Set<number>();
+  odds.forEach((chance, idx) => {
+    if (chance > 0) {
+      allowed.add(idx + 1);
+    }
+  });
+  return allowed;
+}
+
+/**
  * Alturas oficiais de One Piece (em metros).
  * Chopper: 1.00m (Brain Point / rena pequena, proporcional a Luffy 1.74m)
  * Luffy: 1.74m
@@ -69,6 +106,15 @@ export const CHAMPION_CANONICAL_HEIGHTS: Record<string, number> = {
   shanks: 1.99,
   smoker: 2.09,
   smoke: 2.09,
+  rob_lucci_cp9: 2.12,
+  cp9_agent_kaku: 1.93,
+  cp9_agent_blueno: 2.58,
+  morgan_axe_hand: 2.85,
+  admiral_kizaru: 3.02,
+  marine_capanga_1: 1.80,
+  marine_capanga_2: 1.80,
+  marine_elite_guard_1: 1.85,
+  marine_elite_guard_2: 1.85,
   crocodile: 2.53,
   chopper_monster: 3.00, // Monster Chopper é exatamente 3x Tony Tony Chopper (1.00m)
 };
