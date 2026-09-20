@@ -87,7 +87,7 @@ function configureAutoUpdater() {
     sendLauncherStatus('downloaded', { version: info.version });
   });
   autoUpdater.on('error', (error) => {
-    sendLauncherStatus('offline', { message: error.message });
+    sendLauncherStatus('offline', { message: error.message, version: app.getVersion() });
   });
 }
 
@@ -109,7 +109,7 @@ app.whenReady().then(() => {
   }
 
   autoUpdater.checkForUpdates().catch((error) => {
-    sendLauncherStatus('offline', { message: error.message });
+    sendLauncherStatus('offline', { message: error.message, version: app.getVersion() });
   });
 });
 
