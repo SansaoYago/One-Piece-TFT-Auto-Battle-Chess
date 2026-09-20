@@ -9,6 +9,7 @@ import {
   AvailableRoomSummary,
 } from '../src/types/multiplayer';
 import { UnitInstance } from '../src/types/game';
+import { serverSyncRoomToFirestore, serverDeleteRoomFromFirestore } from './firestoreSync';
 
 // Standard auto-battler pool copies by tier
 const POOL_SIZE_BY_TIER: Record<number, number> = {
@@ -188,6 +189,7 @@ export class RoomManager {
     socket.join(roomId);
     socket.emit('s2c_room_joined', { room, localPlayerId: socket.id });
     this.broadcastRoomsList();
+    serverSyncRoomToFirestore(room).catch(() => {});
     return room;
   }
 
@@ -269,6 +271,7 @@ export class RoomManager {
     socket.emit('s2c_room_joined', { room, localPlayerId: socket.id });
     this.io.to(room.roomId).emit('s2c_room_state_updated', { room });
     this.broadcastRoomsList();
+    serverSyncRoomToFirestore(room).catch(() => {});
     return true;
   }
 
@@ -321,6 +324,7 @@ export class RoomManager {
 
     this.io.to(roomId).emit('s2c_game_started', { room });
     this.broadcastRoomsList();
+    serverSyncRoomToFirestore(room).catch(() => {});
     this.startRoomClock(room);
     return true;
   }
@@ -412,6 +416,15 @@ export class RoomManager {
       const opponent = room.players.find((p) => p.id === opponentId);
       const oppSubmission = opponentId ? submissions.get(opponentId) : null;
 
+      let oppUnits: any[] = [];
+      if (oppSubmission && oppSubmission.units && oppSubmission.units.length > 0) {
+        oppUnits = oppSubmission.units;
+      } else if (opponent?.boardUnits && opponent.boardUnits.length > 0) {
+        oppUnits = opponent.boardUnits;
+      } else if (opponent) {
+        oppUnits = this.generateBotUnits(opponent, room.stage, room.roundInStage);
+      }
+
       // Send to this player their opponent's info and board units
       this.io.to(player.id).emit('s2c_start_combat', {
         opponent: opponent
@@ -422,7 +435,7 @@ export class RoomManager {
               hp: opponent.hp,
               level: opponent.level,
               isBot: opponent.isBot,
-              units: oppSubmission ? oppSubmission.units : opponent.boardUnits || [],
+              units: oppUnits,
             }
           : null,
         isGhost: pairing?.isGhost || false,
@@ -432,6 +445,50 @@ export class RoomManager {
 
     // Clear submissions for next round
     submissions.clear();
+  }
+
+  // Generate units for bots (or humans who have not deployed any units)
+  private generateBotUnits(player: MultiplayerPlayer, stage: number, roundInStage: number): any[] {
+    const totalRound = (stage - 1) * 4 + roundInStage;
+    const unitCount = Math.min(6, Math.max(1, Math.floor(stage + (roundInStage > 2 ? 1 : 0))));
+    const championPool = [
+      'luffy', 'zoro', 'nami', 'usopp', 'sanji', 'chopper', 'buggy', 'kuro', 'arlong', 'smoker'
+    ];
+    const playerSeed = player.id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+    const units = [];
+    const positions = [
+      { x: 1, y: 2 },
+      { x: 2, y: 1 },
+      { x: 2, y: 3 },
+      { x: 0, y: 2 },
+      { x: 1, y: 1 },
+      { x: 1, y: 3 },
+    ];
+
+    for (let i = 0; i < unitCount; i++) {
+      const champId = championPool[(playerSeed + i + stage) % championPool.length];
+      const pos = positions[i % positions.length];
+      const stars = totalRound >= 8 && i === 0 ? 2 : 1;
+      units.push({
+        instanceId: `bot_unit_${player.id}_${i}_${totalRound}_${Date.now()}`,
+        unitId: champId,
+        stars,
+        gridX: pos.x,
+        gridY: pos.y,
+        hp: 600,
+        maxHp: 600,
+        mana: 0,
+        maxMana: 100,
+        attackDamage: 55,
+        attackSpeed: 0.7,
+        armor: 20,
+        magicResist: 20,
+        range: 1,
+        items: [],
+        isEnemy: false,
+      });
+    }
+    return units;
   }
 
   // Transition to Resolution
@@ -602,6 +659,7 @@ export class RoomManager {
           clearInterval(this.roomTimers.get(roomId)!);
           this.roomTimers.delete(roomId);
         }
+        serverDeleteRoomFromFirestore(roomId).catch(() => {});
       } else {
         // Reassign host if host left
         if (room.hostId === socket.id) {
@@ -609,6 +667,7 @@ export class RoomManager {
           room.players[0].isHost = true;
         }
         this.io.to(roomId).emit('s2c_room_state_updated', { room });
+        serverSyncRoomToFirestore(room).catch(() => {});
       }
       this.broadcastRoomsList();
     } else {

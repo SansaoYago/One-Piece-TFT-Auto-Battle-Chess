@@ -54,6 +54,7 @@ import { ChampionVisual } from './components/ChampionVisual';
 import { multiplayerClient } from './utils/multiplayerClient';
 import { MultiplayerRoomState, EmoteMessage, AvailableRoomSummary } from './types/multiplayer';
 import { MultiplayerLobbyModal } from './components/MultiplayerLobbyModal';
+import { subscribeToActiveRoomsFirestore, fetchActiveRoomsFirestore } from './services/firebase';
 
 export default function App() {
   // === Global Preloading Pipeline State ===
@@ -532,9 +533,43 @@ export default function App() {
     // Setup enemies on board: Keep player's own units and load the scheduled match's enemies
     let combatBoardUnits = updatedBoard.filter((u) => !u.isEnemy);
 
-    if (isMultiplayerActiveRef.current && multiplayerOpponentRef.current) {
+    if (isMultiplayerActiveRef.current) {
+      // In multiplayer: guarantee player has at least 1 deployed combatant
+      if (combatBoardUnits.length === 0) {
+        const bIdx = updatedBench.findIndex((b) => b !== null);
+        if (bIdx !== -1) {
+          const bUnit = updatedBench[bIdx]!;
+          const movedUnit: UnitInstance = {
+            ...bUnit,
+            gridX: 1,
+            gridY: 2,
+            benchIndex: null,
+          };
+          combatBoardUnits.push(movedUnit);
+          updatedBoard.push(movedUnit);
+          updatedBench[bIdx] = null;
+          setBoardUnits(updatedBoard);
+          boardUnitsRef.current = updatedBoard;
+          setBenchSlots(updatedBench);
+          benchSlotsRef.current = updatedBench;
+        } else {
+          const fallback = createUnitInstance('luffy', 1, 1, 2, null, false);
+          combatBoardUnits.push(fallback);
+        }
+      }
+
+      // Opponent units: retrieve from opponent or fallback to round-balanced AI enemies
       const opp = multiplayerOpponentRef.current;
-      const oppUnits = opp.units || [];
+      let oppUnits = (opp && opp.units && opp.units.length > 0) ? opp.units : [];
+      if (oppUnits.length === 0) {
+        oppUnits = generateEnemyBoardUnits(
+          stageRef.current,
+          roundInStageRef.current,
+          totalRoundRef.current,
+          'medium'
+        ).map((e) => ({ ...e, isEnemy: false }));
+      }
+
       const enemyUnits: UnitInstance[] = oppUnits.map((u, idx) => ({
         ...u,
         instanceId: `net_opp_${u.unitId}_${idx}_${Date.now()}`,
@@ -904,7 +939,7 @@ export default function App() {
         .filter((c) => !c.isEliminated)
         .every((c) => c.roundCombatStatus && c.roundCombatStatus !== 'FIGHTING');
 
-      if (allDone && !autoAdvanceTimerRef.current) {
+      if (!isMultiplayerActiveRef.current && allDone && !autoAdvanceTimerRef.current) {
         if (totalRoundRef.current === 1 && isWin) {
           // No Round 1: ao derrotar os marinheiros, abre a Mini Loja com 3 personagens Tier 1 e 2!
           // O avanço para a Rodada 2 ocorrerá após o jogador escolher (ou por tempo limite).
@@ -1423,7 +1458,7 @@ export default function App() {
                 .filter((c) => !c.isEliminated)
                 .every((c) => c.roundCombatStatus && c.roundCombatStatus !== 'FIGHTING');
 
-              if (allDone && !autoAdvanceTimerRef.current) {
+              if (!isMultiplayerActiveRef.current && allDone && !autoAdvanceTimerRef.current) {
                 autoAdvanceTimerRef.current = setTimeout(() => {
                   handleProceedToNextRound();
                 }, 1800);
@@ -1436,7 +1471,7 @@ export default function App() {
       }
     }
 
-    if (countdown <= 0) {
+    if (!isMultiplayerActive && countdown <= 0) {
       if (phase === 'PREPARATION') {
         startCombatPhase();
       } else if (phase === 'COMBAT') {
@@ -1499,6 +1534,27 @@ export default function App() {
       const computedTotalRound = (room.stage - 1) * 4 + room.roundInStage;
       setTotalRound(computedTotalRound);
       totalRoundRef.current = computedTotalRound;
+
+      // Auto-deploy starting unit from bench to board if arena is currently empty
+      const currentBench = [...benchSlotsRef.current];
+      const playerBoard = boardUnitsRef.current.filter((u) => !u.isEnemy && u.gridX >= 0);
+      if (playerBoard.length === 0) {
+        const bIdx = currentBench.findIndex((b) => b !== null);
+        if (bIdx !== -1) {
+          const placed = { ...currentBench[bIdx]!, gridX: 1, gridY: 2, benchIndex: null };
+          currentBench[bIdx] = null;
+          setBenchSlots(currentBench);
+          benchSlotsRef.current = currentBench;
+          const newBoard = [placed];
+          setBoardUnits(newBoard);
+          boardUnitsRef.current = newBoard;
+          multiplayerClient.submitBoard({
+            units: newBoard,
+            level: 1,
+            gold: 4,
+          });
+        }
+      }
     };
 
     multiplayerClient.onPhaseTick = (data) => {
@@ -1509,9 +1565,23 @@ export default function App() {
       setRoundInStage(data.roundInStage);
       setRoundStage(data.roundStage);
 
-      // Auto-submit board right before preparation ends
-      if (data.phase === 'PREPARATION' && data.countdown === 2) {
-        const myUnits = boardUnitsRef.current.filter((u) => !u.isEnemy && u.gridX >= 0 && u.gridY >= 0);
+      // Auto-submit board right before preparation ends (countdown <= 3)
+      if (data.phase === 'PREPARATION' && data.countdown <= 3) {
+        let myUnits = boardUnitsRef.current.filter((u) => !u.isEnemy && u.gridX >= 0 && u.gridY >= 0);
+        if (myUnits.length === 0) {
+          const bench = [...benchSlotsRef.current];
+          const bIdx = bench.findIndex((b) => b !== null);
+          if (bIdx !== -1) {
+            const placed = { ...bench[bIdx]!, gridX: 1, gridY: 2, benchIndex: null };
+            bench[bIdx] = null;
+            setBenchSlots(bench);
+            benchSlotsRef.current = bench;
+            const nextB = [...boardUnitsRef.current.filter((u) => !u.isEnemy), placed];
+            setBoardUnits(nextB);
+            boardUnitsRef.current = nextB;
+            myUnits = [placed];
+          }
+        }
         multiplayerClient.submitBoard({
           units: myUnits,
           level: levelRef.current,
@@ -1585,10 +1655,18 @@ export default function App() {
     };
   }, []);
 
-  // Fetch available rooms whenever the multiplayer modal is opened
+  // Fetch available rooms whenever the multiplayer modal is opened (both socket and Cloud Firestore)
   useEffect(() => {
     if (isMultiplayerModalOpen) {
       multiplayerClient.fetchRoomsList();
+      const unsubscribe = subscribeToActiveRoomsFirestore((firestoreRooms) => {
+        if (firestoreRooms && firestoreRooms.length > 0) {
+          setAvailableRooms(firestoreRooms);
+        }
+      });
+      return () => {
+        unsubscribe();
+      };
     }
   }, [isMultiplayerModalOpen]);
 
@@ -3108,6 +3186,9 @@ export default function App() {
         availableRooms={availableRooms}
         onRefreshRooms={() => {
           multiplayerClient.fetchRoomsList();
+          fetchActiveRoomsFirestore().then((rooms) => {
+            if (rooms && rooms.length > 0) setAvailableRooms(rooms);
+          }).catch(() => {});
         }}
         serverUrl={serverUrl}
         onUpdateServerUrl={(url) => {
@@ -3127,6 +3208,13 @@ export default function App() {
         }}
         onJoinRoom={(roomCodeOrId, playerName, avatar, commanderId) => {
           setMultiplayerError(null);
+          const matched = availableRooms.find(
+            (r) => r.roomId === roomCodeOrId || r.roomCode === roomCodeOrId || r.id === roomCodeOrId || r.code === roomCodeOrId
+          );
+          if (matched && matched.serverUrl && matched.serverUrl.startsWith('http')) {
+            multiplayerClient.setServerUrl(matched.serverUrl);
+            setServerUrl(matched.serverUrl);
+          }
           multiplayerClient.joinRoom(roomCodeOrId, playerName, avatar, commanderId);
         }}
         onStartGame={() => {

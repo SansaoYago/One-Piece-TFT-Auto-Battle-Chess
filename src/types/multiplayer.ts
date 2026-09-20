@@ -74,11 +74,16 @@ export interface CombatResultSubmission {
 export interface AvailableRoomSummary {
   roomId: string;
   roomCode: string;
+  id?: string;
+  name?: string;
+  code?: string;
   hostId: string;
   hostName: string;
   hostAvatar: string;
   playerCount: number;
   maxPlayers: number;
   status: RoomStatus;
+  createdAt?: number;
+  serverUrl?: string;
 }
 

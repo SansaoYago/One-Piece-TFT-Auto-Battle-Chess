@@ -1,0 +1,26 @@
+{
+  "entities": {
+    "Room": {
+      "collection": "rooms",
+      "fields": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "hostId": { "type": "string" },
+        "hostName": { "type": "string" },
+        "hostAvatar": { "type": "string" },
+        "status": { "type": "string" },
+        "playerCount": { "type": "number" },
+        "maxPlayers": { "type": "number" },
+        "players": { "type": "array" },
+        "serverUrl": { "type": "string" },
+        "stage": { "type": "number" },
+        "roundInStage": { "type": "number" },
+        "roundStage": { "type": "string" },
+        "phase": { "type": "string" },
+        "countdown": { "type": "number" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      }
+    }
+  }
+}

@@ -319,12 +319,17 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
                   {/* Top Bar with Refresh Button */}
                   <div className="flex items-center justify-between">
                     <div>
-                      <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                        Salas Abertas em Tempo Real
-                      </h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                          Salas Abertas em Tempo Real
+                        </h3>
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                          Cloud Firestore
+                        </span>
+                      </div>
                       <p className="text-[11px] text-slate-400">
-                        Não precisa de código. Se houver uma sala disponível, ela aparece abaixo:
+                        Multiplataforma: sincronização instantânea entre Navegador, Celular e Desktop (.exe)
                       </p>
                     </div>
 
