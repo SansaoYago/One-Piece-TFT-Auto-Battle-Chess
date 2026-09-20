@@ -1,6 +1,19 @@
 import React, { useState } from 'react';
 import { UnitBaseData, UnitInstance } from '../types/game';
-import { ShoppingBag, RefreshCw, ArrowUpCircle, Lock, Unlock, Sparkles, Star, ChevronUp, ChevronDown, DollarSign, Trash2, ArrowLeftCircle, Eye } from 'lucide-react';
+import {
+  ShoppingBag,
+  RefreshCw,
+  ArrowUpCircle,
+  Lock,
+  Unlock,
+  Sparkles,
+  Star,
+  ChevronUp,
+  ChevronDown,
+  Trash2,
+  ArrowLeftCircle,
+  X,
+} from 'lucide-react';
 import { SHOP_ODDS_BY_LEVEL, calculateUnitSellValue } from '../utils/gameUtils';
 import { SYNERGY_DATABASE } from '../data/synergies';
 import { ChampionVisual } from './ChampionVisual';
@@ -23,38 +36,53 @@ interface ShopModalProps {
   isViewingOpponentArena?: boolean;
   opponentName?: string;
   onReturnToPlayerArena?: () => void;
+  ownedUnits?: UnitInstance[];
+  isPointerDragOverSell?: boolean;
 }
 
-const TIER_COLORS: Record<number, { border: string; bg: string; text: string; badge: string }> = {
+const TIER_COLORS: Record<
+  number,
+  { border: string; bg: string; text: string; badge: string; glow: string; name: string }
+> = {
   1: {
-    border: 'border-slate-600',
-    bg: 'from-slate-900 to-slate-950',
-    text: 'text-slate-200',
-    badge: 'bg-slate-700 text-slate-200',
+    border: 'border-slate-500/80',
+    bg: 'from-slate-900 via-slate-950 to-slate-950',
+    text: 'text-slate-100',
+    badge: 'bg-slate-700 text-slate-100 border-slate-600',
+    glow: 'shadow-[0_0_15px_rgba(148,163,184,0.25)]',
+    name: 'Comum',
   },
   2: {
-    border: 'border-emerald-500/70',
-    bg: 'from-emerald-950/40 to-slate-950',
+    border: 'border-emerald-500',
+    bg: 'from-emerald-950/60 via-slate-950 to-slate-950',
     text: 'text-emerald-300',
-    badge: 'bg-emerald-700 text-emerald-100',
+    badge: 'bg-emerald-700 text-emerald-100 border-emerald-500',
+    glow: 'shadow-[0_0_18px_rgba(16,185,129,0.35)]',
+    name: 'Incomum',
   },
   3: {
-    border: 'border-blue-500/70',
-    bg: 'from-blue-950/40 to-slate-950',
+    border: 'border-blue-500',
+    bg: 'from-blue-950/60 via-slate-950 to-slate-950',
     text: 'text-blue-300',
-    badge: 'bg-blue-700 text-blue-100',
+    badge: 'bg-blue-700 text-blue-100 border-blue-500',
+    glow: 'shadow-[0_0_18px_rgba(59,130,246,0.35)]',
+    name: 'Raro',
   },
   4: {
-    border: 'border-purple-500/70',
-    bg: 'from-purple-950/40 to-slate-950',
+    border: 'border-purple-500',
+    bg: 'from-purple-950/60 via-slate-950 to-slate-950',
     text: 'text-purple-300',
-    badge: 'bg-purple-700 text-purple-100',
+    badge: 'bg-purple-700 text-purple-100 border-purple-500',
+    glow: 'shadow-[0_0_20px_rgba(168,85,247,0.35)]',
+    name: 'Épico',
   },
   5: {
     border: 'border-amber-400',
-    bg: 'from-amber-950/50 to-slate-950',
+    bg: 'from-amber-950/70 via-slate-950 to-slate-950',
     text: 'text-amber-300',
-    badge: 'bg-amber-500 text-slate-950 font-black',
+    badge: 'bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 font-black border-amber-300',
+    glow: 'shadow-[0_0_25px_rgba(245,158,11,0.55)]',
+    name: 'Lendário',
   },
 };
 
@@ -76,26 +104,33 @@ export const ShopModal: React.FC<ShopModalProps> = ({
   isViewingOpponentArena = false,
   opponentName = 'Oponente',
   onReturnToPlayerArena,
+  ownedUnits = [],
+  isPointerDragOverSell = false,
 }) => {
   const [isDragOverSell, setIsDragOverSell] = useState(false);
   const currentOdds = SHOP_ODDS_BY_LEVEL[level] || [100, 0, 0, 0, 0];
-
   const sellValue = draggedUnit ? calculateUnitSellValue(draggedUnit) : 0;
+  const isSellActive = isDragOverSell || isPointerDragOverSell;
+
+  // Helper to count how many copies of a champion ID the player owns
+  const getOwnedCopiesCount = (unitId: string): number => {
+    return ownedUnits.filter((u) => u.unitId === unitId).length;
+  };
 
   return (
     <div className="relative z-30 select-none">
-      
       {/* Dynamic Minimal Toggle Button OR Sell Area OR Return Button */}
       {isViewingOpponentArena ? (
         <button
           onClick={onReturnToPlayerArena}
-          className="flex items-center justify-center gap-1.5 min-w-[144px] h-[44px] px-3.5 rounded-2xl font-black text-xs tracking-wider uppercase transition-all duration-300 shadow-[0_0_20px_rgba(245,158,11,0.5)] border-2 border-amber-400 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 cursor-pointer animate-bounce whitespace-nowrap"
+          className="flex items-center justify-center gap-1.5 min-w-[144px] h-[48px] px-3.5 rounded-2xl font-black text-xs tracking-wider uppercase transition-all duration-300 shadow-[0_0_20px_rgba(245,158,11,0.5)] border-2 border-amber-400 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 cursor-pointer animate-bounce whitespace-nowrap"
         >
           <ArrowLeftCircle className="w-4 h-4 text-slate-950 shrink-0" />
           <span>Voltar</span>
         </button>
       ) : draggedUnit ? (
         <div
+          data-sell-zone="true"
           onDragOver={(e) => {
             e.preventDefault();
             setIsDragOverSell(true);
@@ -109,8 +144,8 @@ export const ShopModal: React.FC<ShopModalProps> = ({
           onClick={() => {
             if (draggedUnit) onSellUnit(draggedUnit);
           }}
-          className={`flex items-center justify-center gap-1.5 w-[144px] h-[44px] px-3 rounded-2xl font-black text-xs tracking-wide uppercase transition-all duration-200 shadow-2xl border cursor-pointer animate-pulse select-none ${
-            isDragOverSell
+          className={`flex items-center justify-center gap-1.5 min-w-[164px] h-[48px] px-3.5 rounded-2xl font-black text-xs tracking-wide uppercase transition-all duration-200 shadow-2xl border cursor-pointer animate-pulse select-none ${
+            isSellActive
               ? 'bg-rose-600/95 text-white border-rose-300 scale-105 ring-4 ring-rose-400/50 shadow-[0_0_25px_rgba(244,63,94,0.8)]'
               : 'bg-rose-950/70 text-rose-300 border-rose-500/70 hover:scale-102 backdrop-blur-md'
           }`}
@@ -125,16 +160,16 @@ export const ShopModal: React.FC<ShopModalProps> = ({
         <button
           data-modal-toggle="true"
           onClick={onToggleOpen}
-          className={`flex items-center justify-center gap-2 min-w-[164px] h-[44px] px-3.5 rounded-2xl font-bold text-xs tracking-wide transition-all duration-300 shadow-xl border backdrop-blur-md cursor-pointer select-none whitespace-nowrap ${
+          className={`flex items-center justify-center gap-2 min-w-[168px] h-[48px] px-3.5 rounded-2xl font-bold text-xs tracking-wide transition-all duration-300 shadow-xl border backdrop-blur-md cursor-pointer select-none whitespace-nowrap relative ${
             isOpen
               ? 'bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 border-amber-300 ring-2 ring-amber-400/50 shadow-[0_0_20px_rgba(245,158,11,0.4)]'
-              : 'bg-slate-900/80 text-amber-300 border-amber-500/50 hover:border-amber-400 hover:scale-102'
+              : 'bg-slate-900/85 text-amber-300 border-amber-500/60 hover:border-amber-400 hover:scale-102 shadow-lg'
           }`}
           title={`Loja - Saldo Atual: ${gold}฿ (Atalho: D)`}
         >
           <div className="flex items-center gap-1.5 shrink-0">
             <ShoppingBag className="w-4 h-4 shrink-0" />
-            <span className="font-bold uppercase tracking-wider">Loja</span>
+            <span className="font-black uppercase tracking-wider">Loja [D]</span>
           </div>
 
           <div
@@ -148,66 +183,79 @@ export const ShopModal: React.FC<ShopModalProps> = ({
             <span>{gold}฿</span>
           </div>
 
+          {isLocked && (
+            <div
+              className="flex items-center justify-center w-4 h-4 rounded-md bg-amber-500 text-slate-950 border border-amber-300 shadow"
+              title="Loja Travada"
+            >
+              <Lock className="w-2.5 h-2.5" />
+            </div>
+          )}
+
           <div className="flex items-center shrink-0 opacity-80">
             {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
           </div>
         </button>
       )}
 
-      {/* Expanded Shop Panel Drawer centered on X axis just above the bench */}
+      {/* Expanded Shop Panel Drawer positioned on the right side above the bench with padding */}
       {isOpen && !isViewingOpponentArena && (
         <div
           data-modal-container="true"
-          className="fixed bottom-24 left-1/2 -translate-x-1/2 w-[760px] max-w-[95vw] bg-slate-950/95 border-2 border-amber-500/70 rounded-2xl p-3.5 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-4 duration-200 ring-2 ring-amber-400/20 z-50"
+          className="fixed bottom-20 sm:bottom-22 right-4 sm:right-6 w-[840px] max-w-[calc(100vw-32px)] bg-slate-950/95 border-2 border-amber-500/80 rounded-2xl p-3 sm:p-4 shadow-[0_0_40px_rgba(0,0,0,0.85)] backdrop-blur-xl animate-in fade-in slide-in-from-bottom-3 duration-200 ring-2 ring-amber-400/20 z-50"
         >
-          
           {/* Shop Header Controls */}
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 flex-wrap gap-2">
+          <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-800 flex-wrap gap-2">
             {/* Left: Level & Odds */}
             <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="text-xs font-bold text-amber-400">
-                Nível {level} Odds:
-              </span>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-black text-xs shadow-md">
+                <span>Nível {level}</span>
+              </div>
               <div className="flex items-center gap-1 text-[10px] font-mono">
-                <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700" title="Tier 1 (1฿)">
                   T1: {currentOdds[0]}%
                 </span>
-                <span className="px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800">
+                <span className="px-1.5 py-0.5 rounded bg-emerald-950/90 text-emerald-300 border border-emerald-700" title="Tier 2 (2฿)">
                   T2: {currentOdds[1]}%
                 </span>
-                <span className="px-1.5 py-0.5 rounded bg-blue-950/80 text-blue-300 border border-blue-800">
+                <span className="px-1.5 py-0.5 rounded bg-blue-950/90 text-blue-300 border border-blue-700" title="Tier 3 (3฿)">
                   T3: {currentOdds[2]}%
                 </span>
-                <span className="px-1.5 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-800">
+                <span className="px-1.5 py-0.5 rounded bg-purple-950/90 text-purple-300 border border-purple-700" title="Tier 4 (4฿)">
                   T4: {currentOdds[3]}%
                 </span>
-                <span className="px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800 font-bold">
+                <span className="px-1.5 py-0.5 rounded bg-amber-950/90 text-amber-300 border border-amber-600 font-bold" title="Tier 5 (5฿)">
                   T5: {currentOdds[4]}%
                 </span>
               </div>
-              <div className="hidden md:flex items-center gap-1.5 text-[9px] text-amber-300/90 bg-amber-950/50 px-2 py-0.5 rounded-md border border-amber-500/30">
-                <span className="font-semibold text-amber-400">🎯 Dif. 3★:</span>
-                <span className="font-mono text-slate-300">T1: 75% | T2: 68% | T3: 50% | T4: 40% | T5: 25%</span>
-              </div>
             </div>
 
-            {/* Right: Saldo & Lock Shop */}
+            {/* Right: Saldo, Lock Shop & Close Button */}
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/40 text-amber-300 font-mono font-black text-xs shadow-inner">
+              <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-500/15 border border-amber-500/50 text-amber-300 font-mono font-black text-xs shadow-inner">
                 <span className="text-[10px] uppercase font-bold tracking-wider text-amber-400/80">Saldo:</span>
-                <span className="text-amber-300">{gold}฿</span>
+                <span className="text-amber-300 text-sm">{gold}฿</span>
               </div>
 
               <button
                 onClick={onToggleLock}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
                   isLocked
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500'
-                    : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'
+                    ? 'bg-amber-500/25 text-amber-300 border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.3)]'
+                    : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200 hover:border-slate-600'
                 }`}
+                title={isLocked ? 'Loja Travada: não atualizará automaticamente' : 'Travar loja para a próxima rodada'}
               >
-                {isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-                {isLocked ? 'Loja Travada' : 'Travar'}
+                {isLocked ? <Lock className="w-3.5 h-3.5 text-amber-400" /> : <Unlock className="w-3.5 h-3.5" />}
+                <span>{isLocked ? 'Travada' : 'Travar'}</span>
+              </button>
+
+              <button
+                onClick={onToggleOpen}
+                className="p-1 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer transition-colors border border-slate-800 ml-1"
+                title="Fechar Loja"
+              >
+                <X className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -231,42 +279,44 @@ export const ShopModal: React.FC<ShopModalProps> = ({
                   : 'bg-rose-950/40 border-rose-500/60 text-amber-300'
               }`}
             >
+              <Trash2 className="w-4 h-4 text-rose-400" />
               <span className="text-sm font-black tracking-wider text-slate-200">
-                Solte para vender:
+                Solte para vender {draggedUnit.name}:
               </span>
               <span className="px-2.5 py-0.5 rounded-md bg-amber-500 text-slate-950 font-black font-mono shadow-md text-sm">
-                ฿ +{sellValue}
+                +{sellValue}฿
               </span>
             </div>
           )}
 
           {/* 5 Champion Cards */}
-
           <div className="grid grid-cols-5 gap-2.5 mb-3">
             {shopCards.map((card, idx) => {
               if (!card) {
                 return (
                   <div
                     key={idx}
-                    className="h-36 rounded-xl border border-slate-800/80 bg-slate-900/30 flex items-center justify-center text-slate-700 text-xs font-mono"
+                    className="h-40 rounded-xl border border-dashed border-slate-800/80 bg-slate-950/40 flex flex-col items-center justify-center text-slate-600 text-xs font-mono"
                   >
-                    Comprado
+                    <span className="text-slate-600 font-bold">Comprado</span>
                   </div>
                 );
               }
 
               const colors = TIER_COLORS[card.tier] || TIER_COLORS[1];
               const canAfford = gold >= card.cost;
+              const ownedCopies = getOwnedCopiesCount(card.id);
 
               return (
                 <div
                   key={idx}
                   onClick={() => canAfford && onBuyCard(idx)}
-                  className={`h-36 rounded-xl border-2 ${colors.border} bg-gradient-to-b ${colors.bg} relative overflow-hidden cursor-pointer group transition-all duration-200 shadow-md ${
+                  className={`h-40 rounded-xl border-2 ${colors.border} bg-gradient-to-b ${colors.bg} relative overflow-hidden cursor-pointer group transition-all duration-200 shadow-lg ${
                     canAfford
-                      ? 'hover:scale-[1.03] hover:shadow-xl hover:ring-2 hover:ring-amber-400/40'
-                      : 'opacity-50 grayscale cursor-not-allowed'
+                      ? `hover:scale-[1.03] hover:shadow-2xl hover:ring-2 hover:ring-amber-400/50 ${colors.glow}`
+                      : 'opacity-40 grayscale cursor-not-allowed'
                   }`}
+                  title={`${card.name} (${card.cost}฿) - Clique para comprar`}
                 >
                   {/* Full-Container Background Art / Character Visual */}
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -277,54 +327,69 @@ export const ShopModal: React.FC<ShopModalProps> = ({
                       mode="portrait"
                       alt={card.name}
                       className="w-full h-full p-2"
-                      imageClassName="object-contain drop-shadow-[0_8px_16px_rgba(0,0,0,0.85)] group-hover:scale-110 transition-transform duration-300"
+                      imageClassName="object-contain drop-shadow-[0_8px_16px_rgba(0,0,0,0.9)] group-hover:scale-110 transition-transform duration-300"
                     />
                   </div>
 
                   {/* Gradient overlays to guarantee maximum readability */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-slate-950/70 pointer-events-none" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-slate-950/75 pointer-events-none" />
 
-                  {/* TOP ROW: Space-Between with mx-3 (Estrela na esquerda, Beli na direita) */}
-                  <div className="absolute top-2 left-0 right-0 mx-3 flex items-center justify-between z-10 pointer-events-none">
+                  {/* TOP ROW: Space-Between (Estrela/Tier na esquerda, Custo Beli na direita) */}
+                  <div className="absolute top-2 left-0 right-0 mx-2.5 flex items-center justify-between z-10 pointer-events-none">
                     {/* Estrela / Tier */}
-                    <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-slate-950/80 border border-amber-500/30 shadow backdrop-blur-xs">
+                    <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-950/85 border border-amber-500/40 shadow backdrop-blur-xs">
                       <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
                       <span className="text-[10px] font-black text-amber-300 font-mono">1★</span>
                     </div>
 
                     {/* Custo Beli */}
                     <span
-                      className={`text-xs font-black px-2 py-0.5 rounded-md ${colors.badge} shadow-md backdrop-blur-xs border border-white/10`}
+                      className={`text-xs font-black px-2 py-0.5 rounded-md ${colors.badge} shadow-md backdrop-blur-xs border border-white/10 font-mono`}
                     >
                       {card.cost}฿
                     </span>
                   </div>
 
-                  {/* LATERAL (LEFT): Sinergias em coluna vertical com ícones */}
-                  <div className="absolute top-9 left-2.5 flex flex-col gap-1 z-10 pointer-events-none">
+                  {/* LATERAL (LEFT): Sinergias em coluna vertical somente com os ícones */}
+                  <div className="absolute top-9 left-2 flex flex-col gap-1 z-10 pointer-events-none">
                     {card.traits.map((trait) => {
                       const synDef = SYNERGY_DATABASE[trait];
                       return (
                         <div
                           key={trait}
                           title={synDef?.name || trait}
-                          className="w-5 h-5 rounded-md bg-slate-950/90 border border-slate-700/80 shadow flex items-center justify-center text-[10px] backdrop-blur-xs"
+                          className="w-5 h-5 rounded-md bg-slate-950/90 border border-slate-700/80 shadow flex items-center justify-center backdrop-blur-xs"
                           style={{
-                            borderColor: synDef?.color ? `${synDef.color}60` : undefined,
+                            borderColor: synDef?.color ? `${synDef.color}90` : undefined,
+                            backgroundColor: synDef?.color ? `${synDef.color}25` : undefined,
                           }}
                         >
-                          <span>{synDef?.icon || '⚔️'}</span>
+                          <span className="text-xs leading-none select-none">{synDef?.icon || '⚔️'}</span>
                         </div>
                       );
                     })}
                   </div>
 
+                  {/* Owned Count Badge (if player already owns 1+ copies) */}
+                  {ownedCopies > 0 && (
+                    <div
+                      className={`absolute bottom-10 inset-x-2 py-0.5 rounded-md text-[8.5px] font-black text-center z-10 pointer-events-none border backdrop-blur-xs flex items-center justify-center gap-1 shadow ${
+                        ownedCopies >= 2
+                          ? 'bg-amber-500 text-slate-950 border-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.8)] animate-pulse'
+                          : 'bg-slate-900/90 text-amber-300 border-amber-500/50'
+                      }`}
+                    >
+                      <Sparkles className="w-2.5 h-2.5 shrink-0" />
+                      <span>{ownedCopies >= 2 ? `Possui ${ownedCopies}x • UP 2★!` : `Possui ${ownedCopies}x`}</span>
+                    </div>
+                  )}
+
                   {/* BOTTOM: Nome colado no rodapé com fundo escurecido */}
-                  <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent px-2.5 py-1.5 z-10 border-t border-slate-800/60 pointer-events-none">
+                  <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent px-2 py-1.5 z-10 border-t border-slate-800/60 pointer-events-none">
                     <h4 className={`text-xs font-black truncate text-center drop-shadow-md ${colors.text}`}>
                       {card.name}
                     </h4>
-                    <p className="text-[9px] text-slate-400 truncate text-center leading-tight">
+                    <p className="text-[8.5px] text-slate-400 truncate text-center leading-tight">
                       {card.title}
                     </p>
                   </div>
@@ -334,50 +399,68 @@ export const ShopModal: React.FC<ShopModalProps> = ({
           </div>
 
           {/* Footer Action Buttons: Buy XP & Reroll */}
-          <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-            {/* Buy XP Button */}
-            <button
-              onClick={onBuyXp}
-              disabled={gold < 4 || level >= 8}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
-                gold >= 4 && level < 8
-                  ? 'bg-blue-600 hover:bg-blue-500 text-white border-blue-400 shadow-lg hover:scale-105'
-                  : 'bg-slate-900 text-slate-500 border-slate-800 cursor-not-allowed'
-              }`}
-            >
-              <ArrowUpCircle className="w-4 h-4" />
-              <span>Comprar XP (+4 XP)</span>
-              <span className="font-mono bg-blue-950/80 px-1.5 py-0.5 rounded text-blue-200">
-                4฿ [F]
-              </span>
-            </button>
+          <div className="flex items-center justify-between pt-2 border-t border-slate-800 flex-wrap gap-2">
+            {/* Buy XP Button with Progress */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={onBuyXp}
+                disabled={gold < 4 || level >= 8}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                  gold >= 4 && level < 8
+                    ? 'bg-blue-600 hover:bg-blue-500 text-white border-blue-400 shadow-lg hover:scale-102 active:scale-98'
+                    : 'bg-slate-900 text-slate-500 border-slate-800 cursor-not-allowed'
+                }`}
+                title="Comprar XP para subir de nível (Atalho: F)"
+              >
+                <ArrowUpCircle className="w-4 h-4 text-blue-200" />
+                <span>Comprar XP (+4 XP)</span>
+                <span className="font-mono bg-blue-950/90 px-1.5 py-0.5 rounded text-blue-200 text-[11px] font-black">
+                  4฿ [F]
+                </span>
+              </button>
+
+              {/* Compact XP bar */}
+              <div className="hidden sm:flex flex-col gap-0.5 text-[10px] font-mono text-slate-400">
+                <div className="flex items-center gap-1">
+                  <span className="font-bold text-amber-300">Nv.{level}</span>
+                  <span>({xp}/{xpNeeded} XP)</span>
+                </div>
+                <div className="w-24 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700/60">
+                  <div
+                    className="h-full bg-blue-400 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.min(100, (xp / (xpNeeded || 1)) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
 
             {/* Current Gold in Shop */}
-            <div className="text-center font-mono text-xs text-amber-300">
-              Saldo: <span className="font-black text-amber-400">{gold}฿</span>
+            <div className="text-center font-mono text-xs text-amber-300 flex items-center gap-1">
+              <span>Saldo:</span>
+              <span className="font-black text-amber-400 text-sm">{gold}฿</span>
             </div>
 
             {/* Reroll Button */}
             <button
               onClick={onReroll}
               disabled={gold < 2}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                 gold >= 2
-                  ? 'bg-amber-600 hover:bg-amber-500 text-slate-950 font-black border-amber-400 shadow-lg hover:scale-105'
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black border-amber-300 shadow-lg hover:scale-102 active:scale-98'
                   : 'bg-slate-900 text-slate-500 border-slate-800 cursor-not-allowed'
               }`}
+              title="Atualizar cartas da loja (Atalho: D)"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-4 h-4 text-slate-950" />
               <span>Atualizar Loja (Reroll)</span>
-              <span className="font-mono bg-amber-950/80 px-1.5 py-0.5 rounded text-amber-200">
+              <span className="font-mono bg-amber-950/80 px-1.5 py-0.5 rounded text-amber-200 text-[11px] font-black">
                 2฿ [D]
               </span>
             </button>
           </div>
-
         </div>
       )}
-
     </div>
   );
 };
+

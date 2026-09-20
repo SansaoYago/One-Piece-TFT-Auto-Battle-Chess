@@ -49,6 +49,7 @@ import { TheftBannerNotification } from './components/TheftBannerNotification';
 import { preloadAllGameAssets, warmupRoundCombatAssets, loadChampionModularRig } from './utils/modelPreloader';
 import { Sparkles, Trophy, Skull, Coins, Zap } from 'lucide-react';
 import { RoundOutcomeBanner } from './components/RoundOutcomeBanner';
+import { ChampionVisual } from './components/ChampionVisual';
 
 export default function App() {
   // === Global Preloading Pipeline State ===
@@ -1394,8 +1395,12 @@ export default function App() {
         return;
       }
 
-      // 3. If clicked on a unit slot (bench or board unit), unit selection handles it
-      if (target.closest('[data-unit-slot="true"]') || target.closest('[data-unit-tile="true"]')) {
+      // 3. If clicked on a unit slot (bench or board unit), or arena tile, unit selection/placement handles it
+      if (
+        target.closest('[data-unit-slot="true"]') ||
+        target.closest('[data-unit-tile="true"]') ||
+        target.closest('[data-arena-tile="true"]')
+      ) {
         return;
       }
 
@@ -1720,36 +1725,15 @@ export default function App() {
     }
   };
 
-  const handleDropOnBench = (e: React.DragEvent, slotIdx: number) => {
-    e.preventDefault();
+  const executeDropOnBench = (activeUnit: UnitInstance, slotIdx: number) => {
+    if (phaseRef.current === 'COMBAT') return;
 
-    const transferData = e.dataTransfer.getData('text/plain');
     const currentBench = [...benchSlotsRef.current];
     const currentBoard = [...boardUnitsRef.current];
     const existingBenchUnit = currentBench[slotIdx];
 
-    if (draggedItemIdRef.current || draggedItemId || transferData.startsWith('item:')) {
-      const itId = draggedItemIdRef.current || draggedItemId || transferData.replace('item:', '');
-      if (existingBenchUnit) {
-        handleEquipItemToUnit(itId, existingBenchUnit);
-      }
-      setDraggedItemId(null);
-      draggedItemIdRef.current = null;
-      return;
-    }
-
-    let activeUnit = draggedUnitRef.current || draggedUnit;
-    if (!activeUnit && transferData) {
-      activeUnit =
-        currentBench.find((b) => b?.instanceId === transferData) ||
-        currentBoard.find((u) => u.instanceId === transferData) ||
-        null;
-    }
-
-    if (!activeUnit || phaseRef.current === 'COMBAT') return;
-
     // Check if activeUnit is on the board
-    const boardMatch = currentBoard.find((u) => u.instanceId === activeUnit!.instanceId);
+    const boardMatch = currentBoard.find((u) => u.instanceId === activeUnit.instanceId);
     const isFromBoard = Boolean(boardMatch || (activeUnit.gridX >= 0 && activeUnit.gridY >= 0));
 
     if (isFromBoard) {
@@ -1777,7 +1761,7 @@ export default function App() {
           benchIndex: null,
         };
         const nextBoard = currentBoard.map((u) =>
-          u.instanceId === activeUnit!.instanceId ? swappedUnit : u
+          u.instanceId === activeUnit.instanceId ? swappedUnit : u
         );
         if (!nextBoard.some((u) => u.instanceId === swappedUnit.instanceId)) {
           nextBoard.push(swappedUnit);
@@ -1786,14 +1770,14 @@ export default function App() {
         boardUnitsRef.current = nextBoard;
       } else {
         // Remove unit from board
-        const nextBoard = currentBoard.filter((u) => u.instanceId !== activeUnit!.instanceId);
+        const nextBoard = currentBoard.filter((u) => u.instanceId !== activeUnit.instanceId);
         setBoardUnits(nextBoard);
         boardUnitsRef.current = nextBoard;
       }
     } else {
       // Reordering bench slots
       const prevBenchIdx = currentBench.findIndex(
-        (b) => b !== null && b.instanceId === activeUnit!.instanceId
+        (b) => b !== null && b.instanceId === activeUnit.instanceId
       );
 
       const nextBench = [...currentBench];
@@ -1810,6 +1794,37 @@ export default function App() {
     setSelectedUnit(null);
     draggedUnitRef.current = null;
     setDraggedUnit(null);
+  };
+
+  const handleDropOnBench = (e: React.DragEvent, slotIdx: number) => {
+    e.preventDefault();
+
+    const transferData = e.dataTransfer.getData('text/plain');
+    const currentBench = [...benchSlotsRef.current];
+    const existingBenchUnit = currentBench[slotIdx];
+
+    if (draggedItemIdRef.current || draggedItemId || transferData.startsWith('item:')) {
+      const itId = draggedItemIdRef.current || draggedItemId || transferData.replace('item:', '');
+      if (existingBenchUnit) {
+        handleEquipItemToUnit(itId, existingBenchUnit);
+      }
+      setDraggedItemId(null);
+      draggedItemIdRef.current = null;
+      return;
+    }
+
+    let activeUnit = draggedUnitRef.current || draggedUnit;
+    if (!activeUnit && transferData) {
+      const currentBoard = [...boardUnitsRef.current];
+      activeUnit =
+        currentBench.find((b) => b?.instanceId === transferData) ||
+        currentBoard.find((u) => u.instanceId === transferData) ||
+        null;
+    }
+
+    if (!activeUnit || phaseRef.current === 'COMBAT') return;
+
+    executeDropOnBench(activeUnit, slotIdx);
   };
 
   // === Sell Unit Logic (PRD: Sell for Cost * Stars) ===
@@ -1849,6 +1864,123 @@ export default function App() {
       setSelectedUnit(null);
     }
   };
+
+  // === Unified Pointer Drag and Drop State (Mouse & Touch for Mobile/Desktop) ===
+  const [pointerDragState, setPointerDragState] = useState<{
+    unit: UnitInstance;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    isDragging: boolean;
+    hoverTarget: {
+      type: 'tile' | 'bench' | 'sell' | null;
+      x?: number;
+      y?: number;
+      benchIndex?: number;
+    };
+  } | null>(null);
+  const pointerDragRef = useRef(pointerDragState);
+  pointerDragRef.current = pointerDragState;
+
+  const handleStartPointerDrag = useCallback(
+    (unit: UnitInstance, clientX: number, clientY: number) => {
+      if (phaseRef.current === 'COMBAT' || unit.isEnemy || isViewingOpponentArena) return;
+      setPointerDragState({
+        unit,
+        startX: clientX,
+        startY: clientY,
+        currentX: clientX,
+        currentY: clientY,
+        isDragging: false,
+        hoverTarget: { type: null },
+      });
+    },
+    [isViewingOpponentArena]
+  );
+
+  useEffect(() => {
+    const handlePointerMove = (e: PointerEvent) => {
+      const state = pointerDragRef.current;
+      if (!state) return;
+
+      const dist = Math.hypot(e.clientX - state.startX, e.clientY - state.startY);
+      const isDragging = state.isDragging || dist > 6;
+
+      let hoverTarget: typeof state.hoverTarget = { type: null };
+      if (isDragging) {
+        if (!draggedUnitRef.current) {
+          setDraggedUnit(state.unit);
+          draggedUnitRef.current = state.unit;
+        }
+
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const tileEl = el?.closest('[data-arena-tile="true"]');
+        const benchEl = el?.closest('[data-bench-index]');
+        const sellEl = el?.closest('[data-sell-zone="true"]');
+
+        if (sellEl) {
+          hoverTarget = { type: 'sell' };
+        } else if (tileEl) {
+          const tx = Number(tileEl.getAttribute('data-tile-x'));
+          const ty = Number(tileEl.getAttribute('data-tile-y'));
+          if (!isNaN(tx) && !isNaN(ty)) {
+            hoverTarget = { type: 'tile', x: tx, y: ty };
+          }
+        } else if (benchEl) {
+          const bIdx = Number(benchEl.getAttribute('data-bench-index'));
+          if (!isNaN(bIdx)) {
+            hoverTarget = { type: 'bench', benchIndex: bIdx };
+          }
+        }
+      }
+
+      setPointerDragState({
+        ...state,
+        currentX: e.clientX,
+        currentY: e.clientY,
+        isDragging,
+        hoverTarget,
+      });
+    };
+
+    const handlePointerUp = (_e: PointerEvent) => {
+      const state = pointerDragRef.current;
+      if (!state) return;
+
+      if (state.isDragging) {
+        const target = state.hoverTarget;
+        if (target.type === 'tile' && target.x !== undefined && target.y !== undefined) {
+          executePlaceOrMoveUnit(state.unit, target.x, target.y);
+        } else if (target.type === 'bench' && target.benchIndex !== undefined) {
+          executeDropOnBench(state.unit, target.benchIndex);
+        } else if (target.type === 'sell') {
+          handleSellUnit(state.unit);
+        }
+      } else {
+        // Was a tap/click! Toggle unit selection
+        if (selectedUnit?.instanceId === state.unit.instanceId) {
+          setSelectedUnit(null);
+        } else {
+          setSelectedUnit(state.unit);
+        }
+      }
+
+      setPointerDragState(null);
+      pointerDragRef.current = null;
+      setDraggedUnit(null);
+      draggedUnitRef.current = null;
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+  }, [selectedUnit]);
 
   // === Active Skill Toggle Handler (PRD Section 4.3 + Turn Limit Validation) ===
   const handleSelectSkill = (targetUnit: UnitInstance, skill: 'SKILL_A' | 'SKILL_B') => {
@@ -2376,24 +2508,41 @@ export default function App() {
             onDragEnd={handleDragEnd}
             onDragOverTile={handleDragOverTile}
             onDropOnTile={handleDropOnTile}
+            pointerHoverTile={
+              pointerDragState?.hoverTarget.type === 'tile' &&
+              pointerDragState.hoverTarget.x !== undefined &&
+              pointerDragState.hoverTarget.y !== undefined
+                ? { x: pointerDragState.hoverTarget.x, y: pointerDragState.hoverTarget.y }
+                : null
+            }
+            pointerDragUnit={pointerDragState?.isDragging ? pointerDragState.unit : null}
+            onStartPointerDrag={handleStartPointerDrag}
           />
         </div>
 
-        {/* 4. Bottom Floating Bar: Bench & Retractable Shop Drawer */}
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 pointer-events-auto">
+        {/* 4. Bottom Floating Bar: Bench & Retractable Shop Drawer (Shifted to Right with lateral padding) */}
+        <div className="absolute bottom-3 right-4 sm:right-6 z-20 flex items-center gap-2.5 sm:gap-3 pointer-events-auto">
           {/* Bench Slots */}
           <Bench
             benchSlots={isTestMode ? allTestChampions : displayedBenchSlots}
             selectedUnitId={selectedUnit?.instanceId || null}
-            onSlotClick={(idx) => {}}
+            onSlotClick={(idx) => {
+              if (selectedUnit && !isViewingOpponentArena) {
+                executeDropOnBench(selectedUnit, idx);
+              }
+            }}
             onUnitSelect={(u) => {
               setSelectedUnit(u);
               setTestAnimationOverride(null);
             }}
             onDragStart={handleDragStartUnit}
             onDragEnd={handleDragEnd}
-            onDragOver={(e, idx) => e.preventDefault()}
+            onDragOver={(e, _idx) => e.preventDefault()}
             onDrop={handleDropOnBench}
+            onStartPointerDrag={handleStartPointerDrag}
+            pointerHoverBenchIndex={
+              pointerDragState?.hoverTarget.type === 'bench' ? pointerDragState.hoverTarget.benchIndex : null
+            }
             isViewingOpponentArena={isViewingOpponentArena}
             opponentName={viewingCommander.name}
             isTestMode={isTestMode}
@@ -2419,11 +2568,13 @@ export default function App() {
               onReroll={handleRerollShop}
               onBuyXp={handleBuyXp}
               onBuyCard={handleBuyCard}
-              draggedUnit={draggedUnit}
+              draggedUnit={draggedUnit || (pointerDragState?.isDragging ? pointerDragState.unit : null)}
+              isPointerDragOverSell={pointerDragState?.hoverTarget.type === 'sell'}
               onSellUnit={handleSellUnit}
               isViewingOpponentArena={isViewingOpponentArena}
               opponentName={viewingCommander.name}
               onReturnToPlayerArena={() => setViewingCommanderId('p1_human')}
+              ownedUnits={[...playerUnitsOnBoard, ...(displayedBenchSlots.filter(Boolean) as UnitInstance[])]}
             />
           )}
         </div>
@@ -2589,6 +2740,33 @@ export default function App() {
         theft={activeTheftEvent}
         onClose={() => setActiveTheftEvent(null)}
       />
+
+      {/* Floating Dragged Champion Ghost (Follows Pointer / Touch) */}
+      {pointerDragState?.isDragging && (
+        <div
+          className="fixed pointer-events-none z-[100] transform -translate-x-1/2 -translate-y-1/2 select-none"
+          style={{
+            left: `${pointerDragState.currentX}px`,
+            top: `${pointerDragState.currentY}px`,
+          }}
+        >
+          <div className="flex flex-col items-center justify-center p-1 rounded-2xl bg-slate-950/95 border-2 border-amber-400 shadow-[0_0_30px_rgba(245,158,11,0.9)] scale-110">
+            <div className="w-14 h-14 relative flex items-center justify-center">
+              <ChampionVisual
+                unitId={pointerDragState.unit.unitId}
+                customVisual={pointerDragState.unit.customVisual}
+                stars={pointerDragState.unit.stars}
+                size="md"
+                isEnemy={false}
+              />
+            </div>
+            <div className="flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black text-[9px] uppercase tracking-wider">
+              <span>{pointerDragState.unit.stars}★</span>
+              <span>{pointerDragState.unit.name}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

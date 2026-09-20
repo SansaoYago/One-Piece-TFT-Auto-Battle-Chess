@@ -15,6 +15,8 @@ interface BenchProps {
   onDragEnd?: () => void;
   onDragOver: (e: React.DragEvent, benchIndex: number) => void;
   onDrop: (e: React.DragEvent, benchIndex: number) => void;
+  onStartPointerDrag?: (unit: UnitInstance, clientX: number, clientY: number) => void;
+  pointerHoverBenchIndex?: number | null;
   isViewingOpponentArena?: boolean;
   opponentName?: string;
   isTestMode?: boolean;
@@ -34,6 +36,8 @@ export const Bench: React.FC<BenchProps> = ({
   onDragEnd,
   onDragOver,
   onDrop,
+  onStartPointerDrag,
+  pointerHoverBenchIndex = null,
   isViewingOpponentArena = false,
   opponentName = 'Oponente',
   isTestMode = false,
@@ -91,10 +95,18 @@ export const Bench: React.FC<BenchProps> = ({
       <div className={`flex items-center gap-1.5 ${isTestMode ? 'overflow-x-auto max-w-[80vw] pb-1 scrollbar-thin' : ''}`}>
         {benchSlots.map((unit, index) => {
           const isSelected = unit && unit.instanceId === selectedUnitId;
+          const isSlotHovered = hoveredIndex === index || pointerHoverBenchIndex === index;
 
           return (
             <div
               key={index}
+              data-unit-slot="true"
+              data-bench-index={index}
+              onPointerDown={(e) => {
+                if (!isViewingOpponentArena && unit && e.button === 0) {
+                  onStartPointerDrag?.(unit, e.clientX, e.clientY);
+                }
+              }}
               onDragEnter={(e) => {
                 e.preventDefault();
                 if (!isViewingOpponentArena) {
@@ -128,9 +140,8 @@ export const Bench: React.FC<BenchProps> = ({
                   onSlotClick(index);
                 }
               }}
-              data-unit-slot="true"
-              className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl border relative flex flex-col items-center justify-between p-1 transition-all duration-200 select-none ${
-                hoveredIndex === index
+              className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl border relative flex flex-col items-center justify-between p-1 transition-all duration-200 select-none touch-none ${
+                isSlotHovered
                   ? unit
                     ? 'bg-cyan-950/90 border-cyan-400 ring-2 ring-cyan-400/80 scale-105 shadow-[0_0_20px_rgba(34,211,238,0.7)]'
                     : 'bg-amber-950/90 border-amber-400 ring-2 ring-amber-400/80 scale-105 shadow-[0_0_20px_rgba(245,158,11,0.7)]'
@@ -152,7 +163,7 @@ export const Bench: React.FC<BenchProps> = ({
                 if (onDragEnd) onDragEnd();
               }}
             >
-              {hoveredIndex === index && (
+              {isSlotHovered && (
                 <div className="absolute inset-0 flex items-center justify-center bg-slate-950/85 rounded-xl pointer-events-none z-30 animate-pulse">
                   <span className="text-[9px] font-black tracking-wide text-amber-300">
                     {unit ? '⇄ Trocar' : '+ Banco'}

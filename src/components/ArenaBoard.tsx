@@ -40,6 +40,9 @@ interface ArenaBoardProps {
   onDropOnTile: (e: React.DragEvent, x: number, y: number) => void;
   onDragStartUnit: (e: React.DragEvent, unit: UnitInstance) => void;
   onDragEnd?: () => void;
+  pointerHoverTile?: { x: number; y: number } | null;
+  pointerDragUnit?: UnitInstance | null;
+  onStartPointerDrag?: (unit: UnitInstance, clientX: number, clientY: number) => void;
 }
 
 const BOARD_COLS = 8; // 0..7
@@ -161,6 +164,9 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
   onDropOnTile,
   onDragStartUnit,
   onDragEnd,
+  pointerHoverTile = null,
+  pointerDragUnit = null,
+  onStartPointerDrag,
 }) => {
   const [hoveredTile, setHoveredTile] = useState<{ x: number; y: number } | null>(null);
   const hoveredTileRef = React.useRef<{ x: number; y: number } | null>(null);
@@ -423,7 +429,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
     );
   };
 
-  const isDraggingActive = Boolean(draggedUnit || isHoldingUnit || isGlobalDragging);
+  const isDraggingActive = Boolean(draggedUnit || isHoldingUnit || isGlobalDragging || pointerDragUnit);
 
   return (
     <div
@@ -483,17 +489,29 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
           {Array.from({ length: BOARD_ROWS }).map((_, row) =>
             Array.from({ length: BOARD_COLS }).map((_, col) => {
               const isPlayerHalf = col <= PLAYER_MAX_COL;
-              const isHovered = hoveredTile?.x === col && hoveredTile?.y === row;
+              const isHovered =
+                (hoveredTile?.x === col && hoveredTile?.y === row) ||
+                (pointerHoverTile?.x === col && pointerHoverTile?.y === row);
               const prepUnit = !isCombatPhase ? getPrepUnitAt(col, row) : null;
               const prepUnitIsSelected = prepUnit ? prepUnit.instanceId === selectedUnitId : false;
-              // Only light up tiles when user is actively dragging a champion over the arena
+              // Highlight when dragging over tile
               const isHighlightActive = isHovered && isDraggingActive && !isCombatPhase && !isViewingOpponentArena;
+              // Placement target indicator when a unit is selected for click-to-place
+              const isPlacementTarget = Boolean(selectedUnitId && !isCombatPhase && !isViewingOpponentArena && isPlayerHalf && !isDraggingActive);
 
               return (
                 <div
                   key={`${col}-${row}`}
+                  data-arena-tile="true"
+                  data-tile-x={col}
+                  data-tile-y={row}
                   data-unit-tile={prepUnit ? 'true' : undefined}
                   draggable={Boolean(prepUnit && isPlayerHalf && !isCombatPhase && !isViewingOpponentArena)}
+                  onPointerDown={(e) => {
+                    if (!isCombatPhase && !isViewingOpponentArena && prepUnit && isPlayerHalf && e.button === 0) {
+                      onStartPointerDrag?.(prepUnit, e.clientX, e.clientY);
+                    }
+                  }}
                   onDragStart={(e) => {
                     if (prepUnit && isPlayerHalf && !isCombatPhase && !isViewingOpponentArena) {
                       setIsHoldingUnit(true);
@@ -551,7 +569,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                       onDropOnTile(e, col, row);
                     }
                   }}
-                  className={`w-[66px] h-[66px] sm:w-[78px] sm:h-[78px] lg:w-[88px] lg:h-[88px] rounded-2xl relative flex items-center justify-center transition-all duration-150 ${
+                  className={`w-[66px] h-[66px] sm:w-[78px] sm:h-[78px] lg:w-[88px] lg:h-[88px] rounded-2xl relative flex items-center justify-center transition-all duration-150 touch-none ${
                     isCombatPhase || isViewingOpponentArena
                       ? 'cursor-default'
                       : isDraggingActive
@@ -575,6 +593,8 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                         ? prepUnitIsSelected
                           ? 'bg-amber-950/80 border-amber-400 shadow-inner ring-1 ring-amber-400/50'
                           : 'bg-slate-900/95 border-amber-500/40 shadow-inner'
+                        : isPlacementTarget
+                        ? 'bg-amber-950/40 border-amber-400/80 shadow-[0_0_16px_rgba(245,158,11,0.35)] ring-1 ring-amber-400/50 hover:bg-amber-500/25 hover:scale-105 animate-pulse'
                         : 'bg-slate-900/80 border-slate-800/90 hover:border-slate-700/60'
                       : isHighlightActive
                       ? 'bg-rose-950/90 border-rose-500 shadow-[0_0_24px_rgba(244,63,94,0.75)]'
@@ -628,6 +648,15 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                       }`}
                     />
                   </div>
+
+                  {/* Placement Indicator for Click-to-Place */}
+                  {isPlacementTarget && !prepUnit && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                      <span className="text-amber-300/90 font-black text-base drop-shadow-[0_0_10px_rgba(245,158,11,0.9)] animate-pulse">
+                        +
+                      </span>
+                    </div>
+                  )}
 
                   {/* Subtle Hex / Diamond Tile Accent Border */}
                   <div
