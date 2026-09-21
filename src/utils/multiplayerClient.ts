@@ -200,7 +200,7 @@ class MultiplayerClientService {
     // 1. Fetch from Firestore (universal across .exe, PWA and Web)
     fetchActiveRoomsFirestore()
       .then((rooms) => {
-        if (rooms && rooms.length > 0) {
+        if (Array.isArray(rooms)) {
           this.onRoomsListUpdated?.(rooms);
         }
       })
@@ -346,6 +346,21 @@ class MultiplayerClientService {
     if (this.socket && this.socket.connected) {
       this.socket.emit('c2s_send_emote', { text, icon });
     }
+  }
+
+  public async leaveRoom(): Promise<void> {
+    const roomId = this.currentRoom?.roomId || firestoreMultiplayerEngine.getCurrentRoomId();
+    if (this.socket && this.socket.connected) {
+      try {
+        this.socket.emit('c2s_leave_room');
+      } catch {}
+    }
+    if (roomId) {
+      await firestoreMultiplayerEngine.leaveRoom(roomId);
+    } else {
+      firestoreMultiplayerEngine.cleanup();
+    }
+    this.disconnect();
   }
 
   public disconnect() {

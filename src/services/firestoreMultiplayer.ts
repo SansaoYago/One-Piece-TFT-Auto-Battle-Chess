@@ -127,6 +127,7 @@ export class FirestoreMultiplayerEngine {
   private currentRoomId: string | null = null;
   private localPlayerId: string;
   private clockTimer: any = null;
+  private heartbeatTimer: any = null;
   private isHost: boolean = false;
 
   constructor() {
@@ -139,6 +140,10 @@ export class FirestoreMultiplayerEngine {
 
   public getCurrentRoomId(): string | null {
     return this.currentRoomId;
+  }
+
+  public isCurrentHost(): boolean {
+    return this.isHost;
   }
 
   /**
@@ -207,6 +212,7 @@ export class FirestoreMultiplayerEngine {
 
     this.currentRoomId = roomId;
     this.isHost = true;
+    this.startHeartbeat(roomId);
     return roomState;
   }
 
@@ -721,9 +727,111 @@ export class FirestoreMultiplayerEngine {
   }
 
   /**
+   * Inicia o heartbeat (pulso de presença) da sala a cada 10 segundos
+   */
+  public startHeartbeat(roomId: string): void {
+    this.stopHeartbeat();
+    const db = getFirestoreDb();
+    this.heartbeatTimer = setInterval(async () => {
+      try {
+        if (!this.currentRoomId) {
+          this.stopHeartbeat();
+          return;
+        }
+        const roomRef = doc(db, 'rooms', roomId);
+        await updateDoc(roomRef, {
+          updatedAt: Date.now(),
+        });
+      } catch (err) {
+        // Ignora erros transitórios de rede
+      }
+    }, 10000);
+  }
+
+  /**
+   * Para o heartbeat
+   */
+  public stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  /**
+   * Sai da sala e atualiza/exclui o documento no Firestore
+   * - Se for o Host: exclui a sala no Firestore (ou marca como CLOSED)
+   * - Se for Convidado: remove o jogador do array players
+   */
+  public async leaveRoom(roomId?: string): Promise<void> {
+    const targetRoomId = roomId || this.currentRoomId;
+    this.stopHeartbeat();
+
+    if (targetRoomId) {
+      try {
+        const db = getFirestoreDb();
+        const roomRef = doc(db, 'rooms', targetRoomId);
+        const snap = await getDoc(roomRef);
+
+        if (snap.exists()) {
+          const data = snap.data() as any;
+          const currentPlayers: MultiplayerPlayer[] = Array.isArray(data.players) ? data.players : [];
+          const isCurrentHost = this.isHost || data.hostId === this.localPlayerId;
+
+          // Se for o Host ou se só restava 1 jogador, exclui a sala imediatamente
+          if (isCurrentHost || currentPlayers.length <= 1) {
+            await deleteDoc(roomRef);
+          } else {
+            // Se for participante, remove do array de jogadores
+            const remainingPlayers = currentPlayers.filter((p) => p.id !== this.localPlayerId);
+            if (remainingPlayers.length === 0) {
+              await deleteDoc(roomRef);
+            } else {
+              const newHost = remainingPlayers[0];
+              newHost.isHost = true;
+              await updateDoc(roomRef, {
+                players: remainingPlayers,
+                playerCount: remainingPlayers.length,
+                hostId: newHost.id,
+                hostName: newHost.name,
+                hostAvatar: newHost.avatar,
+                name: `Sala de ${newHost.name}`,
+                updatedAt: Date.now(),
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[FirestoreMultiplayerEngine] Falha ao sair da sala no Firestore:', err);
+      }
+    }
+
+    this.cleanup();
+  }
+
+  /**
+   * Limpeza de emergência síncrona/fire-and-forget ao fechar a janela/aba
+   */
+  public quickLeaveOnUnload(): void {
+    const targetRoomId = this.currentRoomId;
+    if (!targetRoomId) return;
+    this.stopHeartbeat();
+    try {
+      const db = getFirestoreDb();
+      const roomRef = doc(db, 'rooms', targetRoomId);
+      if (this.isHost) {
+        deleteDoc(roomRef).catch(() => {});
+      }
+    } catch {
+      // Ignora erro no fechamento de janela
+    }
+  }
+
+  /**
    * Limpa timers e listeners da sala atual
    */
   public cleanup(): void {
+    this.stopHeartbeat();
     if (this.clockTimer) {
       clearInterval(this.clockTimer);
       this.clockTimer = null;
@@ -738,3 +846,14 @@ export class FirestoreMultiplayerEngine {
 }
 
 export const firestoreMultiplayerEngine = new FirestoreMultiplayerEngine();
+
+// Registra ouvintes globais de fechamento de janela/navegador/app
+if (typeof window !== 'undefined') {
+  const handleAppExit = () => {
+    if (firestoreMultiplayerEngine.getCurrentRoomId()) {
+      firestoreMultiplayerEngine.quickLeaveOnUnload();
+    }
+  };
+  window.addEventListener('beforeunload', handleAppExit);
+  window.addEventListener('pagehide', handleAppExit);
+}

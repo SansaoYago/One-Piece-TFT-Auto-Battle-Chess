@@ -6,7 +6,11 @@ import { RoomManager } from './server/roomManager';
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  // In development: Bind strictly to port 3000 to match AI Studio's nginx dev proxy.
+  // In production (Cloud Run): Bind to process.env.PORT (typically 8080) provided by Cloud Run.
+  const PORT = process.env.NODE_ENV === 'production' && process.env.PORT
+    ? parseInt(process.env.PORT, 10)
+    : 3000;
   const httpServer = http.createServer(app);
 
   // Setup Socket.IO Server on the same HTTP server
@@ -106,7 +110,16 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    // Robust static files path resolution for Cloud Run container
+    const fs = await import('fs');
+    const cwdDist = path.join(process.cwd(), 'dist');
+    const dirDist = path.join(__dirname, 'dist');
+    const distPath = fs.existsSync(path.join(cwdDist, 'index.html'))
+      ? cwdDist
+      : fs.existsSync(path.join(dirDist, 'index.html'))
+        ? dirDist
+        : __dirname;
+
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
@@ -116,6 +129,21 @@ async function startServer() {
   httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`[One Piece Tactics] Server running on http://0.0.0.0:${PORT}`);
   });
+
+  // If deployed in production and PORT is not 3000, also bind an auxiliary listener on 3000
+  if (process.env.NODE_ENV === 'production' && PORT !== 3000) {
+    try {
+      const fallbackServer = http.createServer(app);
+      fallbackServer.listen(3000, '0.0.0.0', () => {
+        console.log(`[One Piece Tactics] Auxiliary server running on http://0.0.0.0:3000`);
+      });
+      fallbackServer.on('error', (err: any) => {
+        console.log(`[One Piece Tactics] Port 3000 auxiliary listener notice: ${err?.message || err}`);
+      });
+    } catch {
+      // Ignored
+    }
+  }
 }
 
 startServer().catch((err) => {

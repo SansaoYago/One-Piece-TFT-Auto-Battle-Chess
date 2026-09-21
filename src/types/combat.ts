@@ -6,6 +6,7 @@ export interface FloatingText {
   y: number;
   value: string | number;
   type: DamageType | 'HEAL' | 'SHIELD' | 'CRIT' | 'SKILL' | 'MISS';
+  sourceType?: 'BASIC' | 'SKILL' | 'ORB_SPECIAL';
   isCrit?: boolean;
   color?: string;
   timestamp: number;

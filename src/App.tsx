@@ -54,7 +54,7 @@ import { ChampionVisual } from './components/ChampionVisual';
 import { multiplayerClient } from './utils/multiplayerClient';
 import { MultiplayerRoomState, EmoteMessage, AvailableRoomSummary } from './types/multiplayer';
 import { MultiplayerLobbyModal } from './components/MultiplayerLobbyModal';
-import { subscribeToActiveRoomsFirestore, fetchActiveRoomsFirestore } from './services/firebase';
+import { subscribeToActiveRoomsFirestore, fetchActiveRoomsFirestore, purgeStaleRoomsFromFirestore } from './services/firebase';
 import { AndroidUpdateInfo, checkAndroidUpdate, installAndroidUpdate } from './services/androidUpdater';
 
 export default function App() {
@@ -1303,6 +1303,8 @@ export default function App() {
       const deltaSeconds = rawDelta * 0.72;
       lastTickTimeRef.current = now;
 
+      let currentTickResult: ReturnType<typeof simulateCombatTick> | null = null;
+
       setCombatUnits((currentUnits) => {
         if (currentUnits.length === 0) return currentUnits;
 
@@ -1320,6 +1322,7 @@ export default function App() {
           currentEnemyGold,
           enemySynergies
         );
+        currentTickResult = tickResult;
 
         // Process theft events if triggered
         if (tickResult.theftEvents && tickResult.theftEvents.length > 0) {
@@ -1337,16 +1340,6 @@ export default function App() {
               }
             }
           }
-        }
-
-        // Add newly spawned floating texts
-        if (tickResult.floatingTexts.length > 0) {
-          setFloatingTexts((prev) => [...prev, ...tickResult.floatingTexts]);
-        }
-
-        // Add newly spawned attack effects
-        if (tickResult.attackEffects.length > 0) {
-          setAttackEffects((prev) => [...prev, ...tickResult.attackEffects]);
         }
 
         // Check if battle finished
@@ -1367,11 +1360,23 @@ export default function App() {
         return tickResult.units;
       });
 
-      // Clear expired floating texts (> 1100ms for readable damage numbers)
-      setFloatingTexts((prev) => prev.filter((ft) => now - ft.timestamp < 1100));
+      // Unified floating text update: deduplicate and prune expired in a single atomic update
+      setFloatingTexts((prev) => {
+        const unexpired = prev.filter((ft) => now - ft.timestamp < 1100);
+        if (!currentTickResult || currentTickResult.floatingTexts.length === 0) return unexpired;
+        const existingIds = new Set(unexpired.map((t) => t.id));
+        const newOnes = currentTickResult.floatingTexts.filter((t) => !existingIds.has(t.id));
+        return newOnes.length > 0 ? [...unexpired, ...newOnes] : unexpired;
+      });
 
-      // Clear expired attack effects
-      setAttackEffects((prev) => prev.filter((eff) => now - eff.timestamp < eff.durationMs));
+      // Unified attack effects update: deduplicate and prune expired in a single atomic update
+      setAttackEffects((prev) => {
+        const unexpired = prev.filter((eff) => now - eff.timestamp < eff.durationMs);
+        if (!currentTickResult || currentTickResult.attackEffects.length === 0) return unexpired;
+        const existingIds = new Set(unexpired.map((e) => e.id));
+        const newOnes = currentTickResult.attackEffects.filter((e) => !existingIds.has(e.id));
+        return newOnes.length > 0 ? [...unexpired, ...newOnes] : unexpired;
+      });
 
       if (isRunning) {
         combatLoopRef.current = requestAnimationFrame(combatLoop);
@@ -1670,11 +1675,11 @@ export default function App() {
   // Fetch available rooms whenever the multiplayer modal is opened (both socket and Cloud Firestore)
   useEffect(() => {
     if (isMultiplayerModalOpen) {
+      // Limpa imediatamente salas antigas ou abandonadas sem heartbeat
+      purgeStaleRoomsFromFirestore().catch(() => {});
       multiplayerClient.fetchRoomsList();
       const unsubscribe = subscribeToActiveRoomsFirestore((firestoreRooms) => {
-        if (firestoreRooms && firestoreRooms.length > 0) {
-          setAvailableRooms(firestoreRooms);
-        }
+        setAvailableRooms(firestoreRooms || []);
       });
       return () => {
         unsubscribe();
@@ -3227,9 +3232,11 @@ export default function App() {
         isMultiplayerActive={isMultiplayerActive}
         availableRooms={availableRooms}
         onRefreshRooms={() => {
-          multiplayerClient.fetchRoomsList();
-          fetchActiveRoomsFirestore().then((rooms) => {
-            if (rooms && rooms.length > 0) setAvailableRooms(rooms);
+          purgeStaleRoomsFromFirestore().then(() => {
+            multiplayerClient.fetchRoomsList();
+            return fetchActiveRoomsFirestore();
+          }).then((rooms) => {
+            setAvailableRooms(rooms || []);
           }).catch(() => {});
         }}
         serverUrl={serverUrl}
@@ -3241,7 +3248,7 @@ export default function App() {
         onSelectSoloMode={() => {
           setIsMultiplayerActive(false);
           isMultiplayerActiveRef.current = false;
-          multiplayerClient.disconnect();
+          multiplayerClient.leaveRoom().catch(() => {});
           setMultiplayerRoom(null);
         }}
         onCreateRoom={(playerName, avatar, commanderId) => {
@@ -3263,11 +3270,12 @@ export default function App() {
           multiplayerClient.startGame();
         }}
         onLeaveRoom={() => {
-          multiplayerClient.disconnect();
+          multiplayerClient.leaveRoom().then(() => {
+            multiplayerClient.fetchRoomsList();
+          }).catch(() => {});
           setMultiplayerRoom(null);
           setIsMultiplayerActive(false);
           isMultiplayerActiveRef.current = false;
-          multiplayerClient.fetchRoomsList();
         }}
         errorMessage={multiplayerError}
       />

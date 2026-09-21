@@ -979,24 +979,36 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
               className="absolute inset-6 sm:inset-7 pointer-events-none z-50 overflow-visible"
               style={{ transformStyle: 'preserve-3d' }}
             >
-              {floatingTexts.map((ft, idx) => {
-                const isKO = String(ft.value).toUpperCase().includes('DERROTADO');
+              {floatingTexts.map((ft) => {
+                const strVal = String(ft.value).trim();
+                const isKO = strVal.toUpperCase().includes('DERROTADO');
                 // Remove defeated text completely for an ultra-clean visual
                 if (isKO) return null;
 
-                const { leftPercent, topPercent } = getContinuousTileCenterPercent(ft.x, ft.y);
-                const isCrit = Boolean(ft.isCrit) || String(ft.value).includes('💥') || ft.type === 'CRIT';
-                const isHeal = ft.type === 'HEAL' || String(ft.value).startsWith('+');
+                // Strip skill names: only display numeric damage / healing numbers
+                const hasDigits = /\d/.test(strVal);
+                if (!hasDigits) return null;
 
-                // Elevated above the character's head in isometric billboard projection
-                const yOffsetPx = isCrit ? -150 : -130;
+                const { leftPercent, topPercent } = getContinuousTileCenterPercent(ft.x, ft.y);
+                const isHeal = ft.type === 'HEAL' || strVal.startsWith('+');
+
+                // Color rules per user instruction:
+                // - Especial do Orbe (ou Crítico): Vermelho
+                // - Habilidades (Skill 1 ou 2): Azul
+                // - Ataque Básico: Amarelo
+                const isOrbSpecial = ft.sourceType === 'ORB_SPECIAL' || ft.color === '#EF4444' || ft.color === '#DC2626' || Boolean(ft.isCrit);
+                const isSkill = !isOrbSpecial && (ft.sourceType === 'SKILL' || ft.color === '#38BDF8' || ft.color === '#60A5FA' || ft.type === 'SKILL');
 
                 // Pure numeric/value string with any 'CRIT' or symbols stripped away
-                const cleanValue = String(ft.value).replace(/💥|crit!?/gi, '').trim();
+                const cleanValue = strVal.replace(/💥|crit!?/gi, '').trim();
+                if (!cleanValue) return null;
+
+                // Elevated above the character's head in isometric billboard projection
+                const yOffsetPx = isOrbSpecial ? -150 : -130;
 
                 return (
                   <div
-                    key={ft.id ? `${ft.id}_${idx}` : `ft_${idx}`}
+                    key={ft.id}
                     className="absolute select-none pointer-events-none"
                     style={{
                       left: `${leftPercent}%`,
@@ -1004,19 +1016,25 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                       transform: `translate(-50%, -50%) rotateZ(30deg) rotateX(-55deg) translateY(${yOffsetPx}px)`,
                     }}
                   >
-                    <div className={isCrit ? 'animate-crit-float' : 'animate-damage-float'}>
-                      {isCrit ? (
-                        /* Critical Damage: Increased font size, RED, rising and fading */
-                        <div className="font-mono font-black text-2xl sm:text-4xl text-red-500 drop-shadow-[0_0_16px_rgba(239,68,68,0.95)] drop-shadow-[0_3px_6px_rgba(0,0,0,1)] tracking-tight">
-                          {cleanValue}
-                        </div>
-                      ) : isHeal ? (
+                    <div className={isOrbSpecial ? 'animate-crit-float' : 'animate-damage-float'}>
+                      {isHeal ? (
+                        /* Cura: Verde */
                         <div className="font-mono font-black text-xs sm:text-sm text-emerald-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
                           {cleanValue}
                         </div>
+                      ) : isOrbSpecial ? (
+                        /* Especial ativado com Orb: Vermelho */
+                        <div className="font-mono font-black text-2xl sm:text-4xl text-red-500 drop-shadow-[0_0_16px_rgba(239,68,68,0.95)] drop-shadow-[0_3px_6px_rgba(0,0,0,1)] tracking-tight">
+                          {cleanValue}
+                        </div>
+                      ) : isSkill ? (
+                        /* Habilidades (Skill 1 ou 2): Azul */
+                        <div className="font-mono font-black text-base sm:text-2xl text-sky-400 drop-shadow-[0_0_12px_rgba(56,189,248,0.9)] drop-shadow-[0_3px_6px_rgba(0,0,0,1)] tracking-tight">
+                          {cleanValue}
+                        </div>
                       ) : (
-                        /* Normal Hit: Yellow, clean font with high-contrast shadow */
-                        <div className="font-mono font-black text-sm sm:text-lg text-yellow-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
+                        /* Ataque Básico: Amarelo */
+                        <div className="font-mono font-black text-sm sm:text-lg text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.85)] drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
                           {cleanValue}
                         </div>
                       )}

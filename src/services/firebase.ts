@@ -50,9 +50,40 @@ export function getFirestoreDb(): Firestore {
   return firestoreDb;
 }
 
+// TTL de inatividade para salas no Firestore (45 segundos sem heartbeat = sala abandonada/fechada)
+export const ROOM_HEARTBEAT_TTL_MS = 45 * 1000;
+
+/**
+ * Remove salas obsoletas ou abandonadas (sem heartbeat recente) do Firestore
+ */
+export async function purgeStaleRoomsFromFirestore(): Promise<number> {
+  try {
+    const db = getFirestoreDb();
+    const roomsCol = collection(db, 'rooms');
+    const snapshot = await getDocs(roomsCol);
+    const now = Date.now();
+    let purgedCount = 0;
+
+    for (const docSnap of snapshot.docs) {
+      const data = docSnap.data();
+      const lastActive = data.updatedAt || data.createdAt || 0;
+      // Se não tem atualização há mais de 45s ou está com status terminal, exclui
+      if (now - lastActive > ROOM_HEARTBEAT_TTL_MS || data.status === 'CLOSED' || data.status === 'FINISHED') {
+        await deleteDoc(doc(db, 'rooms', docSnap.id)).catch(() => {});
+        purgedCount++;
+      }
+    }
+    return purgedCount;
+  } catch (err) {
+    console.warn('[Firestore] Erro ao limpar salas obsoletas:', err);
+    return 0;
+  }
+}
+
 /**
  * Escuta salas ativas no Firestore em tempo real.
  * Independente da plataforma (.exe ou Web), qualquer sala criada é transmitida instantaneamente.
+ * Filtra automaticamente salas que não tenham pulso recente (heartbeat).
  */
 export function subscribeToActiveRoomsFirestore(
   onRoomsChanged: (rooms: AvailableRoomSummary[]) => void
@@ -66,8 +97,18 @@ export function subscribeToActiveRoomsFirestore(
       q,
       (snapshot) => {
         const rooms: AvailableRoomSummary[] = [];
+        const now = Date.now();
+
         snapshot.forEach((docSnap) => {
           const data = docSnap.data();
+          const lastActive = data.updatedAt || data.createdAt || 0;
+
+          // Se a sala estiver inativa há mais de 45 segundos, considera como fechada e purga do Firestore
+          if (now - lastActive > ROOM_HEARTBEAT_TTL_MS) {
+            deleteDoc(doc(db, 'rooms', docSnap.id)).catch(() => {});
+            return;
+          }
+
           rooms.push({
             roomId: docSnap.id,
             roomCode: data.code || data.roomCode || docSnap.id,
@@ -175,8 +216,18 @@ export async function fetchActiveRoomsFirestore(): Promise<AvailableRoomSummary[
     const snapshot = await getDocs(q);
 
     const rooms: AvailableRoomSummary[] = [];
+    const now = Date.now();
+
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
+      const lastActive = data.updatedAt || data.createdAt || 0;
+
+      // Se a sala estiver inativa há mais de 45 segundos, considera como fechada e purga do Firestore
+      if (now - lastActive > ROOM_HEARTBEAT_TTL_MS) {
+        deleteDoc(doc(db, 'rooms', docSnap.id)).catch(() => {});
+        return;
+      }
+
       rooms.push({
         roomId: docSnap.id,
         roomCode: data.code || data.roomCode || docSnap.id,

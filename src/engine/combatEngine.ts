@@ -1247,23 +1247,12 @@ function executeSkillCast(
   const skillName = skillToCast?.name || (isOrbSpecial ? 'Especial do Orbe' : 'Habilidade Ativa');
   caster.castingSkillName = skillName;
 
-  // Spawn Skill Declaration Floating Banner (Only skills and orb special appear on screen)
-  floatingTexts.push({
-    id: `skill_name_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
-    x: caster.currentPosX,
-    y: caster.currentPosY - 0.5,
-    value: isOrbSpecial ? `🔮 ${skillName}!` : `⚡ ${skillName}!`,
-    type: 'SKILL',
-    color: isOrbSpecial ? '#C084FC' : '#F59E0B',
-    timestamp: now,
-  });
-
   // Unique Skill Logic for Key Champions
   if (caster.unitId === 'luffy') {
     if (isOrbSpecial) {
       // Gear Second Jet Bazooka: True Haki Damage + Dash
       const skillDamage = Math.round(380 * (caster.stars === 1 ? 1 : caster.stars === 2 ? 1.8 : 3.2));
-      applyDamageToTarget(caster, primaryTarget, skillDamage, 'TRUE_HAKI', true, floatingTexts);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'TRUE_HAKI', true, floatingTexts, 'ORB_SPECIAL');
 
       attackEffects.push({
         id: `luffy_gear2_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
@@ -1281,7 +1270,7 @@ function executeSkillCast(
       // Gomu Gomu no Pistol (Soco Frontal Elástico)
       const baseDmg = 220 * (caster.stars === 1 ? 1 : caster.stars === 2 ? 1.5 : 2.5);
       const skillDamage = Math.round(baseDmg + caster.ad * 0.8);
-      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts, 'SKILL');
 
       attackEffects.push({
         id: `luffy_pistol_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
@@ -1298,7 +1287,7 @@ function executeSkillCast(
     } else {
       // Gomu Gomu no Bazooka (Golpe com Knockback 1 casa)
       const skillDamage = Math.round(180 * (caster.stars === 1 ? 1 : 1.5));
-      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts, 'SKILL');
 
       // Knockback target 1 tile away
       const dx = primaryTarget.currentPosX - caster.currentPosX;
@@ -1327,7 +1316,7 @@ function executeSkillCast(
     if (isOrbSpecial) {
       // San-Zen Seikai (Três Mil Mundos): True Haki damage ignoring defenses
       const skillDamage = Math.round(520 * (caster.stars === 1 ? 1 : caster.stars === 2 ? 1.8 : 3.2));
-      applyDamageToTarget(caster, primaryTarget, skillDamage, 'TRUE_HAKI', true, floatingTexts);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'TRUE_HAKI', true, floatingTexts, 'ORB_SPECIAL');
 
       attackEffects.push({
         id: `zoro_special_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
@@ -1343,7 +1332,7 @@ function executeSkillCast(
       });
     } else if (caster.activeSkill === 'SKILL_A') {
       const skillDamage = Math.round(260 * (caster.stars === 1 ? 1 : 1.6) + caster.ad * 1.2);
-      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts, 'SKILL');
 
       attackEffects.push({
         id: `zoro_onigiri_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
@@ -1359,7 +1348,7 @@ function executeSkillCast(
       });
     } else {
       const skillDamage = Math.round(220 * (caster.stars === 1 ? 1 : 1.5) + caster.ad * 0.9);
-      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts, 'SKILL');
 
       attackEffects.push({
         id: `zoro_tatsumaki_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
@@ -1377,7 +1366,7 @@ function executeSkillCast(
   } else if (caster.unitId === 'nami') {
     if (isOrbSpecial) {
       const skillDamage = Math.round(580 * (caster.stars === 1 ? 1 : 1.7) + caster.ap * 1.8);
-      applyDamageToTarget(caster, primaryTarget, skillDamage, 'MAGICAL', true, floatingTexts);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'MAGICAL', true, floatingTexts, 'ORB_SPECIAL');
 
       attackEffects.push({
         id: `nami_tornado_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
@@ -1394,7 +1383,7 @@ function executeSkillCast(
     } else {
       // Thunder / Cyclone Tempo
       const skillDamage = Math.round(240 * (caster.stars === 1 ? 1 : 1.7) + caster.ap * 1.2);
-      applyDamageToTarget(caster, primaryTarget, skillDamage, 'MAGICAL', true, floatingTexts);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'MAGICAL', true, floatingTexts, 'SKILL');
 
       attackEffects.push({
         id: `nami_thunder_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
@@ -1428,16 +1417,6 @@ function executeSkillCast(
         attackEffects,
         now
       );
-
-      floatingTexts.push({
-        id: `chopper_invoke_${caster.instanceId}_${now}`,
-        x: caster.currentPosX,
-        y: caster.currentPosY - 0.6,
-        value: '🔮 RUMBLE BALL: MONSTER POINT!',
-        type: 'SKILL',
-        color: '#A855F7',
-        timestamp: now,
-      });
 
       attackEffects.push({
         id: `chopper_invoke_fx_${caster.instanceId}_${now}`,
@@ -1482,7 +1461,7 @@ function executeSkillCast(
       // Heavy Point: Arm Smash
       const baseDmg = 280 * (caster.stars === 1 ? 1 : 1.6);
       const skillDamage = Math.round(baseDmg + caster.ad * 1.3);
-      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts, 'SKILL');
       primaryTarget.isStunned = true;
       primaryTarget.stunDuration = 1.0;
       attackEffects.push({
@@ -1503,7 +1482,7 @@ function executeSkillCast(
     if (isOrbSpecial) {
       // Diable Jambe: Flambage Shot (Ultimate Kick - True Haki Damage)
       const skillDamage = Math.round(620 * (caster.stars === 1 ? 1 : 1.8) + caster.ad * 2.0);
-      applyDamageToTarget(caster, primaryTarget, skillDamage, 'TRUE_HAKI', true, floatingTexts);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'TRUE_HAKI', true, floatingTexts, 'ORB_SPECIAL');
       attackEffects.push({
         id: `sanji_flambage_${caster.instanceId}_${now}`,
         fromX: caster.currentPosX,
@@ -1519,7 +1498,7 @@ function executeSkillCast(
     } else {
       // Concassé / Mouton Shot
       const skillDamage = Math.round(280 * (caster.stars === 1 ? 1 : 1.5) + caster.ad * 1.2);
-      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts, 'SKILL');
       attackEffects.push({
         id: `sanji_concasser_${caster.instanceId}_${now}`,
         fromX: caster.currentPosX,
@@ -1540,7 +1519,7 @@ function executeSkillCast(
       const skillDamage = Math.round(480 * (caster.stars === 1 ? 1 : 1.8) + caster.ap * 1.5);
       for (const enemy of allLiving) {
         if (enemy.isEnemy !== caster.isEnemy && enemy.hp > 0 && !enemy.isDefeated) {
-          applyDamageToTarget(caster, enemy, skillDamage, 'MAGICAL', true, floatingTexts);
+          applyDamageToTarget(caster, enemy, skillDamage, 'MAGICAL', true, floatingTexts, 'ORB_SPECIAL');
           enemy.isStunned = true;
           enemy.stunDuration = 1.2;
         }
@@ -1560,7 +1539,7 @@ function executeSkillCast(
     } else {
       // Desert Spada (CrocodileATK)
       const skillDamage = Math.round(260 * (caster.stars === 1 ? 1 : 1.6) + caster.ad * 1.2);
-      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts, 'SKILL');
       attackEffects.push({
         id: `croc_spada_${caster.instanceId}_${now}`,
         fromX: caster.currentPosX,
@@ -1578,7 +1557,7 @@ function executeSkillCast(
   } else if (caster.unitId.startsWith('marine_recruit')) {
     // Marine Recruit Mosquete / Cutelo
     const skillDamage = Math.round(140 + caster.ad * 0.5);
-    applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', false, floatingTexts);
+    applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', false, floatingTexts, 'SKILL');
 
     attackEffects.push({
       id: `marine_skill_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
@@ -1595,7 +1574,15 @@ function executeSkillCast(
     // Generic champion skill (or orb special)
     const mult = isOrbSpecial ? 2.8 : 1.6;
     const skillDamage = Math.round(caster.ad * mult + caster.ap * mult);
-    applyDamageToTarget(caster, primaryTarget, skillDamage, isOrbSpecial ? 'TRUE_HAKI' : caster.attackType, true, floatingTexts);
+    applyDamageToTarget(
+      caster,
+      primaryTarget,
+      skillDamage,
+      isOrbSpecial ? 'TRUE_HAKI' : caster.attackType,
+      true,
+      floatingTexts,
+      isOrbSpecial ? 'ORB_SPECIAL' : 'SKILL'
+    );
 
     attackEffects.push({
       id: `generic_skill_${caster.instanceId}_${now}_${Math.random().toString(36).slice(2, 7)}`,
@@ -1619,7 +1606,8 @@ function applyDamageToTarget(
   amount: number,
   damageType: DamageType,
   isCrit: boolean,
-  floatingTexts: FloatingText[]
+  floatingTexts: FloatingText[],
+  sourceType: 'BASIC' | 'SKILL' | 'ORB_SPECIAL' = 'BASIC'
 ) {
   let remainingDamage = amount;
 
@@ -1653,16 +1641,25 @@ function applyDamageToTarget(
     attacker.totalTrueDamage += amount;
   }
 
-  // Floating text color: Normal hits = Yellow (#FACC15), Critical hits = Red (#EF4444)
-  const color = isCrit ? '#EF4444' : '#FACC15';
+  // Floating text color rules per user request:
+  // - Amarelo (#FACC15) para ataque basico
+  // - Azul (#38BDF8) para habilidades (independente se skill 1 ou 2)
+  // - Vermelho (#EF4444) para especial ativado com orb (ou critico)
+  let color = '#FACC15';
+  if (sourceType === 'ORB_SPECIAL' || isCrit) {
+    color = '#EF4444';
+  } else if (sourceType === 'SKILL') {
+    color = '#38BDF8';
+  }
 
   floatingTexts.push({
-    id: `dmg_${Date.now()}_${Math.random()}`,
+    id: `dmg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     x: target.currentPosX,
     y: target.currentPosY,
     value: amount,
     type: damageType,
-    isCrit,
+    sourceType,
+    isCrit: isCrit || sourceType === 'ORB_SPECIAL',
     color,
     timestamp: Date.now(),
   });
