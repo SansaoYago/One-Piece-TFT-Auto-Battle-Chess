@@ -7,6 +7,7 @@ import {
   getAllowedTiersForLevel,
   LEVEL_MAX_SLOTS,
 } from '../utils/gameUtils';
+import { equipBotItem } from './botStateManager';
 
 export interface BotOpponent {
   id: string;
@@ -32,10 +33,10 @@ export const BOT_ARCHETYPES: BotSynergyArchetype[] = [
     primarySynergies: ['brigao', 'paramecia', 'zoan'],
     unitPriority: ['luffy', 'buggy', 'zoro', 'sanji', 'chopper', 'boa_hancock'],
     preferredItems: {
-      luffy: ['armadura_couro', 'escudo_madeira'],
-      sanji: ['espada_ferro', 'orbe_despertar'],
-      zoro: ['espada_ferro'],
-      chopper: ['armadura_couro'],
+      luffy: ['armadura_haki', 'capa_almirante', 'orbe_despertar'],
+      sanji: ['espada_pirata', 'frasco_rum', 'orbe_despertar'],
+      zoro: ['espada_pirata', 'garrafa_sake'],
+      chopper: ['armadura_haki', 'capa_almirante'],
     },
     description: 'Linha de frente implacável com roubo de vida sustentado e velocidade de ataque acumulativa.',
   },
@@ -45,9 +46,10 @@ export const BOT_ARCHETYPES: BotSynergyArchetype[] = [
     primarySynergies: ['brigao', 'zoan', 'espadachim'],
     unitPriority: ['luffy', 'nami', 'usopp', 'zoro', 'sanji', 'chopper'],
     preferredItems: {
-      luffy: ['armadura_couro', 'escudo_madeira'],
-      zoro: ['espada_ferro', 'orbe_despertar'],
-      sanji: ['espada_ferro'],
+      luffy: ['armadura_haki', 'capa_almirante'],
+      zoro: ['espada_pirata', 'garrafa_sake', 'orbe_despertar'],
+      sanji: ['espada_pirata', 'frasco_rum'],
+      chopper: ['armadura_haki'],
     },
     description: 'Trabalho em equipe lendário dos Mugiwaras, combinando força bruta, espada afiada e agilidade.',
   },
@@ -57,9 +59,10 @@ export const BOT_ARCHETYPES: BotSynergyArchetype[] = [
     primarySynergies: ['shichibukai', 'logia', 'espadachim'],
     unitPriority: ['buggy', 'zoro', 'crocodile', 'boa_hancock', 'mihawk', 'sanji'],
     preferredItems: {
-      crocodile: ['orbe_despertar'],
-      mihawk: ['espada_ferro', 'orbe_despertar'],
-      boa_hancock: ['armadura_couro'],
+      crocodile: ['armadura_haki', 'lente_clarividencia', 'orbe_despertar'],
+      mihawk: ['espada_pirata', 'relogio_logpose'],
+      boa_hancock: ['lente_clarividencia', 'orbe_despertar'],
+      buggy: ['armadura_haki', 'canhao_flutuante'],
     },
     description: 'Anulação de curas/escudos com Shichibukai e esquiva de golpes físicos com intangibilidade Logia.',
   },
@@ -69,9 +72,9 @@ export const BOT_ARCHETYPES: BotSynergyArchetype[] = [
     primarySynergies: ['espadachim', 'haki', 'shichibukai'],
     unitPriority: ['zoro', 'buggy', 'luffy', 'sanji', 'crocodile', 'mihawk', 'shanks'],
     preferredItems: {
-      zoro: ['espada_ferro', 'orbe_despertar'],
-      mihawk: ['espada_ferro'],
-      shanks: ['orbe_despertar', 'espada_ferro'],
+      zoro: ['espada_pirata', 'garrafa_sake', 'orbe_despertar'],
+      mihawk: ['espada_pirata', 'relogio_logpose'],
+      shanks: ['garrafa_sake', 'espada_pirata', 'orbe_despertar'],
     },
     description: 'Tempestade de ataques duplos constantes que perfuram armaduras e decimam frentes.',
   },
@@ -81,9 +84,9 @@ export const BOT_ARCHETYPES: BotSynergyArchetype[] = [
     primarySynergies: ['ladrao', 'medroso', 'paramecia'],
     unitPriority: ['buggy', 'nami', 'usopp', 'luffy', 'sanji', 'chopper'],
     preferredItems: {
-      nami: ['orbe_despertar'],
-      buggy: ['escudo_madeira'],
-      usopp: ['espada_ferro'],
+      nami: ['lente_clarividencia', 'relogio_logpose', 'orbe_despertar'],
+      buggy: ['armadura_haki', 'canhao_flutuante', 'capa_almirante'],
+      usopp: ['canhao_flutuante', 'espada_pirata', 'orbe_despertar'],
     },
     description: 'Esquivas traiçoeiras com Medroso, saques constantes de ouro e artilharia de retaguarda.',
   },
@@ -366,27 +369,39 @@ export function generateEnemyBoardUnits(
 
     const unit = createUnitInstance(champId, stars, pos.col, pos.row, null, true);
 
-    // Apply items if in Hard mode or late Medium
-    if (difficulty === 'hard' && archetype.preferredItems?.[champId]) {
+    // Set intelligent skill selection for 2★ or 3★ key carries
+    if (stars >= 2 && ['zoro', 'sanji', 'luffy', 'crocodile', 'boa_hancock', 'mihawk', 'shanks'].includes(champId)) {
+      unit.activeSkill = 'SKILL_B';
+    }
+
+    // Apply items intelligently based on round and difficulty
+    if (archetype.preferredItems?.[champId]) {
       const itemsToGive = archetype.preferredItems[champId];
-      if (totalRound >= 3 && itemsToGive[0]) {
-        unit.items.push(itemsToGive[0]);
-        if (itemsToGive[0] === 'orbe_despertar') {
-          unit.hasSpecialItem = true;
-          unit.orbMana = 40;
+      if (difficulty === 'hard') {
+        if (totalRound >= 3 && itemsToGive[0]) {
+          equipBotItem(unit, itemsToGive[0]);
+        }
+        if (totalRound >= 7 && itemsToGive[1]) {
+          equipBotItem(unit, itemsToGive[1]);
+        }
+        if (totalRound >= 11 && itemsToGive[2] && stars >= 2) {
+          equipBotItem(unit, itemsToGive[2]);
+        }
+      } else {
+        // Medium
+        if (totalRound >= 4 && idx === 0 && itemsToGive[0]) {
+          equipBotItem(unit, itemsToGive[0]);
+        }
+        if (totalRound >= 8 && itemsToGive[0]) {
+          equipBotItem(unit, itemsToGive[0]);
+        }
+        if (totalRound >= 10 && idx === 0 && itemsToGive[1]) {
+          equipBotItem(unit, itemsToGive[1]);
+        }
+        if (totalRound >= 13 && itemsToGive[2] && stars >= 2) {
+          equipBotItem(unit, itemsToGive[2]);
         }
       }
-      if (totalRound >= 9 && itemsToGive[1]) {
-        unit.items.push(itemsToGive[1]);
-        if (itemsToGive[1] === 'orbe_despertar') {
-          unit.hasSpecialItem = true;
-          unit.orbMana = 40;
-        }
-      }
-    } else if (difficulty === 'medium' && idx === 0 && totalRound >= 7) {
-      // Medium bot equips 1 thematic item on their main carry
-      const itemKey = champId === 'zoro' ? 'espada_ferro' : champId === 'luffy' ? 'armadura_couro' : 'escudo_madeira';
-      unit.items.push(itemKey);
     }
 
     enemyUnits.push(unit);
@@ -414,21 +429,34 @@ export function generateEnemyBoardUnits(
 
     const unit = createUnitInstance(champId, stars, pos.col, pos.row, null, true);
 
-    // Apply items if in Hard mode
-    if (difficulty === 'hard' && archetype.preferredItems?.[champId]) {
+    // Set intelligent skill selection for 2★ or 3★ key carries
+    if (stars >= 2 && ['zoro', 'sanji', 'luffy', 'crocodile', 'boa_hancock', 'mihawk', 'shanks'].includes(champId)) {
+      unit.activeSkill = 'SKILL_B';
+    }
+
+    // Apply items intelligently based on round and difficulty
+    if (archetype.preferredItems?.[champId]) {
       const itemsToGive = archetype.preferredItems[champId];
-      if (totalRound >= 3 && itemsToGive[0]) {
-        unit.items.push(itemsToGive[0]);
-        if (itemsToGive[0] === 'orbe_despertar') {
-          unit.hasSpecialItem = true;
-          unit.orbMana = 40;
+      if (difficulty === 'hard') {
+        if (totalRound >= 4 && itemsToGive[0]) {
+          equipBotItem(unit, itemsToGive[0]);
         }
-      }
-      if (totalRound >= 9 && itemsToGive[1]) {
-        unit.items.push(itemsToGive[1]);
-        if (itemsToGive[1] === 'orbe_despertar') {
-          unit.hasSpecialItem = true;
-          unit.orbMana = 40;
+        if (totalRound >= 8 && itemsToGive[1]) {
+          equipBotItem(unit, itemsToGive[1]);
+        }
+        if (totalRound >= 12 && itemsToGive[2] && stars >= 2) {
+          equipBotItem(unit, itemsToGive[2]);
+        }
+      } else {
+        // Medium
+        if (totalRound >= 6 && idx === 0 && itemsToGive[0]) {
+          equipBotItem(unit, itemsToGive[0]);
+        }
+        if (totalRound >= 10 && itemsToGive[0]) {
+          equipBotItem(unit, itemsToGive[0]);
+        }
+        if (totalRound >= 12 && idx === 0 && itemsToGive[1]) {
+          equipBotItem(unit, itemsToGive[1]);
         }
       }
     }

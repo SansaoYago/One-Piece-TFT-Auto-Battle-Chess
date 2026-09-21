@@ -42,6 +42,13 @@ export interface MultiplayerRoomState {
   roundTitle: string;
   pairings: MultiplayerMatchPairing[];
   championPool: Record<string, number>;
+  playerBoards?: Record<string, UnitInstance[]>;
+  winner?: {
+    id: string;
+    name: string;
+    avatar: string;
+    commanderId: string;
+  };
 }
 
 export interface EmoteMessage {
@@ -69,6 +76,7 @@ export interface CombatResultSubmission {
   isDraw: boolean;
   survivingUnitsCount: number;
   damageDealtToOpponent: number;
+  damageTaken?: number;
 }
 
 export interface AvailableRoomSummary {

@@ -47,7 +47,7 @@ export const UnitInspector: React.FC<UnitInspectorProps> = ({
   const [showStatsFlyout, setShowStatsFlyout] = useState<boolean>(false);
 
   const baseData: UnitBaseData = CHAMPION_DATABASE[unit.unitId] || CHAMPION_DATABASE.luffy;
-  const isPrepPhase = gamePhase === 'PREPARATION' && !isViewingOpponentArena;
+  const isPrepPhase = gamePhase === 'PREPARATION' && !isViewingOpponentArena && !unit.isEnemy;
   const sellValue = calculateUnitSellValue(unit);
 
   // Skill switching restrictions (1 change per round during preparation, 1* units have Skill B locked)
@@ -67,8 +67,8 @@ export const UnitInspector: React.FC<UnitInspectorProps> = ({
   const baseCritDamage = 140;
 
   // Equipped items
-  const battleItems = unit.items.filter((id) => !ITEM_DATABASE[id]?.isSpecialActivation);
-  const specialItem = unit.items.find((id) => ITEM_DATABASE[id]?.isSpecialActivation);
+  const battleItems = (unit.items || []).filter((id) => !ITEM_DATABASE[id]?.isSpecialActivation);
+  const specialItem = (unit.items || []).find((id) => ITEM_DATABASE[id]?.isSpecialActivation);
   const hasOrbEquipped = isUnitEquippedWithOrb(unit);
 
   const handleSkillClick = (targetSkill: 'SKILL_A' | 'SKILL_B') => {
@@ -111,6 +111,11 @@ export const UnitInspector: React.FC<UnitInspectorProps> = ({
             <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-600/70 text-[10px] font-black">
               💰 {baseData.cost || 1}฿
             </span>
+            {unit.isEnemy && (
+              <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-950/90 text-rose-300 border border-rose-600/70 text-[10px] font-black uppercase tracking-wider">
+                ⚔️ Oponente
+              </span>
+            )}
           </div>
 
           {/* Traits / Synergies & Role */}

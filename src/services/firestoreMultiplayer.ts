@@ -346,6 +346,8 @@ export class FirestoreMultiplayerEngine {
       onStartCombat?: (data: { opponent: any; isGhost: boolean; countdown: number }) => void;
       onResolutionPhase?: (data: { players: any[]; countdown: number }) => void;
       onNewRoundStarted?: (data: { room: MultiplayerRoomState }) => void;
+      onLeaderboardUpdated?: (data: { players: any[] }) => void;
+      onGameFinished?: (data: { winner: any; players: any[] }) => void;
       onEmoteReceived?: (emote: EmoteMessage) => void;
     }
   ): void {
@@ -381,10 +383,17 @@ export class FirestoreMultiplayerEngine {
           roundTitle: data.roundTitle || 'Fase de Preparação',
           pairings: data.pairings || [],
           championPool: data.championPool || createInitialChampionPool(),
+          playerBoards: data.playerBoards || {},
+          winner: data.winner,
         };
 
-        // 1. Notifica estado geral da sala (jogadores entrando no lobby)
+        // 1. Notifica estado geral da sala (jogadores entrando no lobby, boards atualizados)
         callbacks.onRoomStateUpdated(room);
+
+        // Notifica atualização contínua do placar/classificação e HP
+        if (room.players && room.players.length > 0) {
+          callbacks.onLeaderboardUpdated?.({ players: room.players });
+        }
 
         // 2. Notifica início de jogo
         if (previousStatus === 'LOBBY' && room.status === 'IN_GAME') {
@@ -397,7 +406,21 @@ export class FirestoreMultiplayerEngine {
           }
         }
 
-        // 3. Notifica transições de fase para jogadores não-hosts
+        // 3. Notifica término de jogo
+        if (room.status === 'FINISHED' && previousStatus !== 'FINISHED') {
+          previousStatus = 'FINISHED';
+          this.stopHeartbeat();
+          if (this.clockTimer) {
+            clearInterval(this.clockTimer);
+            this.clockTimer = null;
+          }
+          callbacks.onGameFinished?.({
+            winner: room.winner || room.players.find((p) => !p.isEliminated) || room.players[0],
+            players: room.players,
+          });
+        }
+
+        // 4. Notifica transições de fase para jogadores não-hosts
         if (room.status === 'IN_GAME' && room.hostId !== this.localPlayerId) {
           callbacks.onPhaseTick?.({
             phase: room.phase,
@@ -412,12 +435,17 @@ export class FirestoreMultiplayerEngine {
               const pairing = room.pairings.find((p) => p.homePlayerId === this.localPlayerId);
               const oppId = pairing ? pairing.awayPlayerId : null;
               const oppPlayer = room.players.find((p) => p.id === oppId);
+              const oppBoard = (oppId && room.playerBoards?.[oppId]) || oppPlayer?.boardUnits || [];
+
               callbacks.onStartCombat?.({
-                opponent: oppPlayer || room.players.find((p) => p.id !== this.localPlayerId) || {
-                  id: 'bot_1',
-                  name: 'Zoro Caçador',
-                  avatar: '⚔️',
-                },
+                opponent: oppPlayer
+                  ? { ...oppPlayer, boardUnits: oppBoard }
+                  : room.players.find((p) => p.id !== this.localPlayerId) || {
+                      id: 'bot_1',
+                      name: 'Zoro Caçador',
+                      avatar: '⚔️',
+                      boardUnits: [],
+                    },
                 isGhost: pairing?.isGhost || false,
                 countdown: 35,
               });
@@ -434,7 +462,7 @@ export class FirestoreMultiplayerEngine {
           }
         }
 
-        // 4. Checa emotes recentes
+        // 5. Checa emotes recentes
         if (data.lastEmote && data.lastEmote.senderId !== this.localPlayerId) {
           callbacks.onEmoteReceived?.(data.lastEmote);
         }
@@ -443,6 +471,90 @@ export class FirestoreMultiplayerEngine {
         console.warn('[FirestoreMultiplayerEngine] Erro no listener da sala:', error);
       }
     );
+  }
+
+  /**
+   * Gera pareamentos justos de 1v1 para multiplayer:
+   * - Quando há 2 humanos na sala, eles lutam diretamente entre si em todas as rodadas PvP.
+   * - Bots lutam entre si sem repetições.
+   * - Os pareamentos ficam disponíveis no início da fase de PREPARATION.
+   */
+  public generatePairings(
+    players: MultiplayerPlayer[],
+    stage: number,
+    roundInStage: number
+  ): MultiplayerMatchPairing[] {
+    const activePlayers = players.filter((p) => !p.isEliminated && p.hp > 0);
+    if (activePlayers.length <= 1) return [];
+
+    const activeHumans = activePlayers.filter((p) => !p.isBot);
+    const activeBots = activePlayers.filter((p) => p.isBot);
+
+    const pairings: MultiplayerMatchPairing[] = [];
+    const assigned = new Set<string>();
+
+    // 1. Exatamente 2 humanos vivos: confronto direto garantido!
+    if (activeHumans.length === 2) {
+      const [h1, h2] = activeHumans;
+      pairings.push({ homePlayerId: h1.id, awayPlayerId: h2.id, isGhost: false });
+      pairings.push({ homePlayerId: h2.id, awayPlayerId: h1.id, isGhost: false });
+      assigned.add(h1.id);
+      assigned.add(h2.id);
+    } else if (activeHumans.length > 2) {
+      // Mais de 2 humanos: rotação round-robin
+      const totalRound = (stage - 1) * 4 + roundInStage;
+      const offset = totalRound % (activeHumans.length - 1 || 1);
+      const shuffledHumans = [...activeHumans];
+      const rotated = [...shuffledHumans.slice(offset), ...shuffledHumans.slice(0, offset)];
+      for (let i = 0; i < rotated.length - 1; i += 2) {
+        const a = rotated[i];
+        const b = rotated[i + 1];
+        pairings.push({ homePlayerId: a.id, awayPlayerId: b.id, isGhost: false });
+        pairings.push({ homePlayerId: b.id, awayPlayerId: a.id, isGhost: false });
+        assigned.add(a.id);
+        assigned.add(b.id);
+      }
+    }
+
+    // 2. Humanos restantes sem par lutam contra bots ativos
+    const unassignedHumans = activeHumans.filter((h) => !assigned.has(h.id));
+    const availableBots = activeBots.filter((b) => !assigned.has(b.id));
+
+    for (const h of unassignedHumans) {
+      if (availableBots.length > 0) {
+        const bot = availableBots.shift()!;
+        pairings.push({ homePlayerId: h.id, awayPlayerId: bot.id, isGhost: false });
+        pairings.push({ homePlayerId: bot.id, awayPlayerId: h.id, isGhost: false });
+        assigned.add(h.id);
+        assigned.add(bot.id);
+      } else if (activeBots.length > 0) {
+        const ghostBot = activeBots[0];
+        pairings.push({ homePlayerId: h.id, awayPlayerId: ghostBot.id, isGhost: true });
+        assigned.add(h.id);
+      }
+    }
+
+    // 3. Bots restantes duelam entre si
+    const remainingBots = activeBots.filter((b) => !assigned.has(b.id));
+    const shuffledBots = [...remainingBots].sort(() => Math.random() - 0.5);
+
+    for (let i = 0; i < shuffledBots.length; i += 2) {
+      if (i + 1 < shuffledBots.length) {
+        const b1 = shuffledBots[i];
+        const b2 = shuffledBots[i + 1];
+        pairings.push({ homePlayerId: b1.id, awayPlayerId: b2.id, isGhost: false });
+        pairings.push({ homePlayerId: b2.id, awayPlayerId: b1.id, isGhost: false });
+        assigned.add(b1.id);
+        assigned.add(b2.id);
+      } else {
+        const oddBot = shuffledBots[i];
+        const ghostTarget = activePlayers.find((p) => p.id !== oddBot.id) || activePlayers[0];
+        pairings.push({ homePlayerId: oddBot.id, awayPlayerId: ghostTarget.id, isGhost: true });
+        assigned.add(oddBot.id);
+      }
+    }
+
+    return pairings;
   }
 
   /**
@@ -456,6 +568,7 @@ export class FirestoreMultiplayerEngine {
 
     const data = snap.data() as any;
     const filledPlayers = fillBotsIfNeeded(data.players || []);
+    const initialPairings = this.generatePairings(filledPlayers, 1, 1);
 
     await updateDoc(roomRef, {
       status: 'IN_GAME',
@@ -467,6 +580,7 @@ export class FirestoreMultiplayerEngine {
       roundInStage: 1,
       roundStage: '1-1',
       roundTitle: 'Fase de Preparação: Rodada 1-1',
+      pairings: initialPairings,
       updatedAt: Date.now(),
     });
   }
@@ -486,6 +600,12 @@ export class FirestoreMultiplayerEngine {
     const roomRef = doc(db, 'rooms', roomId);
 
     this.clockTimer = setInterval(async () => {
+      // Se a partida já acabou, não avança o relógio
+      if (room.status === 'FINISHED') {
+        if (this.clockTimer) clearInterval(this.clockTimer);
+        return;
+      }
+
       room.countdown -= 1;
 
       // Tick local do host
@@ -508,44 +628,21 @@ export class FirestoreMultiplayerEngine {
           room.phase = 'COMBAT';
           room.countdown = 35;
 
-          // Gera pareamento 1v1
-          const activePlayers = room.players.filter((p) => !p.isEliminated);
-          const shuffled = [...activePlayers].sort(() => Math.random() - 0.5);
-          const pairings: MultiplayerMatchPairing[] = [];
-
-          for (let i = 0; i < shuffled.length; i += 2) {
-            if (i + 1 < shuffled.length) {
-              pairings.push({
-                homePlayerId: shuffled[i].id,
-                awayPlayerId: shuffled[i + 1].id,
-                isGhost: false,
-              });
-              pairings.push({
-                homePlayerId: shuffled[i + 1].id,
-                awayPlayerId: shuffled[i].id,
-                isGhost: false,
-              });
-            } else {
-              // Ímpar: pareia contra clone fantasma de alguém já pareado
-              const ghostOpponent = shuffled[0];
-              pairings.push({
-                homePlayerId: shuffled[i].id,
-                awayPlayerId: ghostOpponent.id,
-                isGhost: true,
-              });
-            }
-          }
-
-          room.pairings = pairings;
-
-          // Dispara combate pro Host
-          const hostPairing = pairings.find((p) => p.homePlayerId === this.localPlayerId);
+          // Os pareamentos já foram definidos no início da fase de preparação!
+          // Dispara combate pro Host com o adversário correto e tabuleiro carregado
+          const hostPairing = room.pairings.find((p) => p.homePlayerId === this.localPlayerId);
           const hostOpp = hostPairing
             ? room.players.find((p) => p.id === hostPairing.awayPlayerId)
             : room.players.find((p) => p.id !== this.localPlayerId);
 
+          const hostOppId = hostOpp?.id;
+          const hostOppBoard =
+            (hostOppId && room.playerBoards?.[hostOppId]) || hostOpp?.boardUnits || [];
+
           callbacks.onStartCombat?.({
-            opponent: hostOpp || { id: 'bot_1', name: 'Zoro Caçador', avatar: '⚔️' },
+            opponent: hostOpp
+              ? { ...hostOpp, boardUnits: hostOppBoard }
+              : { id: 'bot_1', name: 'Zoro Caçador', avatar: '⚔️', boardUnits: [] },
             isGhost: hostPairing?.isGhost || false,
             countdown: 35,
           });
@@ -553,7 +650,6 @@ export class FirestoreMultiplayerEngine {
           await updateDoc(roomRef, {
             phase: 'COMBAT',
             countdown: 35,
-            pairings,
             updatedAt: Date.now(),
           }).catch(() => {});
         } else if (room.phase === 'COMBAT') {
@@ -561,14 +657,87 @@ export class FirestoreMultiplayerEngine {
           room.phase = 'RESOLUTION';
           room.countdown = 4;
 
+          // O Host simula dano de combate bot x bot para manter o placar sincronizado
+          const updatedPlayers = [...room.players];
+          const processedBotPairs = new Set<string>();
+
+          for (const pairing of room.pairings) {
+            const p1 = updatedPlayers.find((p) => p.id === pairing.homePlayerId);
+            const p2 = updatedPlayers.find((p) => p.id === pairing.awayPlayerId);
+
+            if (p1 && p2 && p1.isBot && p2.isBot && !p1.isEliminated && !p2.isEliminated) {
+              const pairKey = [p1.id, p2.id].sort().join('_vs_');
+              if (!processedBotPairs.has(pairKey)) {
+                processedBotPairs.add(pairKey);
+                // Simula combate de bots: um perde entre 6 e 12 de HP
+                const loser = Math.random() < 0.5 ? p1 : p2;
+                const botDamage = 6 + Math.floor(Math.random() * 7);
+                loser.hp = Math.max(0, loser.hp - botDamage);
+                if (loser.hp <= 0) {
+                  loser.isEliminated = true;
+                  loser.hp = 0;
+                }
+              }
+            }
+          }
+
+          // Recalcula classificações (1º a 8º)
+          const sorted = [...updatedPlayers].sort((a, b) => {
+            if (a.isEliminated !== b.isEliminated) {
+              return a.isEliminated ? 1 : -1;
+            }
+            return b.hp - a.hp;
+          });
+          sorted.forEach((p, idx) => {
+            p.placement = idx + 1;
+          });
+          room.players = sorted;
+
+          // Verifica se sobrou apenas 1 jogador vivo (Vitória!)
+          const remainingAlive = room.players.filter((p) => !p.isEliminated && p.hp > 0);
+          if (remainingAlive.length <= 1) {
+            const winner = remainingAlive[0] || room.players[0];
+            room.status = 'FINISHED';
+            room.winner = {
+              id: winner.id,
+              name: winner.name,
+              avatar: winner.avatar,
+              commanderId: winner.commanderId,
+            };
+
+            if (this.clockTimer) {
+              clearInterval(this.clockTimer);
+              this.clockTimer = null;
+            }
+
+            callbacks.onResolutionPhase?.({
+              players: room.players,
+              countdown: 4,
+            });
+            callbacks.onLeaderboardUpdated?.({ players: room.players });
+            callbacks.onGameFinished?.({ winner: room.winner, players: room.players });
+
+            await updateDoc(roomRef, {
+              status: 'FINISHED',
+              phase: 'RESOLUTION',
+              countdown: 0,
+              players: room.players,
+              winner: room.winner,
+              updatedAt: Date.now(),
+            }).catch(() => {});
+            return;
+          }
+
           callbacks.onResolutionPhase?.({
             players: room.players,
             countdown: 4,
           });
+          callbacks.onLeaderboardUpdated?.({ players: room.players });
 
           await updateDoc(roomRef, {
             phase: 'RESOLUTION',
             countdown: 4,
+            players: room.players,
             updatedAt: Date.now(),
           }).catch(() => {});
         } else if (room.phase === 'RESOLUTION') {
@@ -580,12 +749,16 @@ export class FirestoreMultiplayerEngine {
             nextStage += 1;
           }
 
+          // Gera pareamentos com antecedência para a nova fase de PREPARATION
+          const newPairings = this.generatePairings(room.players, nextStage, nextRound);
+
           room.stage = nextStage;
           room.roundInStage = nextRound;
           room.roundStage = `${nextStage}-${nextRound}`;
           room.roundTitle = `Fase de Preparação: Rodada ${nextStage}-${nextRound}`;
           room.phase = 'PREPARATION';
           room.countdown = 30;
+          room.pairings = newPairings;
 
           callbacks.onNewRoundStarted?.({ room });
 
@@ -596,6 +769,7 @@ export class FirestoreMultiplayerEngine {
             roundTitle: room.roundTitle,
             phase: 'PREPARATION',
             countdown: 30,
+            pairings: newPairings,
             updatedAt: Date.now(),
           }).catch(() => {});
         }
@@ -612,36 +786,46 @@ export class FirestoreMultiplayerEngine {
   ): Promise<void> {
     try {
       const db = getFirestoreDb();
+      const sanitizedUnits = (submission.units || []).map((u) => ({
+        instanceId: u.instanceId || `u_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        unitId: u.unitId,
+        name: u.name || '',
+        title: u.title || '',
+        cost: u.cost || 1,
+        tier: u.tier || 1,
+        stars: u.stars || 1,
+        traits: Array.isArray(u.traits) ? u.traits : [],
+        range: u.range || 1,
+        attackType: u.attackType || 'melee',
+        hp: u.hp || 100,
+        maxHp: u.maxHp || 100,
+        mana: u.mana || 0,
+        maxMana: u.maxMana || 100,
+        armor: u.armor || 20,
+        mr: u.mr || 20,
+        ad: u.ad || 50,
+        ap: u.ap || 0,
+        attackSpeed: u.attackSpeed || 0.7,
+        avatarUrl: u.avatarUrl || '',
+        gridX: typeof u.gridX === 'number' ? u.gridX : 0,
+        gridY: typeof u.gridY === 'number' ? u.gridY : 0,
+        items: Array.isArray(u.items) ? u.items : [],
+      }));
+
+      // 1. Salva na subcoleção submissions
       const subRef = doc(db, 'rooms', roomId, 'submissions', this.localPlayerId);
       await setDoc(subRef, {
         playerId: this.localPlayerId,
-        units: submission.units.map((u) => ({
-          instanceId: u.instanceId,
-          unitId: u.unitId,
-          name: u.name,
-          title: u.title,
-          cost: u.cost,
-          tier: u.tier,
-          stars: u.stars,
-          traits: u.traits || [],
-          range: u.range,
-          attackType: u.attackType,
-          hp: u.hp,
-          maxHp: u.maxHp,
-          mana: u.mana,
-          maxMana: u.maxMana,
-          armor: u.armor,
-          mr: u.mr,
-          ad: u.ad,
-          ap: u.ap,
-          attackSpeed: u.attackSpeed,
-          avatarUrl: u.avatarUrl,
-          gridX: u.gridX,
-          gridY: u.gridY,
-          items: u.items || [],
-        })),
-        level: submission.level,
-        gold: submission.gold,
+        units: sanitizedUnits,
+        level: submission.level || 1,
+        gold: submission.gold || 0,
+        updatedAt: Date.now(),
+      });
+
+      // 2. Salva diretamente no mapa playerBoards do documento da sala para acesso síncrono imediato
+      const roomRef = doc(db, 'rooms', roomId);
+      await updateDoc(roomRef, {
+        [`playerBoards.${this.localPlayerId}`]: sanitizedUnits,
         updatedAt: Date.now(),
       });
     } catch (err) {
@@ -658,6 +842,17 @@ export class FirestoreMultiplayerEngine {
   ): Promise<UnitInstance[] | null> {
     try {
       const db = getFirestoreDb();
+      // 1. Tenta ler do documento principal da sala primeiro
+      const roomRef = doc(db, 'rooms', roomId);
+      const roomSnap = await getDoc(roomRef);
+      if (roomSnap.exists()) {
+        const rData = roomSnap.data() as any;
+        if (rData.playerBoards && Array.isArray(rData.playerBoards[opponentId]) && rData.playerBoards[opponentId].length > 0) {
+          return rData.playerBoards[opponentId] as UnitInstance[];
+        }
+      }
+
+      // 2. Fallback: subcoleção submissions
       const subRef = doc(db, 'rooms', roomId, 'submissions', opponentId);
       const snap = await getDoc(subRef);
       if (snap.exists()) {
@@ -673,7 +868,7 @@ export class FirestoreMultiplayerEngine {
   }
 
   /**
-   * Atualiza resultado de combate (HP, dano)
+   * Atualiza resultado de combate (HP, dano) com sincronização confiável
    */
   public async submitCombatResult(
     roomId: string,
@@ -690,13 +885,57 @@ export class FirestoreMultiplayerEngine {
       const idx = players.findIndex((p) => p.id === this.localPlayerId);
       if (idx >= 0) {
         if (!result.won && !result.isDraw) {
-          players[idx].hp = Math.max(0, players[idx].hp - (result.damageDealtToOpponent > 0 ? 0 : 10));
+          const dmg = typeof result.damageTaken === 'number' && result.damageTaken > 0
+            ? result.damageTaken
+            : 10;
+          players[idx].hp = Math.max(0, players[idx].hp - dmg);
+          players[idx].streak = 0;
+        } else if (result.won) {
+          players[idx].streak = (players[idx].streak || 0) + 1;
         }
+
         if (players[idx].hp <= 0) {
+          players[idx].hp = 0;
           players[idx].isEliminated = true;
         }
+
+        // Se lutou contra um bot e venceu, deduz dano do bot
+        if (result.won && result.damageDealtToOpponent > 0) {
+          const oppIdx = players.findIndex((p) => p.id === result.opponentId);
+          if (oppIdx >= 0 && players[oppIdx].isBot) {
+            players[oppIdx].hp = Math.max(0, players[oppIdx].hp - result.damageDealtToOpponent);
+            if (players[oppIdx].hp <= 0) {
+              players[oppIdx].hp = 0;
+              players[oppIdx].isEliminated = true;
+            }
+          }
+        }
+
+        // Recalcula classificações
+        const sorted = [...players].sort((a, b) => {
+          if (a.isEliminated !== b.isEliminated) return a.isEliminated ? 1 : -1;
+          return b.hp - a.hp;
+        });
+        sorted.forEach((p, rankIdx) => {
+          p.placement = rankIdx + 1;
+        });
+
+        // Verifica condição de vitória final
+        const alivePlayers = sorted.filter((p) => !p.isEliminated && p.hp > 0);
+        const isGameNowFinished = alivePlayers.length <= 1;
+        const winner = isGameNowFinished ? (alivePlayers[0] || sorted[0]) : undefined;
+
         await updateDoc(roomRef, {
-          players,
+          players: sorted,
+          ...(isGameNowFinished && {
+            status: 'FINISHED',
+            winner: {
+              id: winner!.id,
+              name: winner!.name,
+              avatar: winner!.avatar,
+              commanderId: winner!.commanderId,
+            },
+          }),
           updatedAt: Date.now(),
         });
       }

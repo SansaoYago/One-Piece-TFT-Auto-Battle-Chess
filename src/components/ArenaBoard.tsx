@@ -276,7 +276,7 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
       <div
         key={unit.instanceId}
         className={`relative flex flex-col items-center justify-end transition-all duration-300 select-none pointer-events-none ${
-          isSelected && !isDead
+          isSelected && !isDead && !isCombatPhase
             ? 'scale-110 filter drop-shadow-[0_0_16px_rgba(245,158,11,0.95)]'
             : ''
         }`}
@@ -633,8 +633,20 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                       return;
                     }
 
-                    // 2. Standard floor tile interaction
-                    if (isCombatPhase || isViewingOpponentArena) {
+                    // 2. Combat phase tile interaction: select nearest combat unit if any
+                    if (isCombatPhase) {
+                      const livingCombatUnits = combatUnits.filter((u) => !u.isDefeated && u.hp > 0);
+                      const nearest = livingCombatUnits
+                        .map((u) => ({ unit: u, dist: Math.hypot(u.currentPosX - col, u.currentPosY - row) }))
+                        .filter((item) => item.dist <= 1.25)
+                        .sort((a, b) => a.dist - b.dist)[0]?.unit;
+                      if (nearest) {
+                        onUnitSelect(nearest);
+                      }
+                      return;
+                    }
+
+                    if (isViewingOpponentArena) {
                       if (prepUnit) onUnitSelect(prepUnit);
                       return;
                     }
@@ -891,18 +903,26 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                       />
                     )}
 
-                    {/* Destaque de Seleção Dourado no Chão durante Combate */}
-                    {isSelected && isAlive && (
-                      <div
-                        className={`absolute left-1/2 -translate-x-1/2 -translate-y-1/2 ${
-                          isMonster2x2 ? 'w-32 h-32' : 'w-14 h-14 sm:w-16 sm:h-16 lg:w-[70px] lg:h-[70px]'
-                        } rounded-full border-2 border-amber-400/90 bg-amber-500/15 shadow-[0_0_18px_rgba(245,158,11,0.85)] pointer-events-none animate-pulse`}
-                        style={{ top: `${FEET_ANCHOR_Y_PERCENT}%`, transform: 'translate(-50%, -50%) translateZ(3px)' }}
-                      />
-                    )}
+                    {/* Ground base highlight intentionally omitted in combat per user request ("não precisa ascender a base dele, isso só na batalha") */}
 
                     {/* Upright 3D Tactical Billboarding Unit Token */}
                     {renderUnitToken(cUnit, true, false, (tester) => registerHitTester(cUnit.instanceId, tester))}
+
+                    {/* Interactive hit target during combat to inspect unit stats, items & skill */}
+                    {isAlive && (
+                      <button
+                        type="button"
+                        id={`combat-unit-inspect-${cUnit.instanceId}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onUnitSelect(cUnit);
+                        }}
+                        className="absolute left-1/2 -translate-x-1/2 w-20 h-28 pointer-events-auto cursor-pointer z-50 bg-transparent border-0 outline-none"
+                        style={{ bottom: `${100 - FEET_ANCHOR_Y_PERCENT}%` }}
+                        title={`Clique para ver informações de ${cUnit.name}`}
+                        aria-label={`Inspecionar ${cUnit.name}`}
+                      />
+                    )}
                   </div>
                 );
               })}

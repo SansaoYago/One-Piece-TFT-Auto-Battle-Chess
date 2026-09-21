@@ -44,7 +44,7 @@ export function convertBotBoardToEnemyUnits(botUnits: UnitInstance[], isGhost: b
         gridY: Math.min(4, Math.max(0, Math.round(u.gridY))),
         hp: u.maxHp,
         shield: 0,
-        mana: base?.startMana || 0,
+        mana: u.mana ?? base?.startMana ?? 0,
         // Optional marker for ghost styling
         isGhostClone: isGhost,
       };

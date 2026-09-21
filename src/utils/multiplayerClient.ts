@@ -46,19 +46,34 @@ class MultiplayerClientService {
   public onPoolUpdated?: (data: { unitId: string; remaining: number }) => void;
 
   private async emitStartCombat(data: { opponent: any; isGhost: boolean; countdown: number }) {
-    if (
-      data.opponent &&
-      data.opponent.id &&
-      !data.opponent.isBot &&
-      this.currentRoom?.roomId &&
-      (!Array.isArray(data.opponent.boardUnits) || data.opponent.boardUnits.length === 0)
-    ) {
-      const opponentUnits = await firestoreMultiplayerEngine.fetchOpponentBoard(
-        this.currentRoom.roomId,
-        data.opponent.id
-      );
-      if (opponentUnits && opponentUnits.length > 0) {
-        data.opponent.boardUnits = opponentUnits;
+    if (data.opponent && data.opponent.id) {
+      const oppId = data.opponent.id;
+      let oppUnits = this.currentRoom?.playerBoards?.[oppId];
+
+      if (!oppUnits || oppUnits.length === 0) {
+        if (Array.isArray(data.opponent.boardUnits) && data.opponent.boardUnits.length > 0) {
+          oppUnits = data.opponent.boardUnits;
+        }
+      }
+
+      if (!oppUnits || oppUnits.length === 0) {
+        const oppPlayer = this.currentRoom?.players?.find((p) => p.id === oppId);
+        if (oppPlayer?.boardUnits && oppPlayer.boardUnits.length > 0) {
+          oppUnits = oppPlayer.boardUnits;
+        }
+      }
+
+      if (!oppUnits || oppUnits.length === 0) {
+        if (this.currentRoom?.roomId) {
+          oppUnits = await firestoreMultiplayerEngine.fetchOpponentBoard(
+            this.currentRoom.roomId,
+            oppId
+          );
+        }
+      }
+
+      if (oppUnits && oppUnits.length > 0) {
+        data.opponent.boardUnits = oppUnits;
       }
     }
 
@@ -283,6 +298,12 @@ class MultiplayerClientService {
       onNewRoundStarted: (data) => {
         this.currentRoom = data.room;
         this.onNewRoundStarted?.(data);
+      },
+      onLeaderboardUpdated: (data) => {
+        this.onLeaderboardUpdated?.(data);
+      },
+      onGameFinished: (data) => {
+        this.onGameFinished?.(data);
       },
       onEmoteReceived: (emote) => {
         this.onEmoteReceived?.(emote);

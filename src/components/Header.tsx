@@ -89,8 +89,8 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               </div>
 
-              {/* Interactive Difficulty Indicator / Button */}
-              {onOpenDifficultyModal && (
+              {/* Interactive Difficulty Indicator / Button (Hidden in Multiplayer) */}
+              {!isMultiplayerActive && onOpenDifficultyModal && (
                 <button
                   id="header-difficulty-btn"
                   onClick={onOpenDifficultyModal}
@@ -277,21 +277,25 @@ export const Header: React.FC<HeaderProps> = ({
                   <span>{countdown.toString().padStart(2, '0')}s</span>
                 </div>
 
-                {/* Timer Pause/Play */}
-                <button
-                  onClick={onTogglePause}
-                  title={isPaused ? 'Continuar Cronômetro' : 'Pausar Cronômetro'}
-                  className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-amber-400 transition-colors cursor-pointer"
-                >
-                  {isPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
-                </button>
-                <button
-                  onClick={onResetTimer}
-                  title="Resetar para 30s"
-                  className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-amber-400 transition-colors cursor-pointer"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                </button>
+                {/* Timer Pause/Play & Reset (Hidden in Multiplayer) */}
+                {!isMultiplayerActive && (
+                  <>
+                    <button
+                      onClick={onTogglePause}
+                      title={isPaused ? 'Continuar Cronômetro' : 'Pausar Cronômetro'}
+                      className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-amber-400 transition-colors cursor-pointer"
+                    >
+                      {isPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      onClick={onResetTimer}
+                      title="Resetar para 30s"
+                      className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-amber-400 transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                )}
               </div>
             </>
           )}
@@ -338,7 +342,7 @@ export const Header: React.FC<HeaderProps> = ({
               <RotateCcw className="w-3.5 h-3.5 text-slate-950" />
               <span>Voltar ao Meu Campo</span>
             </button>
-          ) : !isTestMode ? (
+          ) : !isTestMode && !isMultiplayerActive ? (
             /* Game Mode: Button to Switch to Test Mode */
             <button
               onClick={onToggleTestMode}

@@ -2,7 +2,7 @@ import { ActiveSynergy, DamageType, UnitInstance } from '../types/game';
 import { AttackEffect, CombatTickResult, CombatUnitState, FloatingText, TheftEvent } from '../types/combat';
 import { CHAMPION_DATABASE } from '../data/units';
 import { ITEM_DATABASE } from '../data/items';
-import { calculateActiveSynergies } from '../utils/gameUtils';
+import { calculateActiveSynergies, isUnitEquippedWithOrb } from '../utils/gameUtils';
 
 export interface ComboStrikeConfig {
   id: 'punch1' | 'punch2' | 'punch3' | 'punch4' | 'kick1' | 'kick2' | 'kick3';
@@ -179,20 +179,27 @@ export function initializeCombatUnits(
     const finalArmor = unit.armor;
     const finalMr = unit.mr;
 
-    // Paramecia bonus: +20 Start Mana
+    // Start Mana bonuses from Paramecia and items
     const teamParamecia = unit.isEnemy ? enemyParameciaActive : playerParameciaActive;
-    const bonusStartMana = teamParamecia && unit.traits.includes('paramecia') ? 20 : 0;
+    let bonusStartMana = teamParamecia && unit.traits.includes('paramecia') ? 20 : 0;
+    if (unit.items?.includes('lente_clarividencia')) bonusStartMana += 25;
+    if (unit.items?.includes('relogio_logpose')) bonusStartMana += 30;
+    if (unit.items?.includes('garrafa_sake') && (unit.unitId === 'zoro' || unit.unitId === 'shanks')) bonusStartMana += 30;
     const finalMana = Math.min(unit.maxMana, unit.mana + bonusStartMana);
+
+    const hasOrb = isUnitEquippedWithOrb(unit);
+    const startOrbMana = hasOrb ? Math.max(unit.orbMana || 0, 40) : 0;
 
     return {
       ...unit,
+      hasSpecialItem: hasOrb,
       hp: finalHp,
       maxHp: finalMaxHp,
       ad: finalAd,
       armor: finalArmor,
       mr: finalMr,
       mana: finalMana,
-      orbMana: unit.hasSpecialItem ? (unit.orbMana || 0) : 0,
+      orbMana: startOrbMana,
       maxOrbMana: 250,
       currentPosX: unit.gridX,
       currentPosY: unit.gridY,
@@ -1158,7 +1165,8 @@ function executeBasicAttack(
 
   // Calculate Base Damage from Strike Points & Champion Stats
   const starMultiplier = attacker.stars === 3 ? 1.7 : attacker.stars === 2 ? 1.3 : 1.0;
-  const isCrit = Math.random() < (isComboFinisher ? 0.35 : 0.20);
+  const itemCritBonus = attacker.items?.includes('relogio_logpose') ? 0.20 : 0;
+  const isCrit = Math.random() < ((isComboFinisher ? 0.35 : 0.20) + itemCritBonus);
   const critMultiplier = isCrit ? 1.5 : 1.0;
   const adScaling = attacker.ad / 36;
 
@@ -1190,13 +1198,15 @@ function executeBasicAttack(
     ? '#F59E0B'
     : (attacker.accentColor || (attacker.isEnemy ? '#F43F5E' : '#38BDF8'));
 
+  const itemLifestealBonus = attacker.items?.includes('frasco_rum') ? 0.20 : 0;
+
   attacker.pendingAttackHit = {
     targetInstanceId: target.instanceId,
     damage: finalDamage,
     attackType: attacker.attackType,
     isCrit,
     strikeName: attacker.lastStrikeName || strikeConfig.name,
-    lifestealPercent,
+    lifestealPercent: lifestealPercent + itemLifestealBonus,
     hitDelay: timing.hitDelay / speedMultiplier,
     isComboFinisher,
     isMelee,
@@ -1609,6 +1619,11 @@ function applyDamageToTarget(
   floatingTexts: FloatingText[],
   sourceType: 'BASIC' | 'SKILL' | 'ORB_SPECIAL' = 'BASIC'
 ) {
+  // Capa da Justiça dos Mares: 15% damage reduction from all damage sources
+  if (target.items?.includes('capa_almirante')) {
+    amount = Math.max(1, Math.round(amount * 0.85));
+  }
+
   let remainingDamage = amount;
 
   // Damage to Shield first

@@ -148,6 +148,8 @@ export default function App() {
   const isMultiplayerActiveRef = useRef<boolean>(false);
   isMultiplayerActiveRef.current = isMultiplayerActive;
   const [multiplayerRoom, setMultiplayerRoom] = useState<MultiplayerRoomState | null>(null);
+  const multiplayerRoomRef = useRef<MultiplayerRoomState | null>(null);
+  multiplayerRoomRef.current = multiplayerRoom;
   const [localPlayerId, setLocalPlayerId] = useState<string | null>(null);
   const localPlayerIdRef = useRef<string | null>(null);
   localPlayerIdRef.current = localPlayerId;
@@ -159,7 +161,10 @@ export default function App() {
     id: string;
     name: string;
     avatar: string;
-    units: UnitInstance[];
+    boardUnits?: UnitInstance[];
+    units?: UnitInstance[];
+    isBot?: boolean;
+    commanderId?: string;
   } | null>(null);
 
   // === Units and Board State ===
@@ -272,7 +277,8 @@ export default function App() {
   isShopLockedRef.current = isShopLocked;
 
   // Track active viewing commander and whether player is currently scouting an opponent
-  const isViewingOpponentArena = viewingCommanderId !== 'p1_human';
+  const myCommanderId = isMultiplayerActive ? (localPlayerId || 'p1_human') : 'p1_human';
+  const isViewingOpponentArena = viewingCommanderId !== myCommanderId;
   const viewingCommander = useMemo(() => {
     return commanders.find((c) => c.id === viewingCommanderId) || commanders[0];
   }, [commanders, viewingCommanderId]);
@@ -281,6 +287,20 @@ export default function App() {
   useEffect(() => {
     botPlayerStatesRef.current = botPlayerStates;
   }, [botPlayerStates]);
+
+  // Auto-sync player board to cloud in real-time during preparation
+  useEffect(() => {
+    if (!isMultiplayerActive || phase !== 'PREPARATION') return;
+    const playerDeployed = boardUnits.filter((u) => !u.isEnemy && u.gridX >= 0 && u.gridY >= 0);
+    const timer = setTimeout(() => {
+      multiplayerClient.submitBoard({
+        units: playerDeployed,
+        level: levelRef.current,
+        gold: goldRef.current,
+      });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [boardUnits, isMultiplayerActive, phase]);
 
   // Global drag cleanup listener to prevent drag state getting stuck if mouse is released anywhere
   useEffect(() => {
@@ -330,15 +350,36 @@ export default function App() {
   // Determine what board and bench units are currently shown on the screen
   const displayedBoardUnits = useMemo(() => {
     if (isViewingOpponentArena) {
-      const botData = botPlayerStates[viewingCommanderId];
-      if (botData) {
+      let oppUnitsToMirror: UnitInstance[] = [];
+
+      // Check remote board in multiplayer room first
+      if (isMultiplayerActive && multiplayerRoom) {
+        if (multiplayerRoom.playerBoards?.[viewingCommanderId]?.length) {
+          oppUnitsToMirror = multiplayerRoom.playerBoards[viewingCommanderId];
+        } else {
+          const p = multiplayerRoom.players?.find((pl) => pl.id === viewingCommanderId);
+          if (p?.boardUnits?.length) {
+            oppUnitsToMirror = p.boardUnits;
+          }
+        }
+      }
+
+      // Check local bot state
+      if (oppUnitsToMirror.length === 0) {
+        const botData = botPlayerStates[viewingCommanderId];
+        if (botData?.boardUnits) {
+          oppUnitsToMirror = botData.boardUnits;
+        }
+      }
+
+      if (oppUnitsToMirror.length > 0) {
         // Mirror the scouted opponent's units onto the OPPONENT / ENEMY side (columns 4..7)
         // following competitive auto-battler conventions (TFT/Auto-Chess):
         // Col 0 (back) -> Col 7 (enemy back)
         // Col 1 (mid-back) -> Col 6 (enemy mid-back)
         // Col 2 (mid-front) -> Col 5 (enemy mid-front)
         // Col 3 (front) -> Col 4 (enemy front facing player)
-        const mirroredOpponentUnits: UnitInstance[] = botData.boardUnits
+        const mirroredOpponentUnits: UnitInstance[] = oppUnitsToMirror
           .filter((u) => u.gridX >= 0 && u.gridY >= 0)
           .map((u) => {
             const base = CHAMPION_DATABASE[u.unitId];
@@ -362,7 +403,7 @@ export default function App() {
       return boardUnits;
     }
     return boardUnits;
-  }, [isViewingOpponentArena, viewingCommanderId, botPlayerStates, boardUnits]);
+  }, [isViewingOpponentArena, viewingCommanderId, botPlayerStates, boardUnits, isMultiplayerActive, multiplayerRoom]);
 
   const displayedBenchSlots = useMemo(() => {
     if (isViewingOpponentArena) {
@@ -569,16 +610,33 @@ export default function App() {
 
       // Prefer the synchronized remote board; only use local PvP fallback when no snapshot exists.
       const opp = multiplayerOpponentRef.current;
+      const oppId = opp?.id || currentOpponentCommanderIdRef.current;
       let oppUnits = (opp && Array.isArray(opp.boardUnits) && opp.boardUnits.length > 0)
         ? opp.boardUnits
         : (opp && Array.isArray(opp.units) && opp.units.length > 0 ? opp.units : []);
+
+      if (oppUnits.length === 0 && oppId && multiplayerRoomRef.current?.playerBoards?.[oppId]?.length) {
+        oppUnits = multiplayerRoomRef.current.playerBoards[oppId];
+      }
+
+      if (oppUnits.length === 0 && oppId && multiplayerRoomRef.current?.players) {
+        const found = multiplayerRoomRef.current.players.find((p) => p.id === oppId);
+        if (found?.boardUnits && found.boardUnits.length > 0) {
+          oppUnits = found.boardUnits;
+        }
+      }
+
       if (oppUnits.length === 0) {
-        oppUnits = generateEnemyBoardUnits(
-          stageRef.current,
-          roundInStageRef.current,
-          totalRoundRef.current,
-          'medium'
-        ).map((e) => ({ ...e, isEnemy: false }));
+        if (oppId && botPlayerStatesRef.current[oppId]?.boardUnits?.length) {
+          oppUnits = botPlayerStatesRef.current[oppId].boardUnits;
+        } else {
+          oppUnits = generateEnemyBoardUnits(
+            stageRef.current,
+            roundInStageRef.current,
+            totalRoundRef.current,
+            'medium'
+          ).map((e) => ({ ...e, isEnemy: false }));
+        }
       }
 
       const enemyUnits: UnitInstance[] = oppUnits.map((u, idx) => ({
@@ -616,12 +674,12 @@ export default function App() {
     // Lock difficulty once combat begins
     setIsDifficultyLocked(true);
 
-    // Initialize units for battle (captures all active combatants with difficulty scaling)
+    // Initialize units for battle (captures all active combatants with difficulty scaling; in multiplayer 1.0x)
     const activeBoardUnits = combatBoardUnits.filter((u) => u.gridX >= 0 && u.gridY >= 0);
     const diffConfig = DIFFICULTY_CONFIGS[difficultyRef.current || 'medium'];
     const initialCombat = initializeCombatUnits(activeBoardUnits, {
-      hp: diffConfig.enemyHpMultiplier,
-      ad: diffConfig.enemyAdMultiplier,
+      hp: isMultiplayerActiveRef.current ? 1.0 : diffConfig.enemyHpMultiplier,
+      ad: isMultiplayerActiveRef.current ? 1.0 : diffConfig.enemyAdMultiplier,
     });
     setCombatUnits(initialCombat);
 
@@ -789,6 +847,7 @@ export default function App() {
         isDraw: isDraw,
         survivingUnitsCount: survivingPlayerUnits,
         damageDealtToOpponent: isWin ? (stageRef.current * 2 + Math.max(1, survivingPlayerUnits * 2)) : 0,
+        damageTaken: dmgTaken,
       });
     }
 
@@ -1173,49 +1232,78 @@ export default function App() {
     const stageCode = `${nextStage}-${nextRoundInStage}`;
     setRoundStage(stageCode);
 
-    // Generate fresh bot states for the upcoming round immediately so scouting and matchmaking share the identical units
-    const nextBotStates: Record<string, BotPlayerData> = {};
-    commandersRef.current.forEach((cmd) => {
-      if (!cmd.isHuman) {
-        nextBotStates[cmd.id] = generateIndividualBotState(
-          cmd.id,
-          nextTotalRound,
-          difficultyRef.current || 'medium'
-        );
+    // Reset viewing to player's arena at start of new round
+    const myId = isMultiplayerActiveRef.current ? (localPlayerIdRef.current || 'p1_human') : 'p1_human';
+    setViewingCommanderId(myId);
+
+    if (isMultiplayerActiveRef.current) {
+      const room = multiplayerRoomRef.current;
+      const myPairing = room?.pairings?.find((p) => p.homePlayerId === myId);
+      if (myPairing && room) {
+        const opp = room.players.find((p) => p.id === myPairing.awayPlayerId);
+        if (opp) {
+          multiplayerOpponentRef.current = {
+            ...opp,
+            boardUnits: room.playerBoards?.[opp.id] || opp.boardUnits || [],
+          };
+          currentOpponentCommanderIdRef.current = opp.id;
+          isHumanFightingGhostRef.current = myPairing.isGhost;
+          setCurrentOpponentInfo({
+            name: opp.name,
+            avatar: opp.avatar,
+            isGhost: myPairing.isGhost,
+            isBoss: false,
+            bossTitle: '',
+            isPvE: false,
+          });
+          setRoundTitle(`Batalha PvP Online: ${opp.name}`);
+        }
       }
-    });
-    setBotPlayerStates(nextBotStates);
-
-    // Pre-calculate matchmaking for the upcoming round so Header accurately displays next opponent & boss status
-    const upcomingMatch = generateRoundMatchmaking(
-      commandersRef.current,
-      nextStage,
-      nextRoundInStage,
-      nextTotalRound,
-      difficultyRef.current || 'medium',
-      nextBotStates
-    );
-    scheduledMatchmakingRef.current = upcomingMatch;
-    currentOpponentCommanderIdRef.current = upcomingMatch.humanOpponentId;
-    setCurrentOpponentInfo({
-      name: upcomingMatch.opponentName,
-      avatar: upcomingMatch.opponentAvatar,
-      isGhost: upcomingMatch.isHumanFightingGhost,
-      isBoss: upcomingMatch.isBoss,
-      bossTitle: upcomingMatch.bossTitle,
-      isPvE: upcomingMatch.isPvE,
-    });
-
-    // Determine Title dynamically using Bot AI & Boss progression
-    let title = '';
-    if (upcomingMatch.isPvE) {
-      title = upcomingMatch.isBoss
-        ? `${upcomingMatch.bossTitle || 'PvE Boss'}: ${upcomingMatch.opponentName}`
-        : `PvE: ${upcomingMatch.opponentName}`;
     } else {
-      title = `Batalha PvP: ${upcomingMatch.opponentName}`;
+      // Generate fresh bot states for the upcoming round immediately so scouting and matchmaking share the identical units
+      const nextBotStates: Record<string, BotPlayerData> = {};
+      commandersRef.current.forEach((cmd) => {
+        if (!cmd.isHuman) {
+          nextBotStates[cmd.id] = generateIndividualBotState(
+            cmd.id,
+            nextTotalRound,
+            difficultyRef.current || 'medium'
+          );
+        }
+      });
+      setBotPlayerStates(nextBotStates);
+
+      // Pre-calculate matchmaking for the upcoming round so Header accurately displays next opponent & boss status
+      const upcomingMatch = generateRoundMatchmaking(
+        commandersRef.current,
+        nextStage,
+        nextRoundInStage,
+        nextTotalRound,
+        difficultyRef.current || 'medium',
+        nextBotStates
+      );
+      scheduledMatchmakingRef.current = upcomingMatch;
+      currentOpponentCommanderIdRef.current = upcomingMatch.humanOpponentId;
+      setCurrentOpponentInfo({
+        name: upcomingMatch.opponentName,
+        avatar: upcomingMatch.opponentAvatar,
+        isGhost: upcomingMatch.isHumanFightingGhost,
+        isBoss: upcomingMatch.isBoss,
+        bossTitle: upcomingMatch.bossTitle,
+        isPvE: upcomingMatch.isPvE,
+      });
+
+      // Determine Title dynamically using Bot AI & Boss progression
+      let title = '';
+      if (upcomingMatch.isPvE) {
+        title = upcomingMatch.isBoss
+          ? `${upcomingMatch.bossTitle || 'PvE Boss'}: ${upcomingMatch.opponentName}`
+          : `PvE: ${upcomingMatch.opponentName}`;
+      } else {
+        title = `Batalha PvP: ${upcomingMatch.opponentName}`;
+      }
+      setRoundTitle(title);
     }
-    setRoundTitle(title);
 
     // Restore player units to starting HP/Mana using live ref, strictly locking to player side (cols 0..3, rows 0..4)
     const restoredPlayerUnits = boardUnitsRef.current
@@ -1512,6 +1600,34 @@ export default function App() {
 
     multiplayerClient.onRoomStateUpdated = (room) => {
       setMultiplayerRoom(room);
+
+      // Refresh opponent indicator during PREPARATION from the room's pairings
+      if (room.status === 'IN_GAME' && isMultiplayerActiveRef.current) {
+        const myId = localPlayerIdRef.current;
+        const myPairing = room.pairings?.find((p) => p.homePlayerId === myId);
+        if (myPairing) {
+          const opp = room.players.find((p) => p.id === myPairing.awayPlayerId);
+          if (opp) {
+            multiplayerOpponentRef.current = {
+              ...opp,
+              boardUnits: room.playerBoards?.[opp.id] || opp.boardUnits || [],
+            };
+            currentOpponentCommanderIdRef.current = opp.id;
+            isHumanFightingGhostRef.current = myPairing.isGhost;
+            setCurrentOpponentInfo({
+              name: opp.name,
+              avatar: opp.avatar,
+              isGhost: myPairing.isGhost,
+              isBoss: false,
+              bossTitle: '',
+              isPvE: false,
+            });
+            if (room.phase === 'PREPARATION') {
+              setRoundTitle(`Batalha PvP Online: ${opp.name}`);
+            }
+          }
+        }
+      }
     };
 
     multiplayerClient.onGameStarted = (room) => {
@@ -1520,13 +1636,17 @@ export default function App() {
       setIsMultiplayerActive(true);
       isMultiplayerActiveRef.current = true;
 
+      // Reset view to local player
+      const myId = localPlayerIdRef.current;
+      setViewingCommanderId(myId || 'p1_human');
+
       // Update commanders from room's 8 players
       const newCommanders: Commander[] = room.players.map((p, idx) => ({
         id: p.id,
         name: p.name,
         avatar: p.avatar,
         title: p.isBot ? 'Bot do Grand Line' : 'Capitão Pirata',
-        isHuman: p.id === localPlayerIdRef.current,
+        isHuman: p.id === myId,
         hp: p.hp,
         maxHp: 100,
         gold: p.gold,
@@ -1551,6 +1671,29 @@ export default function App() {
       const computedTotalRound = (room.stage - 1) * 4 + room.roundInStage;
       setTotalRound(computedTotalRound);
       totalRoundRef.current = computedTotalRound;
+
+      // Set initial opponent from pairing
+      const myPairing = room.pairings?.find((p) => p.homePlayerId === myId);
+      if (myPairing) {
+        const opp = room.players.find((p) => p.id === myPairing.awayPlayerId);
+        if (opp) {
+          multiplayerOpponentRef.current = {
+            ...opp,
+            boardUnits: room.playerBoards?.[opp.id] || opp.boardUnits || [],
+          };
+          currentOpponentCommanderIdRef.current = opp.id;
+          isHumanFightingGhostRef.current = myPairing.isGhost;
+          setCurrentOpponentInfo({
+            name: opp.name,
+            avatar: opp.avatar,
+            isGhost: myPairing.isGhost,
+            isBoss: false,
+            bossTitle: '',
+            isPvE: false,
+          });
+          setRoundTitle(`Batalha PvP Online: ${opp.name}`);
+        }
+      }
 
       // Auto-deploy starting unit from bench to board if arena is currently empty
       const currentBench = [...benchSlotsRef.current];
@@ -1635,6 +1778,29 @@ export default function App() {
     multiplayerClient.onNewRoundStarted = (data) => {
       if (!isMultiplayerActiveRef.current) return;
       setMultiplayerRoom(data.room);
+
+      const myId = localPlayerIdRef.current;
+      const myPairing = data.room.pairings?.find((p) => p.homePlayerId === myId);
+      if (myPairing) {
+        const opp = data.room.players.find((p) => p.id === myPairing.awayPlayerId);
+        if (opp) {
+          multiplayerOpponentRef.current = {
+            ...opp,
+            boardUnits: data.room.playerBoards?.[opp.id] || opp.boardUnits || [],
+          };
+          currentOpponentCommanderIdRef.current = opp.id;
+          isHumanFightingGhostRef.current = myPairing.isGhost;
+          setCurrentOpponentInfo({
+            name: opp.name,
+            avatar: opp.avatar,
+            isGhost: myPairing.isGhost,
+            isBoss: false,
+            bossTitle: '',
+            isPvE: false,
+          });
+          setRoundTitle(`Batalha PvP Online: ${opp.name}`);
+        }
+      }
       handleProceedToNextRound();
     };
 
@@ -1648,12 +1814,26 @@ export default function App() {
               ...c,
               hp: matched.hp,
               isEliminated: matched.isEliminated,
+              rank: matched.placement || c.rank,
               placement: matched.placement,
             };
           }
           return c;
         })
       );
+    };
+
+    multiplayerClient.onGameFinished = (data) => {
+      if (!isMultiplayerActiveRef.current) return;
+      const myId = localPlayerIdRef.current;
+      const isWinner = data.winner && data.winner.id === myId;
+      if (isWinner) {
+        setUserPlacementRank(1);
+      } else {
+        const me = data.players?.find((p: any) => p.id === myId);
+        setUserPlacementRank(me?.placement || 2);
+      }
+      setIsGameOverModalOpen(true);
     };
 
     multiplayerClient.onEmoteReceived = (emote) => {

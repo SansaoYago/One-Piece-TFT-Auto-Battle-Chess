@@ -1,5 +1,6 @@
-import { UnitInstance, StarLevel, GameDifficulty } from '../types/game';
+import { UnitInstance, StarLevel, GameDifficulty, TraitId } from '../types/game';
 import { CHAMPION_DATABASE } from '../data/units';
+import { ITEM_DATABASE } from '../data/items';
 import {
   createUnitInstance,
   THREE_STAR_CHANCE_BY_TIER,
@@ -18,54 +19,181 @@ export interface BotPlayerData {
 }
 
 /**
- * Rosters temáticos de cada Comandante Bot.
- * NOTA CRUCIAL: As unidades estão ordenadas pela curva natural de custo/progressão de jogo:
- * Primeiras posições = Peças de Early Game (Tier 1 & 2).
- * Posições intermediárias = Peças de Mid Game (Tier 3 & 4).
- * Posições finais = Peças de Late Game (Tier 5).
+ * Equips a real item on a bot unit and calculates its direct stat and trait bonuses.
  */
-const BOT_THEME_ROSTERS: Record<string, { name: string; avatar: string; theme: string; units: string[] }> = {
+export function equipBotItem(unit: UnitInstance, itemId: string): boolean {
+  const itemData = ITEM_DATABASE[itemId];
+  if (!itemData) return false;
+  if (!unit.items) unit.items = [];
+  if (unit.items.includes(itemId)) return false;
+
+  const isSpecial = Boolean(itemData.isSpecialActivation);
+  const battleItemsCount = unit.items.filter((id) => !ITEM_DATABASE[id]?.isSpecialActivation).length;
+
+  if (isSpecial) {
+    if (unit.hasSpecialItem) return false;
+    unit.hasSpecialItem = true;
+    unit.orbMana = Math.max(unit.orbMana || 0, 40);
+    unit.items.push(itemId);
+  } else {
+    if (battleItemsCount >= 2) return false;
+    unit.items.push(itemId);
+  }
+
+  // Grant Trait if it's a synergy chip
+  if (itemData.grantTrait) {
+    const traitId = itemData.grantTrait as TraitId;
+    if (!unit.traits.includes(traitId)) {
+      unit.traits.push(traitId);
+    }
+  }
+
+  // Real Stat Bonuses Applied Directly to Unit Instance
+  switch (itemId) {
+    case 'espada_pirata':
+      unit.ad += 30;
+      unit.attackSpeed = Number(((unit.attackSpeed || 0.65) * 1.15).toFixed(2));
+      break;
+    case 'armadura_haki':
+      unit.armor = (unit.armor || 20) + 35;
+      unit.mr = (unit.mr || 20) + 35;
+      unit.maxHp += 250;
+      unit.hp += 250;
+      break;
+    case 'lente_clarividencia':
+      unit.ap = (unit.ap || 100) + 40;
+      unit.mana = Math.min(unit.maxMana, (unit.mana || 0) + 25);
+      break;
+    case 'garrafa_sake': {
+      const isDrunkard = unit.unitId === 'zoro' || unit.unitId === 'shanks';
+      const bonusAd = isDrunkard ? 40 : 20;
+      const bonusHp = isDrunkard ? 300 : 150;
+      const asMult = isDrunkard ? 1.30 : 1.15;
+      unit.ad += bonusAd;
+      unit.maxHp += bonusHp;
+      unit.hp += bonusHp;
+      unit.attackSpeed = Number(((unit.attackSpeed || 0.65) * asMult).toFixed(2));
+      if (isDrunkard) {
+        unit.mana = Math.min(unit.maxMana, (unit.mana || 0) + 30);
+      }
+      break;
+    }
+    case 'frasco_rum':
+      unit.attackSpeed = Number(((unit.attackSpeed || 0.65) * 1.20).toFixed(2));
+      break;
+    case 'capa_almirante':
+      unit.maxHp += 400;
+      unit.hp += 400;
+      break;
+    case 'relogio_logpose':
+      unit.mana = Math.min(unit.maxMana, (unit.mana || 0) + 30);
+      break;
+    case 'canhao_flutuante':
+      unit.ad += 35;
+      unit.ap = (unit.ap || 100) + 20;
+      break;
+  }
+
+  return true;
+}
+
+export interface BotThemeRoster {
+  name: string;
+  avatar: string;
+  theme: string;
+  units: string[];
+  preferredItems: Record<string, string[]>;
+}
+
+/**
+ * Rosters temáticos de cada Comandante Bot com estratégia de sinergia e itens.
+ */
+const BOT_THEME_ROSTERS: Record<string, BotThemeRoster> = {
   p2_law: {
     name: 'Trafalgar Law',
     avatar: '🩺',
     theme: 'Cirurgiões & Lâminas',
-    units: ['zoro', 'luffy', 'buggy', 'chopper', 'sanji', 'mihawk', 'shanks'],
+    units: ['zoro', 'luffy', 'chopper', 'tashigi', 'sanji', 'mihawk', 'shanks'],
+    preferredItems: {
+      zoro: ['espada_pirata', 'garrafa_sake', 'orbe_despertar'],
+      chopper: ['armadura_haki', 'capa_almirante'],
+      mihawk: ['espada_pirata', 'relogio_logpose'],
+      shanks: ['garrafa_sake', 'espada_pirata', 'orbe_despertar'],
+      luffy: ['armadura_haki'],
+    },
   },
   p3_kid: {
     name: 'Eustass Kid',
     avatar: '🧲',
     theme: 'Força Bruta & Fogo',
-    units: ['luffy', 'buggy', 'zoro', 'usopp', 'sanji', 'chopper', 'boa_hancock'],
+    units: ['luffy', 'sanji', 'zoro', 'chopper', 'boa_hancock', 'buggy'],
+    preferredItems: {
+      luffy: ['armadura_haki', 'capa_almirante', 'orbe_despertar'],
+      sanji: ['espada_pirata', 'frasco_rum'],
+      boa_hancock: ['lente_clarividencia', 'orbe_despertar'],
+      chopper: ['armadura_haki'],
+    },
   },
   p4_teach: {
     name: 'Marshall D. Teach',
     avatar: '🏴‍☠️',
     theme: 'Corsários & Trevas',
-    units: ['buggy', 'luffy', 'zoro', 'crocodile', 'boa_hancock', 'mihawk', 'shanks'],
+    units: ['buggy', 'crocodile', 'boa_hancock', 'mihawk', 'luffy', 'shanks'],
+    preferredItems: {
+      crocodile: ['armadura_haki', 'lente_clarividencia', 'orbe_despertar'],
+      mihawk: ['espada_pirata', 'relogio_logpose'],
+      boa_hancock: ['lente_clarividencia', 'relogio_logpose'],
+      buggy: ['armadura_haki', 'capa_almirante'],
+      shanks: ['espada_pirata', 'orbe_despertar'],
+    },
   },
   p5_bonney: {
     name: 'Jewelry Bonney',
     avatar: '🍕',
     theme: 'Gulosos & Brigões',
-    units: ['luffy', 'nami', 'buggy', 'zoro', 'usopp', 'sanji', 'chopper'],
+    units: ['luffy', 'sanji', 'chopper', 'zoro', 'nami', 'buggy'],
+    preferredItems: {
+      sanji: ['espada_pirata', 'frasco_rum', 'orbe_despertar'],
+      luffy: ['armadura_haki', 'capa_almirante'],
+      chopper: ['armadura_haki', 'orbe_despertar'],
+      nami: ['lente_clarividencia'],
+    },
   },
   p6_bege: {
     name: 'Capone Bege',
     avatar: '🏰',
     theme: 'Castelo & Máfia Pirata',
-    units: ['buggy', 'usopp', 'luffy', 'zoro', 'crocodile', 'sanji', 'mihawk'],
+    units: ['buggy', 'usopp', 'crocodile', 'luffy', 'mihawk', 'sanji'],
+    preferredItems: {
+      buggy: ['armadura_haki', 'canhao_flutuante', 'capa_almirante'],
+      usopp: ['canhao_flutuante', 'relogio_logpose', 'orbe_despertar'],
+      crocodile: ['armadura_haki', 'lente_clarividencia'],
+      mihawk: ['espada_pirata'],
+    },
   },
   p7_hawkins: {
     name: 'Basil Hawkins',
     avatar: '🃏',
     theme: 'Espadachins do Destino',
-    units: ['zoro', 'buggy', 'usopp', 'chopper', 'sanji', 'mihawk', 'shanks'],
+    units: ['zoro', 'tashigi', 'chopper', 'mihawk', 'shanks', 'sanji'],
+    preferredItems: {
+      zoro: ['espada_pirata', 'orbe_despertar'],
+      shanks: ['garrafa_sake', 'espada_pirata', 'orbe_despertar'],
+      mihawk: ['espada_pirata', 'relogio_logpose'],
+      tashigi: ['espada_pirata', 'armadura_haki'],
+    },
   },
   p8_apoo: {
     name: 'Scratchmen Apoo',
     avatar: '🎵',
     theme: 'Trapaceiros & Truques',
-    units: ['buggy', 'nami', 'usopp', 'luffy', 'zoro', 'chopper', 'sanji'],
+    units: ['buggy', 'nami', 'usopp', 'luffy', 'sanji', 'chopper'],
+    preferredItems: {
+      nami: ['lente_clarividencia', 'relogio_logpose', 'orbe_despertar'],
+      usopp: ['canhao_flutuante', 'espada_pirata'],
+      buggy: ['armadura_haki', 'capa_almirante'],
+      luffy: ['armadura_haki'],
+    },
   },
 };
 
@@ -85,11 +213,12 @@ export function generateIndividualBotState(
   totalRound: number,
   difficulty: GameDifficulty = 'medium'
 ): BotPlayerData {
-  const botInfo = BOT_THEME_ROSTERS[commanderId] || {
+  const botInfo: BotThemeRoster = BOT_THEME_ROSTERS[commanderId] || {
     name: commanderId,
     avatar: '🏴‍☠️',
     theme: 'Pirata',
     units: ALL_VALID_CHAMPS,
+    preferredItems: {},
   };
 
   const rosterPool = botInfo.units;
@@ -203,6 +332,36 @@ export function generateIndividualBotState(
     }
 
     const unit = createUnitInstance(champKey, stars, pos.x, pos.y, null, false);
+
+    // Set intelligent skill selection for 2★ or 3★ key carries
+    if (stars >= 2 && ['zoro', 'sanji', 'luffy', 'crocodile', 'boa_hancock', 'mihawk', 'shanks'].includes(champKey)) {
+      unit.activeSkill = 'SKILL_B';
+    }
+
+    // Equip preferred thematic items based on round progression
+    const prefItems = botInfo.preferredItems?.[champKey];
+    if (prefItems && prefItems.length > 0) {
+      if (totalRound >= 3 && i === 0 && prefItems[0]) {
+        equipBotItem(unit, prefItems[0]);
+      }
+      if (totalRound >= 5 && (i === 0 || i === 1) && prefItems[0]) {
+        equipBotItem(unit, prefItems[0]);
+      }
+      if (totalRound >= 7 && i === 0 && prefItems[1]) {
+        equipBotItem(unit, prefItems[1]);
+      }
+      if (totalRound >= 9 && prefItems[0]) {
+        equipBotItem(unit, prefItems[0]);
+        if (i === 0 && prefItems[1]) equipBotItem(unit, prefItems[1]);
+      }
+      if (totalRound >= 11 && prefItems[1]) {
+        equipBotItem(unit, prefItems[1]);
+      }
+      if (totalRound >= 12 && prefItems[2] && (stars >= 2 || difficulty === 'hard')) {
+        equipBotItem(unit, prefItems[2]);
+      }
+    }
+
     boardUnits.push(unit);
   }
 
