@@ -1,5 +1,7 @@
 # Atualizar o EXE do One Piece Tactics
 
+> O guia oficial agora esta em [ATUALIZAR.md](ATUALIZAR.md). Ele inclui o fluxo completo do EXE e APK, em etapas separadas.
+
 Guia para gerar uma nova versão do aplicativo Windows e atualizar a pasta `dist-electron` existente.
 
 Execute os comandos no PowerShell integrado do VS Code, a partir da raiz do projeto:

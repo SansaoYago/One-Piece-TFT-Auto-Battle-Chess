@@ -55,12 +55,21 @@ import { multiplayerClient } from './utils/multiplayerClient';
 import { MultiplayerRoomState, EmoteMessage, AvailableRoomSummary } from './types/multiplayer';
 import { MultiplayerLobbyModal } from './components/MultiplayerLobbyModal';
 import { subscribeToActiveRoomsFirestore, fetchActiveRoomsFirestore } from './services/firebase';
+import { AndroidUpdateInfo, checkAndroidUpdate, installAndroidUpdate } from './services/androidUpdater';
 
 export default function App() {
   // === Global Preloading Pipeline State ===
   const [isAssetsLoading, setIsAssetsLoading] = useState<boolean>(true);
   const [loadingProgress, setLoadingProgress] = useState<number>(0);
   const [loadingAssetLabel, setLoadingAssetLabel] = useState<string>('Iniciando Pipeline de Ativos 3D...');
+  const [androidUpdate, setAndroidUpdate] = useState<AndroidUpdateInfo | null>(null);
+  const [isAndroidUpdateBusy, setIsAndroidUpdateBusy] = useState<boolean>(false);
+
+  useEffect(() => {
+    checkAndroidUpdate().then((update) => {
+      if (update) setAndroidUpdate(update);
+    });
+  }, []);
 
   // === Game Lifecycle State ===
   const [phase, setPhase] = useState<GamePhase>('PREPARATION');
@@ -3133,6 +3142,36 @@ export default function App() {
         progress={loadingProgress}
         currentAsset={loadingAssetLabel}
       />
+
+      {androidUpdate && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-amber-500/50 bg-slate-900 p-5 text-center shadow-2xl">
+            <div className="mb-2 text-xs font-bold uppercase tracking-widest text-amber-400">Atualização disponível</div>
+            <h2 className="text-xl font-black text-white">One Piece TFT {androidUpdate.latestVersion}</h2>
+            <p className="mt-2 text-sm text-slate-300">
+              Versão instalada: {androidUpdate.currentVersion}. Baixe a nova versão para continuar sincronizando as partidas.
+            </p>
+            {androidUpdate.releaseNotes && (
+              <p className="mt-2 text-xs text-slate-400">{androidUpdate.releaseNotes}</p>
+            )}
+            <button
+              type="button"
+              disabled={isAndroidUpdateBusy}
+              onClick={async () => {
+                setIsAndroidUpdateBusy(true);
+                try {
+                  await installAndroidUpdate(androidUpdate);
+                } finally {
+                  setIsAndroidUpdateBusy(false);
+                }
+              }}
+              className="mt-5 w-full rounded-xl bg-amber-500 px-4 py-3 font-black text-slate-950 transition hover:bg-amber-400 disabled:cursor-wait disabled:opacity-60"
+            >
+              {isAndroidUpdateBusy ? 'Baixando atualização...' : 'Baixar e atualizar'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Force Landscape Orientation Guard for Mobile */}
       <OrientationGuard />
