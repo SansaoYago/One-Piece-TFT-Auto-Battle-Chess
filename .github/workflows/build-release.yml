@@ -77,6 +77,9 @@ jobs:
         with:
           node-version: 20
 
+      - name: Instalar Dependências
+        run: npm install
+
       - name: Sincronizar versão no package.json
         shell: pwsh
         run: |
@@ -84,11 +87,8 @@ jobs:
           Write-Host "Configurando package.json para versao $ver..."
           npm version $ver --no-git-tag-version --allow-same-version
 
-      - name: Instalar Dependências
-        run: npm install
-
       - name: Compilar Projeto Web
-        run: npm run build
+        run: npx vite build
 
       - name: Gerar Executáveis Windows (NSIS + Portable)
         run: npx electron-builder --win nsis portable --publish never
@@ -107,6 +107,8 @@ jobs:
     name: Compilar APK (Android)
     needs: prepare
     runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
     steps:
       - name: Checkout código
         uses: actions/checkout@v4
@@ -122,8 +124,12 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Aceitar Licenças Android SDK
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses || true
+
+      - name: Instalar Dependências
+        run: npm install
 
       - name: Atualizar arquivos de versão
         run: |
@@ -149,11 +155,8 @@ jobs:
             fs.writeFileSync(file, JSON.stringify(data, null, 2));
           "
 
-      - name: Instalar Dependências
-        run: npm install
-
       - name: Compilar Projeto Web
-        run: npm run build
+        run: npx vite build
 
       - name: Sincronizar Capacitor Android
         run: npx cap sync android
