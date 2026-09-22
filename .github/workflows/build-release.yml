@@ -72,13 +72,15 @@ jobs:
       - name: Checkout código
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Instalar Dependências
-        run: npm install
+        run: |
+          npm install
+          npm install --no-save @rollup/rollup-win32-x64-msvc
 
       - name: Sincronizar versão no package.json
         shell: pwsh
@@ -113,10 +115,10 @@ jobs:
       - name: Checkout código
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Setup Java 21
         uses: actions/setup-java@v4
