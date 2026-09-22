@@ -1,7 +1,7 @@
 {
   "name": "one-piece-tactics",
   "private": true,
-  "version": "0.1.5",
+  "version": "0.1.6",
   "main": "electron.cjs",
   "type": "module",
   "scripts": {
