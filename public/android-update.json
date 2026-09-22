@@ -1,6 +1,6 @@
 {
-  "version": "0.1.5",
-  "versionCode": 15,
-  "downloadUrl": "https://github.com/SansaoYago/One-Piece-TFT-Auto-Battle-Chess/releases/download/v0.1.5/One.Piece.TFT.0.1.5.apk",
-  "releaseNotes": "Sincronizacao do tabuleiro remoto no multiplayer."
+  "version": "0.1.6",
+  "versionCode": 16,
+  "downloadUrl": "https://github.com/SansaoYago/One-Piece-TFT-Auto-Battle-Chess/releases/download/v0.1.6/One.Piece.TFT.0.1.6.apk",
+  "releaseNotes": "Compilacao oficial multiplataforma Windows (EXE) e Android (APK)."
 }
