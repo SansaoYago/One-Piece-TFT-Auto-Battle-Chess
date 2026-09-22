@@ -57,6 +57,10 @@
       "!dist-electron-*{,/**/*}",
       "!android{,/**/*}"
     ],
+    "artifactName": "One.Piece.Tactics.${version}.${ext}",
+    "nsis": {
+      "artifactName": "One.Piece.Tactics.Setup.${version}.${ext}"
+    },
     "win": {
       "target": [
         "nsis",

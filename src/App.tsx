@@ -56,7 +56,6 @@ import { MultiplayerRoomState, EmoteMessage, AvailableRoomSummary } from './type
 import { MultiplayerLobbyModal } from './components/MultiplayerLobbyModal';
 import { subscribeToActiveRoomsFirestore, fetchActiveRoomsFirestore, purgeStaleRoomsFromFirestore } from './services/firebase';
 import { AndroidUpdateInfo, checkAndroidUpdate, installAndroidUpdate } from './services/androidUpdater';
-import { DownloadModal } from './components/DownloadModal';
 import { DownloadPage } from './pages/DownloadPage';
 
 export default function App() {
@@ -96,7 +95,6 @@ export default function App() {
   const [loadingAssetLabel, setLoadingAssetLabel] = useState<string>('Iniciando Pipeline de Ativos 3D...');
   const [androidUpdate, setAndroidUpdate] = useState<AndroidUpdateInfo | null>(null);
   const [isAndroidUpdateBusy, setIsAndroidUpdateBusy] = useState<boolean>(false);
-  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState<boolean>(false);
 
   useEffect(() => {
     checkAndroidUpdate().then((update) => {
@@ -3022,7 +3020,6 @@ export default function App() {
         difficulty={difficulty}
         isDifficultyLocked={isDifficultyLocked}
         onOpenDifficultyModal={() => setIsDifficultyModalOpen(true)}
-        onOpenDownloadModal={() => setIsDownloadModalOpen(true)}
         onTogglePause={() => setIsTimerPaused((prev) => !prev)}
         onResetTimer={() => setCountdown(30)}
         onReturnToPlayerArena={() => setViewingCommanderId('p1_human')}
@@ -3504,14 +3501,6 @@ export default function App() {
         }}
         errorMessage={multiplayerError}
       />
-
-      {/* Download Game Modal (Windows EXE and Android APK) */}
-      <DownloadModal
-        isOpen={isDownloadModalOpen}
-        onClose={() => setIsDownloadModalOpen(false)}
-        currentVersion="0.1.6"
-      />
-
     </div>
   );
 }

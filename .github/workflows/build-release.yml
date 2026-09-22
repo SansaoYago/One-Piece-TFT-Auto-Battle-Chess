@@ -94,6 +94,11 @@ jobs:
       - name: Compilar Projeto Web
         run: npx vite build
 
+      - name: Limpar dist-electron antigo
+        shell: pwsh
+        run: |
+          Remove-Item -Path dist-electron -Recurse -Force -ErrorAction SilentlyContinue
+
       - name: Gerar Executáveis Windows (NSIS + Portable)
         run: npx electron-builder --win nsis portable --publish never
 
@@ -211,10 +216,30 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: Listar arquivos da Release
+      - name: Filtrar e compatibilizar arquivos da Release
         run: |
-          echo "Arquivos a serem anexados na Release:"
-          ls -lh release-assets
+          cd release-assets
+          VER="${{ needs.prepare.outputs.version }}"
+          echo "Filtrando exclusivamente os arquivos da versão $VER..."
+          mkdir -p ../filtered-assets
+          # Copiar apenas os arquivos da versão atual e o latest.yml
+          cp latest.yml ../filtered-assets/ 2>/dev/null || true
+          cp *$VER* ../filtered-assets/ 2>/dev/null || true
+
+          cd ../filtered-assets
+          # Garantir compatibilidade dupla (hífen e ponto) para os executáveis
+          for f in One-Piece-Tactics-Setup-*.exe; do
+            [ -f "$f" ] && cp "$f" "${f//-/.}" 2>/dev/null || true
+          done
+          for f in One.Piece.Tactics.Setup.*.exe; do
+            if [ -f "$f" ]; then
+              HYPHEN_NAME=$(echo "$f" | sed -E 's/One\.Piece\.Tactics\.Setup\./One-Piece-Tactics-Setup-/')
+              [ ! -f "$HYPHEN_NAME" ] && cp "$f" "$HYPHEN_NAME" 2>/dev/null || true
+            fi
+          done
+
+          echo "Lista limpa de arquivos que serão anexados:"
+          ls -lh
 
       - name: Criar ou Atualizar Release no GitHub
         uses: softprops/action-gh-release@v2
@@ -224,6 +249,6 @@ jobs:
           body: ${{ inputs.release_notes || 'Nova versão compilada e publicada automaticamente via GitHub Actions.' }}
           draft: false
           prerelease: false
-          files: release-assets/*
+          files: filtered-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
