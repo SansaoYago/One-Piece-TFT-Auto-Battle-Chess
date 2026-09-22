@@ -1,6 +1,43 @@
 # Atualizar EXE e APK do One Piece Tactics
 
-Este e o guia oficial para gerar uma nova versao do Windows e do Android.
+Você pode gerar as novas versões do Windows (EXE) e do Android (APK) de duas formas:
+- **Método 1 (Recomendado):** Totalmente automático pelo **GitHub Actions** na nuvem (em 1 clique, sem precisar de Copilot, sem instalar JDK/Android Studio e sem erros de arquivos presos no Windows).
+- **Método 2:** Manual pelo PowerShell no computador local.
+
+---
+
+## 🚀 Método 1: Compilação Automática no GitHub Actions (Recomendado)
+
+O GitHub Actions compila o instalador `.exe` e o pacote `.apk` em servidores virtuais dedicados (Windows e Ubuntu) e publica a Release automaticamente com todos os links de download.
+
+### Passo 1: Garantir permissão de Release no GitHub (Apenas 1ª vez)
+1. No seu repositório no GitHub (`https://github.com/SansaoYago/One-Piece-TFT-Auto-Battle-Chess`), clique na aba **Settings** (Configurações).
+2. No menu lateral esquerdo, clique em **Actions** > **General**.
+3. Role a página até **Workflow permissions** e selecione **"Read and write permissions"**.
+4. Marque a caixinha *"Allow GitHub Actions to create and approve pull requests"* se houver e clique em **Save**.
+
+### Passo 2: Disparar a Compilação em 1 Clique
+1. Vá até a aba **Actions** no topo do repositório no GitHub.
+2. Na lista à esquerda, clique em **Build & Release (EXE & APK)**.
+3. No lado direito, clique no menu azul **"Run workflow"**.
+4. Preencha os campos (ou deixe em branco para usar a versão atual):
+   - **Versão:** ex. `0.1.6`
+   - **versionCode Android:** ex. `16`
+   - **Publicar Release no GitHub:** Deixe marcado como `true`.
+   - **Notas da versão:** Digite uma breve descrição das novidades.
+5. Clique no botão verde **Run workflow**.
+
+O GitHub Actions irá executar:
+- Compilar o executável Windows (`One Piece Tactics Setup X.Y.Z.exe`, `.blockmap`, `latest.yml` e o portable).
+- Compilar o aplicativo Android (`One.Piece.TFT.X.Y.Z.apk`) com Java 21 e Android SDK.
+- Publicar a **Release pública** com todos os arquivos prontos para download.
+- Disponibilizar os artefatos também para download direto na aba da Action.
+
+---
+
+## 🛠️ Método 2: Compilação Manual Local (PowerShell)
+
+Este é o guia manual caso deseje compilar diretamente na sua máquina Windows.
 Execute sempre as etapas nesta ordem:
 
 1. Definir a versao uma unica vez.
@@ -10,7 +47,7 @@ Execute sempre as etapas nesta ordem:
 
 Nao reutilize uma versao ja publicada. Se `0.1.5` ja existe, use `0.1.6`.
 
-## 1. Definir a versao
+### 1. Definir a versao
 
 Execute a partir da raiz do projeto:
 

@@ -1,0 +1,224 @@
+name: Build & Release (EXE & APK)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versão a compilar (ex: 0.1.6). Deixe vazio para usar a do package.json'
+        required: false
+        default: ''
+      version_code:
+        description: 'Android versionCode (número inteiro, ex: 16). Deixe vazio para usar o do build.gradle'
+        required: false
+        default: ''
+      create_release:
+        description: 'Publicar Release no GitHub com os arquivos anexados?'
+        type: boolean
+        default: true
+      release_notes:
+        description: 'Notas da versão (Release Notes)'
+        required: false
+        default: 'Nova versão compilada automaticamente via GitHub Actions.'
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Determinar Versão
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      version_code: ${{ steps.get_version.outputs.version_code }}
+      tag_name: ${{ steps.get_version.outputs.tag_name }}
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Obter dados da versão
+        id: get_version
+        run: |
+          # 1. Definir versão
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${{ github.ref_name }}"
+            VER="${TAG#v}"
+          elif [ -n "${{ inputs.version }}" ]; then
+            VER="${{ inputs.version }}"
+          else
+            VER=$(node -p "require('./package.json').version")
+          fi
+
+          # 2. Definir versionCode Android
+          if [ -n "${{ inputs.version_code }}" ]; then
+            VCODE="${{ inputs.version_code }}"
+          else
+            CURRENT_VCODE=$(grep -o 'versionCode [0-9]*' android/app/build.gradle | head -1 | awk '{print $2}')
+            VCODE=${CURRENT_VCODE:-16}
+          fi
+
+          echo "version=${VER}" >> $GITHUB_OUTPUT
+          echo "version_code=${VCODE}" >> $GITHUB_OUTPUT
+          echo "tag_name=v${VER}" >> $GITHUB_OUTPUT
+          echo "Compilando Versão: ${VER} | Android Code: ${VCODE} | Tag: v${VER}"
+
+  build-windows:
+    name: Compilar EXE (Windows)
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Sincronizar versão no package.json
+        shell: pwsh
+        run: |
+          $ver = "${{ needs.prepare.outputs.version }}"
+          Write-Host "Configurando package.json para versao $ver..."
+          npm version $ver --no-git-tag-version --allow-same-version
+
+      - name: Instalar Dependências
+        run: npm ci || npm install
+
+      - name: Compilar Projeto Web
+        run: npm run build
+
+      - name: Gerar Executáveis Windows (NSIS + Portable)
+        run: npx electron-builder --win nsis portable --publish never
+
+      - name: Upload Artefatos Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: |
+            dist-electron/*.exe
+            dist-electron/*.blockmap
+            dist-electron/latest.yml
+          if-no-files-found: error
+
+  build-android:
+    name: Compilar APK (Android)
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Atualizar arquivos de versão
+        run: |
+          VER="${{ needs.prepare.outputs.version }}"
+          VCODE="${{ needs.prepare.outputs.version_code }}"
+          echo "Atualizando Android para Versao $VER (Code: $VCODE)..."
+
+          # Atualizar build.gradle
+          sed -i -E "s/versionCode [0-9]+/versionCode $VCODE/" android/app/build.gradle
+          sed -i -E "s/versionName \"[^\"]+\"/versionName \"$VER\"/" android/app/build.gradle
+
+          # Atualizar VERSION.md
+          echo "$VER" > VERSION.md
+
+          # Atualizar public/android-update.json
+          node -e "
+            const fs = require('fs');
+            const file = 'public/android-update.json';
+            const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+            data.version = '$VER';
+            data.versionCode = Number('$VCODE');
+            data.downloadUrl = 'https://github.com/SansaoYago/One-Piece-TFT-Auto-Battle-Chess/releases/download/v$VER/One.Piece.TFT.$VER.apk';
+            fs.writeFileSync(file, JSON.stringify(data, null, 2));
+          "
+
+      - name: Instalar Dependências
+        run: npm ci || npm install
+
+      - name: Compilar Projeto Web
+        run: npm run build
+
+      - name: Sincronizar Capacitor Android
+        run: npx cap sync android
+
+      - name: Tornar gradlew executável
+        run: chmod +x android/gradlew
+
+      - name: Compilar APK Android
+        run: |
+          cd android
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Renomear e Preparar APK Final
+        run: |
+          VER="${{ needs.prepare.outputs.version }}"
+          mkdir -p dist-android
+          cp android/app/build/outputs/apk/debug/app-debug.apk "dist-android/One.Piece.TFT.${VER}.apk"
+          echo "APK gerado com sucesso:"
+          ls -lh dist-android/
+
+      - name: Upload Artefato Android
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: dist-android/One.Piece.TFT.*.apk
+          if-no-files-found: error
+
+  publish-release:
+    name: Publicar GitHub Release
+    needs: [prepare, build-windows, build-android]
+    if: github.event_name == 'push' || inputs.create_release == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Criar diretório de assets
+        run: mkdir -p release-assets
+
+      - name: Baixar artefatos Windows
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-exe
+          path: release-assets
+          merge-multiple: true
+
+      - name: Baixar artefatos Android
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: release-assets
+          merge-multiple: true
+
+      - name: Listar arquivos da Release
+        run: |
+          echo "Arquivos a serem anexados na Release:"
+          ls -lh release-assets
+
+      - name: Criar ou Atualizar Release no GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag_name }}
+          name: One Piece Tactics ${{ needs.prepare.outputs.tag_name }}
+          body: ${{ inputs.release_notes || 'Nova versão compilada e publicada automaticamente via GitHub Actions.' }}
+          draft: false
+          prerelease: false
+          files: release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
