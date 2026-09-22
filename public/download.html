@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Download One Piece Tactics - APK e Windows EXE</title>
+  <meta name="description" content="Baixe One Piece Tactics para celular Android (APK) ou computador Windows (EXE).">
+  <link rel="icon" type="image/svg+xml" href="/favicon.ico">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-slate-950">
+
+  <header class="w-full border-b border-slate-800/80 bg-slate-950/80 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-2.5">
+      <span class="text-2xl">👒</span>
+      <div>
+        <h1 class="text-lg font-black tracking-wider text-amber-400">ONE PIECE TACTICS</h1>
+        <p class="text-[11px] text-slate-400 -mt-1">Página Oficial de Download</p>
+      </div>
+    </div>
+    <a href="/" class="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-amber-300">
+      Jogar no Navegador
+    </a>
+  </header>
+
+  <main class="max-w-4xl mx-auto px-4 py-10 flex-1 flex flex-col items-center text-center">
+    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-semibold mb-4">
+      <span id="version-tag">Versão Oficial Mais Recente</span>
+    </div>
+
+    <h2 class="text-3xl sm:text-5xl font-black text-white mb-3">Baixe e Jogue com Seus Amigos</h2>
+    <p class="text-slate-300 max-w-xl mb-8">
+      Escolha a sua plataforma abaixo para baixar o instalador oficial do jogo:
+    </p>
+
+    <div class="w-full grid grid-cols-1 md:grid-cols-2 gap-6 text-left mb-8">
+      <!-- Card Android -->
+      <div class="rounded-2xl p-6 bg-slate-900 border border-emerald-500/40 flex flex-col justify-between">
+        <div>
+          <div class="flex justify-between items-center mb-4">
+            <div class="w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-2xl font-bold">
+              📱
+            </div>
+            <span id="apk-size" class="text-xs font-bold text-emerald-300 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/30">~79 MB</span>
+          </div>
+          <h3 class="text-2xl font-black text-white">Android</h3>
+          <p class="text-sm text-slate-300 mt-1 mb-5">Instalador para celulares e tablets Android (.APK).</p>
+        </div>
+        <div>
+          <a id="apk-link" href="https://github.com/SansaoYago/One-Piece-TFT-Auto-Battle-Chess/releases/latest" class="w-full block text-center py-3.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm uppercase tracking-wide transition">
+            Baixar APK (Android)
+          </a>
+        </div>
+      </div>
+
+      <!-- Card Windows -->
+      <div class="rounded-2xl p-6 bg-slate-900 border border-cyan-500/40 flex flex-col justify-between">
+        <div>
+          <div class="flex justify-between items-center mb-4">
+            <div class="w-12 h-12 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-2xl font-bold">
+              🖥️
+            </div>
+            <span id="exe-size" class="text-xs font-bold text-cyan-300 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-500/30">~300 MB</span>
+          </div>
+          <h3 class="text-2xl font-black text-white">Windows (PC)</h3>
+          <p class="text-sm text-slate-300 mt-1 mb-5">Instalador para computador com Launcher automático (.EXE).</p>
+        </div>
+        <div>
+          <a id="exe-link" href="https://github.com/SansaoYago/One-Piece-TFT-Auto-Battle-Chess/releases/latest" class="w-full block text-center py-3.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-sm uppercase tracking-wide transition">
+            Baixar Instalador (Windows)
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Link Box -->
+    <div class="w-full rounded-2xl bg-slate-900 border border-slate-800 p-5 text-left flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div>
+        <h4 class="font-bold text-white">🔗 Enviar para os sobrinhos</h4>
+        <p class="text-xs text-slate-400">Copie este link para compartilhar no WhatsApp:</p>
+      </div>
+      <button onclick="navigator.clipboard.writeText(window.location.href); alert('Link copiado!');" class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs uppercase">
+        Copiar Link
+      </button>
+    </div>
+  </main>
+
+  <footer class="w-full border-t border-slate-900 bg-slate-950 py-4 text-center text-xs text-slate-500">
+    One Piece Tactics &bull; Jogo para fãs
+  </footer>
+
+  <script>
+    fetch('https://api.github.com/repos/SansaoYago/One-Piece-TFT-Auto-Battle-Chess/releases/latest')
+      .then(res => res.json())
+      .then(data => {
+        if (data.tag_name) {
+          document.getElementById('version-tag').textContent = 'Versão Oficial ' + data.tag_name;
+        }
+        if (Array.isArray(data.assets)) {
+          const exe = data.assets.find(a => a.name.endsWith('.exe') && !a.name.includes('blockmap'));
+          if (exe) {
+            document.getElementById('exe-link').href = exe.browser_download_url;
+            document.getElementById('exe-size').textContent = (exe.size / (1024*1024)).toFixed(1) + ' MB';
+          }
+          const apk = data.assets.find(a => a.name.endsWith('.apk'));
+          if (apk) {
+            document.getElementById('apk-link').href = apk.browser_download_url;
+            document.getElementById('apk-size').textContent = (apk.size / (1024*1024)).toFixed(1) + ' MB';
+          }
+        }
+      })
+      .catch(console.error);
+  </script>
+</body>
+</html>

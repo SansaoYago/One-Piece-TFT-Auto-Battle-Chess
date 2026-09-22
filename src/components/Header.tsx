@@ -1,7 +1,7 @@
 import React from 'react';
 import { GamePhase, GameDifficulty, DIFFICULTY_CONFIGS, OpponentDisplayInfo } from '../types/game';
 import { EmoteMessage } from '../types/multiplayer';
-import { Shield, Swords, RefreshCw, Play, Pause, AlertTriangle, Eye, FlaskConical, RotateCcw, Trash2, Zap, Lock, ChevronDown, Crown, Globe, Users } from 'lucide-react';
+import { Shield, Swords, RefreshCw, Play, Pause, AlertTriangle, Eye, FlaskConical, RotateCcw, Trash2, Zap, Lock, ChevronDown, Crown, Globe, Users, Download } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 import { MultiplayerEmoteBar } from './MultiplayerEmoteBar';
 
@@ -20,6 +20,7 @@ interface HeaderProps {
   difficulty?: GameDifficulty;
   isDifficultyLocked?: boolean;
   onOpenDifficultyModal?: () => void;
+  onOpenDownloadModal?: () => void;
   onTogglePause: () => void;
   onResetTimer: () => void;
   onTogglePhase: () => void;
@@ -49,6 +50,7 @@ export const Header: React.FC<HeaderProps> = ({
   difficulty = 'medium',
   isDifficultyLocked = false,
   onOpenDifficultyModal,
+  onOpenDownloadModal,
   onTogglePause,
   onResetTimer,
   onTogglePhase,
@@ -303,6 +305,20 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Side: Mode Toggle Button, Multiplayer, PWA Install or Opponent View */}
         <div className="flex items-center gap-2">
+          {/* Download Game (EXE and APK) Button */}
+          {onOpenDownloadModal && (
+            <button
+              id="header-downloads-btn"
+              onClick={onOpenDownloadModal}
+              title="Baixar para Windows (EXE) e Android (APK)"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border border-amber-500/50 bg-slate-900/90 hover:bg-slate-800 text-amber-300 hover:border-amber-400 text-xs font-bold transition-all shadow-md cursor-pointer hover:scale-105 active:scale-95"
+            >
+              <Download className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Downloads</span>
+              <span className="sm:hidden">Baixar</span>
+            </button>
+          )}
+
           {/* PWA Install Button (auto hides if already installed) */}
           <PWAInstallButton />
 

@@ -56,14 +56,47 @@ import { MultiplayerRoomState, EmoteMessage, AvailableRoomSummary } from './type
 import { MultiplayerLobbyModal } from './components/MultiplayerLobbyModal';
 import { subscribeToActiveRoomsFirestore, fetchActiveRoomsFirestore, purgeStaleRoomsFromFirestore } from './services/firebase';
 import { AndroidUpdateInfo, checkAndroidUpdate, installAndroidUpdate } from './services/androidUpdater';
+import { DownloadModal } from './components/DownloadModal';
+import { DownloadPage } from './pages/DownloadPage';
 
 export default function App() {
+  // === Standalone Download Page Routing ===
+  const [isDownloadView, setIsDownloadView] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const path = window.location.pathname.toLowerCase();
+    const search = window.location.search.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    return (
+      path === '/download' ||
+      path.startsWith('/download') ||
+      search.includes('download') ||
+      hash.includes('download')
+    );
+  });
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.toLowerCase();
+      const search = window.location.search.toLowerCase();
+      const hash = window.location.hash.toLowerCase();
+      setIsDownloadView(
+        path === '/download' ||
+        path.startsWith('/download') ||
+        search.includes('download') ||
+        hash.includes('download')
+      );
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   // === Global Preloading Pipeline State ===
   const [isAssetsLoading, setIsAssetsLoading] = useState<boolean>(true);
   const [loadingProgress, setLoadingProgress] = useState<number>(0);
   const [loadingAssetLabel, setLoadingAssetLabel] = useState<string>('Iniciando Pipeline de Ativos 3D...');
   const [androidUpdate, setAndroidUpdate] = useState<AndroidUpdateInfo | null>(null);
   const [isAndroidUpdateBusy, setIsAndroidUpdateBusy] = useState<boolean>(false);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState<boolean>(false);
 
   useEffect(() => {
     checkAndroidUpdate().then((update) => {
@@ -2959,6 +2992,17 @@ export default function App() {
     setTestAnimationOverride(null);
   }, []);
 
+  if (isDownloadView) {
+    return (
+      <DownloadPage
+        onPlayInBrowser={() => {
+          window.history.pushState({}, '', '/');
+          setIsDownloadView(false);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden font-sans select-none">
       
@@ -2978,6 +3022,7 @@ export default function App() {
         difficulty={difficulty}
         isDifficultyLocked={isDifficultyLocked}
         onOpenDifficultyModal={() => setIsDifficultyModalOpen(true)}
+        onOpenDownloadModal={() => setIsDownloadModalOpen(true)}
         onTogglePause={() => setIsTimerPaused((prev) => !prev)}
         onResetTimer={() => setCountdown(30)}
         onReturnToPlayerArena={() => setViewingCommanderId('p1_human')}
@@ -3458,6 +3503,13 @@ export default function App() {
           isMultiplayerActiveRef.current = false;
         }}
         errorMessage={multiplayerError}
+      />
+
+      {/* Download Game Modal (Windows EXE and Android APK) */}
+      <DownloadModal
+        isOpen={isDownloadModalOpen}
+        onClose={() => setIsDownloadModalOpen(false)}
+        currentVersion="0.1.6"
       />
 
     </div>
