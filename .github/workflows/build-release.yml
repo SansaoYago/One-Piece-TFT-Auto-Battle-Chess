@@ -78,9 +78,11 @@ jobs:
           node-version: 22
 
       - name: Instalar Dependências
+        shell: pwsh
         run: |
+          Remove-Item -Path package-lock.json -Force -ErrorAction SilentlyContinue
           npm install
-          npm install --no-save @rollup/rollup-win32-x64-msvc
+          npm install --no-save @rollup/rollup-win32-x64-msvc lightningcss-win32-x64-msvc @esbuild/win32-x64
 
       - name: Sincronizar versão no package.json
         shell: pwsh
