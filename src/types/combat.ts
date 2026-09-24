@@ -18,10 +18,11 @@ export interface AttackEffect {
   fromY: number;
   toX: number;
   toY: number;
-  type: 'MELEE_SLASH' | 'PROJECTILE' | 'SKILL_IMPACT' | 'LIGHTNING' | 'FIRE_BLAST' | 'PUNCH_EXTEND';
+  type: 'MELEE_SLASH' | 'PROJECTILE' | 'SKILL_IMPACT' | 'LIGHTNING' | 'FIRE_BLAST' | 'PUNCH_EXTEND' | 'ROOM_SPHERE' | 'COUNTER_SHOCK';
   color: string;
   icon?: string;
   skillName?: string;
+  radius?: number; // Radius in tiles for area abilities (such as Law's ROOM sphere)
   timestamp: number;
   durationMs: number;
 }

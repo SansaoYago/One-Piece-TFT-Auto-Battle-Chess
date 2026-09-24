@@ -1031,6 +1031,88 @@ export async function loadChampionSkinModel(
     return null;
   }
 
+  // 15. Trafalgar Law (SkinTrafalgar / SkinTrafagalgar / SkinLaw + Slash1 + Walk)
+  if (normId === 'trafalgar' || normId === 'law' || normId.includes('trafalgar') || normId.includes('law')) {
+    const candidateUrls = [
+      './models/SkinTrafalgar.glb',
+      '/models/SkinTrafalgar.glb',
+      './models/SkinTrafagalgar.glb',
+      '/models/SkinTrafagalgar.glb',
+      './models/SkinLaw.glb',
+      '/models/SkinLaw.glb',
+      './models/Skin_Trafalgar.glb',
+      '/models/Skin_Trafalgar.glb',
+      './models/Skin_Law.glb',
+      '/models/Skin_Law.glb',
+      './models/Trafalgar.glb',
+      '/models/Trafalgar.glb',
+      './models/Law.glb',
+      '/models/Law.glb',
+      './models/trafalgar.glb',
+      '/models/trafalgar.glb',
+      './models/law.glb',
+      '/models/law.glb',
+    ];
+    const res = await tryLoadCandidateModel(candidateUrls);
+    const [walkClip, slashClip] = await Promise.all([
+      tryLoadAnimationClip(['./models/Walk.glb', '/models/Walk.glb', './models/ZoroWalk.glb', '/models/ZoroWalk.glb'], 'walk'),
+      tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1'),
+    ]);
+    if (res) {
+      return {
+        ...res.data,
+        url: res.url,
+        isDedicatedSkin: true,
+        customAnimations: {
+          walk: walkClip || undefined,
+          slash1: slashClip || undefined,
+          attack: slashClip || undefined,
+          punch1: slashClip || undefined,
+        },
+      };
+    }
+    return null;
+  }
+
+  // 16. Bepo (SkinBepo + Martial Arts Punches & Kick1 + Walk)
+  if (normId === 'bepo' || normId.includes('bepo')) {
+    const candidateUrls = [
+      './models/SkinBepo.glb',
+      '/models/SkinBepo.glb',
+      './models/Skin_Bepo.glb',
+      '/models/Skin_Bepo.glb',
+      './models/Bepo.glb',
+      '/models/Bepo.glb',
+      './models/bepo.glb',
+      '/models/bepo.glb',
+    ];
+    const res = await tryLoadCandidateModel(candidateUrls);
+    const [walkClip, punch1Clip, punch2Clip, punch3Clip, kickClip] = await Promise.all([
+      tryLoadAnimationClip(['./models/Walk.glb', '/models/Walk.glb'], 'walk'),
+      tryLoadAnimationClip(['./models/Punch1.glb', '/models/Punch1.glb'], 'punch1'),
+      tryLoadAnimationClip(['./models/Punch2.glb', '/models/Punch2.glb'], 'punch2'),
+      tryLoadAnimationClip(['./models/Punch3.glb', '/models/Punch3.glb'], 'punch3'),
+      tryLoadAnimationClip(['./models/Kick1.glb', '/models/Kick1.glb'], 'kick1'),
+    ]);
+    if (res) {
+      return {
+        ...res.data,
+        url: res.url,
+        isDedicatedSkin: true,
+        customAnimations: {
+          walk: walkClip || undefined,
+          attack: punch1Clip || undefined,
+          punch: punch1Clip || undefined,
+          punch1: punch1Clip || undefined,
+          punch2: punch2Clip || undefined,
+          punch3: punch3Clip || undefined,
+          kick1: kickClip || undefined,
+        },
+      };
+    }
+    return null;
+  }
+
   return null;
 }
 
@@ -1039,7 +1121,7 @@ export async function loadChampionAttackAnimation(unitId: string): Promise<THREE
   if (normId === 'mihawk') {
     return tryLoadAnimationClip(['./models/MihawkAtk.glb', '/models/MihawkAtk.glb'], 'attack');
   }
-  if (normId === 'zoro' || normId === 'shanks' || normId === 'tashigi' || normId.startsWith('marine') || normId === 'buggy') {
+  if (normId === 'zoro' || normId === 'shanks' || normId === 'tashigi' || normId.startsWith('marine') || normId === 'buggy' || normId === 'trafalgar' || normId === 'law') {
     return tryLoadAnimationClip(['./models/Slash1.glb', '/models/Slash1.glb'], 'slash1');
   }
   if (normId === 'smoker' || normId.includes('boa') || normId.includes('hancock')) {

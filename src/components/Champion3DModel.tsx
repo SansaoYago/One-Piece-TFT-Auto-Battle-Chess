@@ -145,6 +145,8 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
   const isNami = normId.includes('nami');
   const isUsopp = normId.includes('usopp');
   const isMihawk = normId.includes('mihawk');
+  const isLaw = normId.includes('trafalgar') || normId.includes('law');
+  const isBepo = normId.includes('bepo');
 
   // Determine active action key
   const getActionKey = (): string => {
@@ -159,6 +161,27 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
       if (isCasting || animationName?.includes('punch') || animationName?.includes('kick') || animationName === 'attack' || animationName === 'slash1') {
         return 'attack';
       }
+      return 'idle';
+    }
+    if (isLaw) {
+      if (animationName === 'walk') return 'walk';
+      if (animationName === 'turnLeft') return 'turnLeft';
+      if (animationName === 'turnRight') return 'turnRight';
+      if (animationName === 'death') return 'death';
+      if (isCasting || animationName?.includes('punch') || animationName?.includes('kick') || animationName === 'attack' || animationName === 'slash1') {
+        return 'slash1';
+      }
+      return 'idle';
+    }
+    if (isBepo) {
+      if (animationName === 'walk') return 'walk';
+      if (animationName === 'turnLeft') return 'turnLeft';
+      if (animationName === 'turnRight') return 'turnRight';
+      if (animationName === 'death') return 'death';
+      if (animationName === 'kick' || animationName === 'kick1') return 'kick1';
+      if (animationName === 'punch2') return 'punch2';
+      if (animationName === 'punch3') return 'punch3';
+      if (animationName?.includes('punch') || animationName === 'attack' || animationName === 'slash1' || isCasting) return 'punch1';
       return 'idle';
     }
     if (isNami) {
@@ -240,6 +263,18 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
       targetAction = actionsRef.current['attack'] || actionsRef.current['slash1'] || actionsRef.current['punch1'];
     } else if (isMonster && (targetKey.startsWith('punch') || targetKey.startsWith('kick') || targetKey === 'attack')) {
       targetAction = actionsRef.current['attack'] || actionsRef.current['punch1'];
+    } else if (isLaw && (targetKey.startsWith('punch') || targetKey.startsWith('kick') || targetKey === 'attack' || targetKey === 'slash1')) {
+      targetAction = actionsRef.current['slash1'] || actionsRef.current['attack'] || actionsRef.current['punch1'];
+    } else if (isBepo) {
+      if (targetKey === 'kick1' || targetKey.startsWith('kick')) {
+        targetAction = actionsRef.current['kick1'] || actionsRef.current['punch1'];
+      } else if (targetKey === 'punch2') {
+        targetAction = actionsRef.current['punch2'] || actionsRef.current['punch1'];
+      } else if (targetKey === 'punch3') {
+        targetAction = actionsRef.current['punch3'] || actionsRef.current['punch1'];
+      } else if (targetKey.startsWith('punch') || targetKey === 'attack') {
+        targetAction = actionsRef.current['punch1'] || actionsRef.current['punch'];
+      }
     }
     if (!targetAction && targetKey.startsWith('punch')) {
       targetAction = actionsRef.current['punch1'] || actionsRef.current['punch'];
@@ -254,7 +289,7 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     }
 
     if (targetAction) {
-      const isAttackStrike = targetKey.startsWith('punch') || targetKey.startsWith('kick') || targetKey === 'attack';
+      const isAttackStrike = targetKey.startsWith('punch') || targetKey.startsWith('kick') || targetKey === 'attack' || targetKey === 'slash1';
 
       if (isAttackStrike) {
         // Strike execution: authentic animation speed, clamp on finish, and play fully

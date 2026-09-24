@@ -101,11 +101,14 @@ export const CHAMPION_CANONICAL_HEIGHTS: Record<string, number> = {
   marine: 1.80,
   zoro: 1.81,
   boa_hancock: 1.91,
+  trafalgar: 1.91,
+  law: 1.91,
   buggy: 1.92,
   mihawk: 1.98,
   shanks: 1.99,
   smoker: 2.09,
   smoke: 2.09,
+  bepo: 2.40,
   rob_lucci_cp9: 2.12,
   cp9_agent_kaku: 1.93,
   cp9_agent_blueno: 2.58,
@@ -145,10 +148,13 @@ export function getChampionPhysicalRadius(unitId: string, isTransformed?: boolea
   if (normId === 'crocodile') {
     return 0.36; // Shichibukai grande e volumoso com casaco de pele
   }
+  if (normId === 'bepo') {
+    return 0.35; // Urso polar robusto
+  }
   if (normId === 'smoker' || normId === 'smoke') {
     return 0.32; // Capitão naval forte (>2.00m)
   }
-  if (normId === 'mihawk' || normId === 'shanks' || normId === 'boa_hancock' || normId === 'buggy') {
+  if (normId === 'mihawk' || normId === 'shanks' || normId === 'boa_hancock' || normId === 'buggy' || normId === 'trafalgar' || normId === 'law') {
     return 0.28;
   }
   if (normId === 'zoro') {

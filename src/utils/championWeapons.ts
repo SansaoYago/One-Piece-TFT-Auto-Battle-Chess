@@ -121,6 +121,8 @@ export function attachChampionWeapons(
     return attachUsoppSlingshot(rightHandBone || model, isEnemy);
   } else if (normId === 'mihawk') {
     return attachMihawkKokutoYoru(rightHandBone || model, isEnemy);
+  } else if (normId === 'trafalgar' || normId === 'law' || normId.includes('trafalgar') || normId.includes('law')) {
+    return attachLawKikokuNodachi(rightHandBone || model, isEnemy);
   }
 
   return null;
@@ -1034,3 +1036,147 @@ function attachMihawkKokutoYoru(parent: THREE.Object3D, isEnemy: boolean): THREE
   parent.add(yoru);
   return yoru;
 }
+
+/**
+ * Trafalgar Law's Cursed Nodachi - Kikoku (鬼哭)
+ * Authentic details:
+ * - Extra-long slender Katana/Nodachi steel blade (~1.12m) with subtle cyan ROOM hamon edge
+ * - Signature oblong white fluffy fur guard (Tsuba)
+ * - Long black tsuka (hilt) wrapped with red cross patterns
+ * - Red braided cord hanging from the pommel
+ */
+function attachLawKikokuNodachi(parent: THREE.Object3D, isEnemy: boolean): THREE.Group {
+  const kikoku = new THREE.Group();
+  kikoku.name = 'weapon_kikoku_nodachi';
+
+  const bladeMat = new THREE.MeshStandardMaterial({
+    color: 0xf1f5f9,
+    metalness: 0.95,
+    roughness: 0.12,
+  });
+
+  const hamonMat = new THREE.MeshStandardMaterial({
+    color: 0x38bdf8,
+    emissive: new THREE.Color(0x0284c7),
+    emissiveIntensity: 0.65,
+    roughness: 0.2,
+  });
+
+  const furTsubaMat = new THREE.MeshStandardMaterial({
+    color: 0xf8fafc,
+    roughness: 0.95,
+    metalness: 0.05,
+  });
+
+  const furRimMat = new THREE.MeshStandardMaterial({
+    color: 0xe2e8f0,
+    roughness: 0.9,
+  });
+
+  const hiltMat = new THREE.MeshStandardMaterial({
+    color: 0x09090b, // Jet black
+    roughness: 0.7,
+  });
+
+  const redCrossMat = new THREE.MeshStandardMaterial({
+    color: 0xdc2626, // Bright red crosses
+    emissive: new THREE.Color(0x991b1b),
+    emissiveIntensity: 0.3,
+    roughness: 0.4,
+  });
+
+  const goldMat = new THREE.MeshStandardMaterial({
+    color: 0xd97706,
+    metalness: 0.9,
+    roughness: 0.25,
+  });
+
+  // 1. Extra Long Nodachi Blade (1.12m long)
+  const bladeLength = 1.12;
+  const blade = new THREE.Mesh(
+    new THREE.BoxGeometry(0.014, bladeLength, 0.038),
+    bladeMat
+  );
+  blade.position.set(0, bladeLength / 2 + 0.04, 0);
+  kikoku.add(blade);
+
+  // 2. Cyan ROOM Hamon Cutting Edge Glow
+  const hamon = new THREE.Mesh(
+    new THREE.BoxGeometry(0.007, bladeLength * 0.95, 0.012),
+    hamonMat
+  );
+  hamon.position.set(0, bladeLength / 2 + 0.04, 0.015);
+  kikoku.add(hamon);
+
+  // Habaki (blade collar) in antique bronze/gold
+  const habaki = new THREE.Mesh(
+    new THREE.BoxGeometry(0.02, 0.04, 0.042),
+    goldMat
+  );
+  habaki.position.set(0, 0.04, 0);
+  kikoku.add(habaki);
+
+  // 3. Signature White Furry Tsuba (Oblong handguard covered in white fluffy fur)
+  const furTsubaBase = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.065, 0.065, 0.022, 20),
+    furTsubaMat
+  );
+  furTsubaBase.scale.set(0.85, 1, 1.25); // Elliptical oblong guard
+  furTsubaBase.position.set(0, 0.02, 0);
+  kikoku.add(furTsubaBase);
+
+  // Outer fluffy fur ring
+  const furRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.055, 0.014, 8, 20),
+    furRimMat
+  );
+  furRing.rotation.x = Math.PI / 2;
+  furRing.scale.set(0.85, 1.25, 1);
+  furRing.position.set(0, 0.02, 0);
+  kikoku.add(furRing);
+
+  // 4. Long Two-Handed Black Tsuka (Hilt - 0.28m)
+  const handle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.018, 0.018, 0.28, 14),
+    hiltMat
+  );
+  handle.position.set(0, -0.12, 0);
+  kikoku.add(handle);
+
+  // Small red cross motifs along the handle (Law's iconic pattern)
+  [-0.04, -0.10, -0.16, -0.22].forEach((posY) => {
+    const crossH = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.008, 0.006), redCrossMat);
+    crossH.position.set(0, posY, 0.018);
+    kikoku.add(crossH);
+
+    const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.024, 0.006), redCrossMat);
+    crossV.position.set(0, posY, 0.018);
+    kikoku.add(crossV);
+  });
+
+  // 5. Kashira (Pommel) & Red Cord
+  const pommel = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.02, 0.02, 0.02, 12),
+    goldMat
+  );
+  pommel.position.set(0, -0.26, 0);
+  kikoku.add(pommel);
+
+  // Red tassel cord hanging from the pommel
+  const cord = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.006, 0.01, 0.12, 8),
+    redCrossMat
+  );
+  cord.position.set(0, -0.32, 0.02);
+  cord.rotation.x = 0.25;
+  kikoku.add(cord);
+
+  // Align in Trafalgar Law's right hand for slashing
+  kikoku.position.set(0, 0.04, 0.02);
+  kikoku.rotation.set(Math.PI / 2, 0, 0);
+
+  applyCompensationScale(kikoku, parent);
+  parent.add(kikoku);
+  return kikoku;
+}
+

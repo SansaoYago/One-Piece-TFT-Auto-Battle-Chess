@@ -17,7 +17,9 @@ export type TraitId =
   | 'navegadora'
   | 'medroso'
   | 'crush'
-  | 'haki';
+  | 'haki'
+  | 'suporte'
+  | 'mink';
 
 export interface SkillInfo {
   id: string;

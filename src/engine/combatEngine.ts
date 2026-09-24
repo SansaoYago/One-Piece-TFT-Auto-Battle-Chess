@@ -514,6 +514,23 @@ export function simulateCombatTick(
                 }
               }, 150);
             }
+
+            // Mink Electro on-hit synergy
+            if (unit.traits?.includes('mink')) {
+              const electroDamage = unit.stars === 3 ? 120 : unit.stars === 2 ? 80 : 50;
+              applyDamageToTarget(unit, targetUnit, electroDamage, 'MAGICAL', false, newFloatingTexts);
+              newAttackEffects.push({
+                id: `electro_${unit.instanceId}_${now}_${Math.random().toString(36).slice(2, 6)}`,
+                fromX: unit.currentPosX,
+                fromY: unit.currentPosY,
+                toX: targetUnit.currentPosX,
+                toY: targetUnit.currentPosY,
+                type: 'LIGHTNING',
+                color: '#38BDF8',
+                timestamp: now,
+                durationMs: 250,
+              });
+            }
           }
         }
       }
@@ -971,7 +988,7 @@ export function getAttackTiming(attacker: CombatUnitState, strikeKey: string): {
   const isCrocodile = normId.includes('crocodile');
   const isUsopp = normId.includes('usopp');
   const isSanji = normId === 'sanji';
-  const isSwordUser = normId.includes('zoro') || normId.startsWith('marine') || normId.includes('tashigi') || normId.includes('shanks');
+  const isSwordUser = normId.includes('zoro') || normId.startsWith('marine') || normId.includes('tashigi') || normId.includes('shanks') || normId.includes('trafalgar') || normId.includes('law');
   const isNami = normId.includes('nami');
 
   if (isNami) {
@@ -1016,8 +1033,11 @@ export function getAttackTiming(attacker: CombatUnitState, strikeKey: string): {
       hitDelay = 0.967;
     }
   } else {
-    // Punches (Luffy, etc.)
-    if (strikeKey === 'punch2') {
+    // Punches (Luffy, etc.) or Kick1 (Bepo)
+    if (strikeKey === 'kick1') {
+      animDuration = 1.033;
+      hitDelay = 0.967;
+    } else if (strikeKey === 'punch2') {
       animDuration = 0.833;
       hitDelay = 0.767;
     } else if (strikeKey === 'punch3') {
@@ -1059,6 +1079,8 @@ function executeBasicAttack(
   const isChopperMonster = attacker.unitId === 'chopper' && attacker.isTransformed;
   const isMarine = attacker.unitId.startsWith('marine');
   const isMihawk = attacker.unitId === 'mihawk';
+  const isLaw = attacker.unitId === 'trafalgar' || attacker.unitId === 'law';
+  const isBepo = attacker.unitId === 'bepo';
 
   // Combo Selection
   const punchChoices: Array<'punch1' | 'punch2' | 'punch3' | 'punch4'> = ['punch1', 'punch2', 'punch3', 'punch4'];
@@ -1073,6 +1095,27 @@ function executeBasicAttack(
     strikeKey = 'punch1';
     attacker.comboStep = 0;
     isComboFinisher = false;
+  } else if (isLaw) {
+    // Law: Espadachim com Kikoku na mão direita usando Slash1
+    strikeKey = 'punch1';
+    attacker.comboStep = 0;
+    isComboFinisher = false;
+  } else if (isBepo) {
+    // Bepo: Luta com socos e exclusivamente o Kick1
+    const bepoPunches: Array<'punch1' | 'punch2' | 'punch3'> = ['punch1', 'punch2', 'punch3'];
+    if (attacker.comboStep === 0) {
+      strikeKey = bepoPunches[Math.floor(Math.random() * bepoPunches.length)];
+      attacker.comboStep = 1;
+      isComboFinisher = false;
+    } else if (attacker.comboStep === 1) {
+      strikeKey = bepoPunches[Math.floor(Math.random() * bepoPunches.length)];
+      attacker.comboStep = 2;
+      isComboFinisher = false;
+    } else {
+      strikeKey = 'kick1'; // Apenas kick1!
+      attacker.comboStep = 0;
+      isComboFinisher = true;
+    }
   } else if (isNami) {
     // User requested: "Deixe somente a nami sem ataque, vou tirar o gld do local, e substituir por um esqueleto animado, mas pode tirar dela a animação de ataque"
     strikeKey = 'punch1';
@@ -1116,14 +1159,16 @@ function executeBasicAttack(
   const strikeConfig = COMBO_STRIKES[strikeKey];
   attacker.currentAnimation = isNami
     ? 'idle' // Nami strictly has NO attack animation
-    : isMarine
-    ? 'slash1' // Marine recruits strictly use Slash1
+    : isMarine || isLaw
+    ? 'slash1' // Marine recruits and Law strictly use Slash1
     : isMihawk
     ? 'attack' // Mihawk strictly uses his dedicated MihawkAtk animation
     : isUsopp || isCrocodile
     ? 'attack'
     : isSanji
     ? strikeKey
+    : isBepo
+    ? strikeKey // punch1, punch2, punch3, or kick1
     : strikeKey;
 
   const timing = getAttackTiming(attacker, strikeKey);
@@ -1137,6 +1182,10 @@ function executeBasicAttack(
   // Strike names
   attacker.lastStrikeName = isMarine
     ? 'Corte de Sabret (Slash 1)'
+    : isLaw
+    ? 'Corte Cirúrgico de Kikoku (Slash 1)'
+    : isBepo
+    ? (strikeKey.startsWith('kick') ? 'Kung Fu Mink: Chute Electro' : 'Kung Fu Mink: Pata de Urso')
     : isNami
     ? 'Clima-Tact (Suporte)'
     : isUsopp
@@ -1564,6 +1613,379 @@ function executeSkillCast(
       });
     }
     return;
+  } else if (caster.unitId === 'trafalgar' || caster.unitId === 'law') {
+    if (isOrbSpecial) {
+      // Habilidade especial: ROOM ativada no campo todo independente de 2* ou 3* + TACT (descarga elétrica Counter Shock)
+      attackEffects.push({
+        id: `law_room_full_${caster.instanceId}_${now}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: caster.currentPosX,
+        toY: caster.currentPosY,
+        type: 'ROOM_SPHERE',
+        color: '#38BDF8',
+        skillName: 'ROOM: Domínio Absoluto',
+        radius: 8.0, // Campo todo independente de 2* ou 3*
+        timestamp: now,
+        durationMs: 1800,
+      });
+
+      // TACT: descarrega uma carga elétrica colossal contra o alvo e ondas de choque em todos os oponentes
+      const mult = caster.stars === 3 ? 3.5 : caster.stars === 2 ? 2.4 : 1.6;
+      const primaryDmg = Math.round(520 * mult + caster.ap * 2.6);
+
+      applyDamageToTarget(caster, primaryTarget, primaryDmg, 'MAGICAL', true, floatingTexts, 'ORB_SPECIAL');
+      primaryTarget.isStunned = true;
+      primaryTarget.stunDuration = 1.8;
+
+      attackEffects.push({
+        id: `law_tact_main_${primaryTarget.instanceId}_${now}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: primaryTarget.currentPosX,
+        toY: primaryTarget.currentPosY,
+        type: 'COUNTER_SHOCK',
+        color: '#38BDF8',
+        skillName: 'Tact: Counter Shock',
+        timestamp: now,
+        durationMs: 700,
+      });
+
+      // Descargas elétricas adicionais em todos os inimigos no campo
+      for (const enemy of allLiving) {
+        if (enemy.isEnemy !== caster.isEnemy && enemy.hp > 0 && !enemy.isDefeated && enemy.instanceId !== primaryTarget.instanceId) {
+          const aoeDmg = Math.round(primaryDmg * 0.60);
+          applyDamageToTarget(caster, enemy, aoeDmg, 'MAGICAL', false, floatingTexts, 'ORB_SPECIAL');
+          enemy.isStunned = true;
+          enemy.stunDuration = 1.0;
+
+          attackEffects.push({
+            id: `law_tact_aoe_${enemy.instanceId}_${now}`,
+            fromX: caster.currentPosX,
+            fromY: caster.currentPosY,
+            toX: enemy.currentPosX,
+            toY: enemy.currentPosY,
+            type: 'COUNTER_SHOCK',
+            color: '#38BDF8',
+            timestamp: now,
+            durationMs: 600,
+          });
+        }
+      }
+
+      floatingTexts.push({
+        id: `tact_text_${caster.instanceId}_${now}`,
+        x: caster.currentPosX,
+        y: caster.currentPosY - 0.7,
+        value: '⚡ TACT & COUNTER SHOCK!',
+        type: 'CRIT',
+        color: '#38BDF8',
+        timestamp: now,
+      });
+      return;
+    } else if (caster.activeSkill === 'SKILL_A') {
+      // Habilidade 1: Ope Ope: Cirurgia de Emergência
+      // Raio rigoroso: 1* area de 1 range (1.15), 2* area de 2 range (2.15), 3* area de 3 range (3.15) e se orbe equipado arena toda (8.0)
+      const hasOrb = Boolean(caster.hasSpecialItem);
+      const radius = hasOrb ? 8.0 : caster.stars === 1 ? 1.15 : caster.stars === 2 ? 2.15 : 3.15;
+
+      attackEffects.push({
+        id: `law_room_surgery_${caster.instanceId}_${now}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: caster.currentPosX,
+        toY: caster.currentPosY,
+        type: 'ROOM_SPHERE',
+        color: '#38BDF8',
+        skillName: 'Ope Ope: Cirurgia de Emergência',
+        radius,
+        timestamp: now,
+        durationMs: 1400,
+      });
+
+      // Aliados dentro do raio da ROOM
+      const alliesInRange = allLiving.filter((u) => {
+        if (u.isEnemy !== caster.isEnemy || u.hp <= 0 || u.isDefeated) return false;
+        const dist = Math.hypot(u.currentPosX - caster.currentPosX, u.currentPosY - caster.currentPosY);
+        return dist <= radius;
+      });
+
+      const targetAllies = alliesInRange.length > 0 ? alliesInRange : [caster];
+      targetAllies.sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp));
+      const mostWounded = targetAllies[0];
+
+      // Cura cirúrgica massiva
+      const baseHeal = caster.stars === 1 ? 380 : caster.stars === 2 ? 720 : 1500;
+      const healAmount = Math.round(baseHeal + caster.ap * 2.2);
+
+      mostWounded.hp = Math.min(mostWounded.maxHp, mostWounded.hp + healAmount);
+      caster.totalHealing = (caster.totalHealing || 0) + healAmount;
+
+      // Remove debuffs: lentidão, sangramento e atordoamento
+      mostWounded.isStunned = false;
+      mostWounded.stunDuration = 0;
+      mostWounded.moveCooldown = 0;
+
+      floatingTexts.push({
+        id: `law_heal_${mostWounded.instanceId}_${now}`,
+        x: mostWounded.currentPosX,
+        y: mostWounded.currentPosY - 0.4,
+        value: `+${healAmount} PURIFICADO!`,
+        type: 'HEAL',
+        color: '#10B981',
+        timestamp: now,
+      });
+
+      // Cura secundária de suporte para demais aliados na ROOM
+      for (let i = 1; i < targetAllies.length; i++) {
+        const otherAlly = targetAllies[i];
+        const secondaryHeal = Math.round(healAmount * 0.35);
+        otherAlly.hp = Math.min(otherAlly.maxHp, otherAlly.hp + secondaryHeal);
+        otherAlly.isStunned = false;
+        otherAlly.stunDuration = 0;
+        caster.totalHealing = (caster.totalHealing || 0) + secondaryHeal;
+        floatingTexts.push({
+          id: `law_sub_heal_${otherAlly.instanceId}_${now}`,
+          x: otherAlly.currentPosX,
+          y: otherAlly.currentPosY - 0.3,
+          value: `+${secondaryHeal}`,
+          type: 'HEAL',
+          color: '#34D399',
+          timestamp: now,
+        });
+      }
+      return;
+    } else {
+      // Habilidade 2: Shambles
+      // Mesmo efeito visual, cura cai 60% (40% do valor normal)
+      // 1*: Troca de posição aleatória 2 personagens oponentes (somente oponentes)
+      // 2*: Raio aumenta para 2 range, troca 2 oponentes na área maior
+      // 3*: Troca o personagem que está batendo nele pelo oponente mais longe da sua posição (somente oponentes)
+      const hasOrb = Boolean(caster.hasSpecialItem);
+      const radius = hasOrb ? 8.0 : caster.stars === 1 ? 1.15 : caster.stars === 2 ? 2.15 : 3.15;
+
+      attackEffects.push({
+        id: `law_room_shambles_${caster.instanceId}_${now}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: caster.currentPosX,
+        toY: caster.currentPosY,
+        type: 'ROOM_SPHERE',
+        color: '#0284C7',
+        skillName: 'Shambles (Troca Espacial)',
+        radius,
+        timestamp: now,
+        durationMs: 1400,
+      });
+
+      // Cura reduzida em 60% (40% do normal)
+      const baseHeal = caster.stars === 1 ? 380 : caster.stars === 2 ? 720 : 1500;
+      const reducedHeal = Math.round((baseHeal + caster.ap * 2.2) * 0.40);
+      
+      const alliesInRange = allLiving.filter((u) => {
+        if (u.isEnemy !== caster.isEnemy || u.hp <= 0 || u.isDefeated) return false;
+        const dist = Math.hypot(u.currentPosX - caster.currentPosX, u.currentPosY - caster.currentPosY);
+        return dist <= radius;
+      });
+      const recipient = alliesInRange.length > 0 ? alliesInRange[0] : caster;
+      recipient.hp = Math.min(recipient.maxHp, recipient.hp + reducedHeal);
+      caster.totalHealing = (caster.totalHealing || 0) + reducedHeal;
+
+      floatingTexts.push({
+        id: `law_shambles_heal_${recipient.instanceId}_${now}`,
+        x: recipient.currentPosX,
+        y: recipient.currentPosY - 0.3,
+        value: `+${reducedHeal}`,
+        type: 'HEAL',
+        color: '#10B981',
+        timestamp: now,
+      });
+
+      // Shambles: Teleporte e Troca de Posição dos Oponentes
+      const livingOpponents = allLiving.filter((u) => u.isEnemy !== caster.isEnemy && u.hp > 0 && !u.isDefeated);
+
+      if (livingOpponents.length >= 2) {
+        let swapUnitA: CombatUnitState | null = null;
+        let swapUnitB: CombatUnitState | null = null;
+
+        if (caster.stars === 3) {
+          // 3★: Troca o personagem que está batendo nele pelo personagem mais longe da sua posição
+          const attackingLaw = livingOpponents.find((op) => op.targetInstanceId === caster.instanceId);
+          if (attackingLaw) {
+            swapUnitA = attackingLaw;
+          } else {
+            // Se nenhum estiver mirando especificamente, pega o adversário mais próximo
+            const sortedByNear = [...livingOpponents].sort((a, b) => {
+              const dA = Math.hypot(a.currentPosX - caster.currentPosX, a.currentPosY - caster.currentPosY);
+              const dB = Math.hypot(b.currentPosX - caster.currentPosX, b.currentPosY - caster.currentPosY);
+              return dA - dB;
+            });
+            swapUnitA = sortedByNear[0];
+          }
+
+          // Encontra o oponente mais longe da posição de Law
+          const sortedByFar = [...livingOpponents].sort((a, b) => {
+            const dA = Math.hypot(a.currentPosX - caster.currentPosX, a.currentPosY - caster.currentPosY);
+            const dB = Math.hypot(b.currentPosX - caster.currentPosX, b.currentPosY - caster.currentPosY);
+            return dB - dA;
+          });
+          swapUnitB = sortedByFar.find((u) => u.instanceId !== swapUnitA?.instanceId) || sortedByFar[0];
+        } else {
+          // 1★ e 2★: Troca 2 personagens oponentes na área
+          const opponentsInRadius = livingOpponents.filter((op) => {
+            const dist = Math.hypot(op.currentPosX - caster.currentPosX, op.currentPosY - caster.currentPosY);
+            return dist <= radius + 0.35;
+          });
+
+          const pool = opponentsInRadius.length >= 2 ? opponentsInRadius : livingOpponents;
+          const shuffled = [...pool].sort(() => 0.5 - Math.random());
+          swapUnitA = shuffled[0];
+          swapUnitB = shuffled[1];
+        }
+
+        if (swapUnitA && swapUnitB && swapUnitA.instanceId !== swapUnitB.instanceId) {
+          const prevAX = swapUnitA.currentPosX;
+          const prevAY = swapUnitA.currentPosY;
+          const prevAGX = swapUnitA.gridX;
+          const prevAGY = swapUnitA.gridY;
+
+          swapUnitA.currentPosX = swapUnitB.currentPosX;
+          swapUnitA.currentPosY = swapUnitB.currentPosY;
+          swapUnitA.gridX = swapUnitB.gridX;
+          swapUnitA.gridY = swapUnitB.gridY;
+
+          swapUnitB.currentPosX = prevAX;
+          swapUnitB.currentPosY = prevAY;
+          swapUnitB.gridX = prevAGX;
+          swapUnitB.gridY = prevAGY;
+
+          swapUnitA.targetInstanceId = null;
+          swapUnitB.targetInstanceId = null;
+          swapUnitA.moveCooldown = 0.5;
+          swapUnitB.moveCooldown = 0.5;
+
+          // Feixe de teletransporte Shambles
+          attackEffects.push({
+            id: `shambles_fx_${now}`,
+            fromX: prevAX,
+            fromY: prevAY,
+            toX: swapUnitA.currentPosX,
+            toY: swapUnitA.currentPosY,
+            type: 'LIGHTNING',
+            color: '#38BDF8',
+            skillName: 'Shambles Teleport',
+            timestamp: now,
+            durationMs: 450,
+          });
+
+          floatingTexts.push({
+            id: `shambles_txt_a_${swapUnitA.instanceId}_${now}`,
+            x: swapUnitA.currentPosX,
+            y: swapUnitA.currentPosY - 0.4,
+            value: '🌀 SHAMBLES!',
+            type: 'SKILL',
+            color: '#38BDF8',
+            timestamp: now,
+          });
+          floatingTexts.push({
+            id: `shambles_txt_b_${swapUnitB.instanceId}_${now}`,
+            x: swapUnitB.currentPosX,
+            y: swapUnitB.currentPosY - 0.4,
+            value: '🌀 SHAMBLES!',
+            type: 'SKILL',
+            color: '#38BDF8',
+            timestamp: now,
+          });
+        }
+      }
+      return;
+    }
+  } else if (caster.unitId === 'bepo') {
+    if (isOrbSpecial) {
+      // Bepo Orb Special: Fúria Sulong do Urso Branco
+      caster.shield = (caster.shield || 0) + 500;
+      caster.attackSpeed = (baseData?.attackSpeed || 0.8) * 1.75;
+      floatingTexts.push({
+        id: `bepo_sulong_${caster.instanceId}_${now}`,
+        x: caster.currentPosX,
+        y: caster.currentPosY - 0.5,
+        value: '🌕 FÚRIA SULONG! (+75% VEL, +ESCUDO)',
+        type: 'CRIT',
+        color: '#38BDF8',
+        timestamp: now,
+      });
+
+      attackEffects.push({
+        id: `bepo_sulong_fx_${caster.instanceId}_${now}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: caster.currentPosX,
+        toY: caster.currentPosY,
+        type: 'COUNTER_SHOCK',
+        color: '#38BDF8',
+        skillName: 'Fúria Sulong',
+        timestamp: now,
+        durationMs: 800,
+      });
+      return;
+    } else if (caster.activeSkill === 'SKILL_A') {
+      // Kung Fu Mink: Voadora Electro (Knockback + stun)
+      const skillDamage = Math.round(280 * (caster.stars === 1 ? 1 : caster.stars === 2 ? 1.6 : 2.5) + caster.ad * 1.1);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'PHYSICAL', true, floatingTexts, 'SKILL');
+
+      const dx = primaryTarget.currentPosX - caster.currentPosX;
+      const dy = primaryTarget.currentPosY - caster.currentPosY;
+      const dist = Math.hypot(dx, dy) || 1;
+      primaryTarget.currentPosX = Math.max(0, Math.min(7, primaryTarget.currentPosX + (dx / dist) * 1.1));
+      primaryTarget.currentPosY = Math.max(0, Math.min(4, primaryTarget.currentPosY + (dy / dist) * 1.1));
+      primaryTarget.gridX = Math.round(primaryTarget.currentPosX);
+      primaryTarget.gridY = Math.round(primaryTarget.currentPosY);
+      primaryTarget.isStunned = true;
+      primaryTarget.stunDuration = 1.0;
+
+      attackEffects.push({
+        id: `bepo_dropkick_${caster.instanceId}_${now}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: primaryTarget.currentPosX,
+        toY: primaryTarget.currentPosY,
+        type: 'SKILL_IMPACT',
+        color: '#EA580C',
+        skillName: 'Voadora Electro (Knockback)',
+        timestamp: now,
+        durationMs: 500,
+      });
+      return;
+    } else {
+      // Sinto Muito! (Patadas Electro em área cone)
+      const skillDamage = Math.round(320 * (caster.stars === 1 ? 1 : caster.stars === 2 ? 1.5 : 2.4) + caster.ap * 1.2);
+      applyDamageToTarget(caster, primaryTarget, skillDamage, 'MAGICAL', true, floatingTexts, 'SKILL');
+
+      primaryTarget.attackCooldown = Math.max(primaryTarget.attackCooldown || 0, 1.5);
+      floatingTexts.push({
+        id: `bepo_apology_${caster.instanceId}_${now}`,
+        x: caster.currentPosX,
+        y: caster.currentPosY - 0.4,
+        value: '🙏 SINTO MUITO!',
+        type: 'SKILL',
+        color: '#F97316',
+        timestamp: now,
+      });
+
+      attackEffects.push({
+        id: `bepo_claws_${caster.instanceId}_${now}`,
+        fromX: caster.currentPosX,
+        fromY: caster.currentPosY,
+        toX: primaryTarget.currentPosX,
+        toY: primaryTarget.currentPosY,
+        type: 'LIGHTNING',
+        color: '#38BDF8',
+        skillName: 'Patadas Electro',
+        timestamp: now,
+        durationMs: 450,
+      });
+      return;
+    }
   } else if (caster.unitId.startsWith('marine_recruit')) {
     // Marine Recruit Mosquete / Cutelo
     const skillDamage = Math.round(140 + caster.ad * 0.5);

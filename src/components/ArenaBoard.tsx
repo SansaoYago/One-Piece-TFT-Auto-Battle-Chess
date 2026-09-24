@@ -940,6 +940,79 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                 const to = getContinuousTileCenterPercent(fx.toX, fx.toY);
                 const isEmeraldSlash = fx.color === '#10B981' || fx.icon === '🗡️';
 
+                // Trafalgar Law's Iconic ROOM Sphere Dome
+                if (fx.type === 'ROOM_SPHERE') {
+                  const r = fx.radius || 1.15;
+                  // Radius in tiles strictly mapped: 1 tile = 25% diameter, 2 tiles = 50%, 3 tiles = 75%, 8 tiles = 180%
+                  const diameterPercent = Math.min(190, Math.max(26, (r * 2) * 12.5));
+
+                  return (
+                    <div
+                      key={fx.id}
+                      className="absolute pointer-events-none z-30 flex items-center justify-center transition-all duration-300"
+                      style={{
+                        left: `${from.leftPercent}%`,
+                        top: `${from.topPercent}%`,
+                        width: `${diameterPercent}%`,
+                        aspectRatio: '1 / 1',
+                        transform: 'translate(-50%, -50%)',
+                      }}
+                    >
+                      {/* 3D Transparent Blue ROOM Bubble */}
+                      <div
+                        className="w-full h-full rounded-full relative flex items-center justify-center animate-in zoom-in-50 duration-300 pointer-events-none select-none overflow-visible"
+                        style={{
+                          background: 'radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.08) 0%, rgba(56, 189, 248, 0.18) 55%, rgba(14, 165, 233, 0.35) 85%, rgba(56, 189, 248, 0.75) 100%)',
+                          border: '2.5px solid rgba(186, 230, 253, 0.85)',
+                          boxShadow: '0 0 35px rgba(56, 189, 248, 0.75), inset 0 0 35px rgba(56, 189, 248, 0.45)',
+                        }}
+                      >
+                        {/* Ground projection ring inside the isometric dome */}
+                        <div className="absolute bottom-1 w-[92%] h-[45%] rounded-full border border-sky-300/70 shadow-[0_0_16px_rgba(56,189,248,0.7)]" />
+                        
+                        {/* Electric surgical boundary scanline */}
+                        <div className="absolute inset-2 rounded-full border border-dashed border-sky-200/40 opacity-70 animate-pulse" />
+
+                        {/* ROOM Glowing Tactical Tag */}
+                        <div className="absolute -top-3 px-2 py-0.5 rounded-full bg-slate-950/85 border border-sky-400/90 shadow-[0_0_12px_rgba(56,189,248,0.9)] backdrop-blur-sm flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping" />
+                          <span className="text-[9px] sm:text-[10px] font-black tracking-widest text-sky-200 uppercase">ROOM</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Counter Shock Electric Discharge
+                if (fx.type === 'COUNTER_SHOCK') {
+                  return (
+                    <div
+                      key={fx.id}
+                      className="absolute pointer-events-none z-40"
+                      style={{
+                        left: `${from.leftPercent}%`,
+                        top: `${from.topPercent}%`,
+                        transform: 'translate(-50%, -50%)',
+                      }}
+                    >
+                      <div
+                        className="animate-projectile-fly flex items-center justify-center pointer-events-none"
+                        style={{
+                          ['--target-dx' as any]: `${(to.leftPercent - from.leftPercent) * 7.5}px`,
+                          ['--target-dy' as any]: `${(to.topPercent - from.topPercent) * 4.5}px`,
+                          ['--fly-duration' as any]: `${fx.durationMs || 500}ms`,
+                        }}
+                      >
+                        <div className="relative flex items-center justify-center">
+                          <div className="w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-sky-400/30 blur-[4px] animate-ping" />
+                          <div className="w-8 h-4 bg-gradient-to-r from-sky-300 via-cyan-100 to-sky-400 rounded-full shadow-[0_0_20px_#38bdf8] border border-cyan-200 animate-pulse" />
+                          <div className="absolute text-sm sm:text-base font-black drop-shadow-[0_0_8px_#38bdf8]">⚡</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
                   <div
                     key={fx.id}
@@ -1005,9 +1078,10 @@ export const ArenaBoard: React.FC<ArenaBoardProps> = ({
                 // Remove defeated text completely for an ultra-clean visual
                 if (isKO) return null;
 
-                // Strip skill names: only display numeric damage / healing numbers
+                // Allow numbers as well as special tactical skill callouts (SHAMBLES, TACT, PURIFICADO, SULONG)
+                const isSpecialCallout = strVal.includes('SHAMBLES') || strVal.includes('TACT') || strVal.includes('PURIFICADO') || strVal.includes('SULONG');
                 const hasDigits = /\d/.test(strVal);
-                if (!hasDigits) return null;
+                if (!hasDigits && !isSpecialCallout) return null;
 
                 const { leftPercent, topPercent } = getContinuousTileCenterPercent(ft.x, ft.y);
                 const isHeal = ft.type === 'HEAL' || strVal.startsWith('+');

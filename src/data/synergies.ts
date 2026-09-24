@@ -115,4 +115,27 @@ export const SYNERGY_DATABASE: Record<TraitId, SynergyDef> = {
       { count: 1, description: '(1) Ataques nunca erram e causam Dano Puro contínuo ignorando 100% das defesas.' },
     ],
   },
+  suporte: {
+    id: 'suporte',
+    name: 'Suporte',
+    icon: '🩺',
+    color: '#06B6D4',
+    description: 'Especialistas cirúrgicos e médicos que prestam socorro imediato, aumentam sustentação e purificam aliados.',
+    tiers: [
+      { count: 1, description: '(1) Unidades de Suporte aumentam suas curas em 25% e aliados recebem +150 de Vida Máxima.' },
+      { count: 2, description: '(2) Curas e escudos aumentados em 50%. Ao conjurar habilidades médicas, purificam todos os debuffs negativos (lentidão, sangramento e atordoamento) de aliados na área.' },
+    ],
+  },
+  mink: {
+    id: 'mink',
+    name: 'Minks',
+    icon: '⚡',
+    color: '#38BDF8',
+    description: 'Guerreiros da Tribo Mink que canalizam eletricidade natural "Electro" em seus ataques corpo a corpo.',
+    tiers: [
+      { count: 1, description: '(1) Ataques aplicam Electro: causam +50 de Dano Mágico bônus e reduzem a velocidade de ataque do alvo em 15% por 2s.' },
+      { count: 2, description: '(2) Electro causa +120 de Dano Mágico bônus. A cada 3 ataques básicos, descarregam um choque elétrico que atordoa o alvo por 0.8s.' },
+      { count: 4, description: '(4) Minks despertam a forma Sulong: +60% de Velocidade de Ataque, 25% de Roubo de Vida e raios Electro encadeados para 2 inimigos adjacentes.' },
+    ],
+  },
 };
