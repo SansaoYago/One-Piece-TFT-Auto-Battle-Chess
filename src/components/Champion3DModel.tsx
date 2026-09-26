@@ -372,14 +372,21 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     camera.position.set(0, camY, camZ);
     camera.lookAt(0, yCenter, 0);
 
+    const isMobileDevice = typeof navigator !== 'undefined' && (
+      /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+      (navigator.maxTouchPoints && navigator.maxTouchPoints > 2)
+    );
+
     const renderer = new THREE.WebGLRenderer({
       alpha: true,
       antialias: false,
       powerPreference: 'high-performance',
-      precision: 'mediump',
+      precision: isMobileDevice ? 'lowp' : 'mediump',
+      stencil: false,
+      depth: true,
     });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
+    renderer.setPixelRatio(isMobileDevice ? 1.0 : Math.min(window.devicePixelRatio || 1, 1.25));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = false;
 
@@ -417,22 +424,26 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
       scene.add(orbLight2);
     }
 
-    // Dynamic Crisp Studio Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 2.4);
+    // Dynamic Studio Lighting (Streamlined on Mobile for maximum 60FPS throughput)
+    const ambientIntensity = isMobileDevice ? 3.0 : 2.4;
+    const ambientLight = new THREE.AmbientLight(0xffffff, ambientIntensity);
     scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 3.4);
+    const dirLight = new THREE.DirectionalLight(0xffffff, isMobileDevice ? 2.6 : 3.4);
     dirLight.position.set(2.5, 6, 4.5);
-    dirLight.castShadow = true;
+    dirLight.castShadow = false;
     scene.add(dirLight);
 
-    const rimLight = new THREE.DirectionalLight(0xffffff, 2.2);
-    rimLight.position.set(isEnemy ? 2 : -2, 4, -3);
-    scene.add(rimLight);
+    // Desktop/EXE receives full studio rim and fill lights; Mobile skips them to avoid GPU fragment shader throttling
+    if (!isMobileDevice) {
+      const rimLight = new THREE.DirectionalLight(0xffffff, 2.2);
+      rimLight.position.set(isEnemy ? 2 : -2, 4, -3);
+      scene.add(rimLight);
 
-    const fillLight = new THREE.DirectionalLight(isEnemy ? 0xf43f5e : 0x38bdf8, 1.8);
-    fillLight.position.set(isEnemy ? 2.5 : -2.5, 1.5, 2.5);
-    scene.add(fillLight);
+      const fillLight = new THREE.DirectionalLight(isEnemy ? 0xf43f5e : 0x38bdf8, 1.8);
+      fillLight.position.set(isEnemy ? 2.5 : -2.5, 1.5, 2.5);
+      scene.add(fillLight);
+    }
 
     // Three.js Render Loop & Timing
     let animFrameId: number;
@@ -832,8 +843,8 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
           // 8. Apply high quality materials, textures and team accents
           clonedRig.traverse((child) => {
             if ((child as THREE.Mesh).isMesh) {
-              child.castShadow = true;
-              child.receiveShadow = true;
+              child.castShadow = false;
+              child.receiveShadow = false;
               child.frustumCulled = false;
               const mesh = child as THREE.Mesh;
 
@@ -1100,10 +1111,20 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
 };
 
 /**
+ * Cache for procedural anime body canvas textures to avoid re-drawing canvases on each instance
+ */
+const championTextureCache = new Map<string, THREE.CanvasTexture>();
+
+/**
  * Creates high quality procedural anime body canvas texture for base skinned meshes
  * (Zoro, Smoker, Chopper, Luffy, Usopp, Sanji, Crocodile, Marines, etc.)
  */
 function createChampionBodyTexture(unitId: string, isEnemy: boolean): THREE.CanvasTexture {
+  const cacheKey = `${unitId.toLowerCase()}_${isEnemy ? 'enemy' : 'ally'}`;
+  if (championTextureCache.has(cacheKey)) {
+    return championTextureCache.get(cacheKey)!;
+  }
+
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 512;
@@ -1338,5 +1359,6 @@ function createChampionBodyTexture(unitId: string, isEnemy: boolean): THREE.Canv
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  championTextureCache.set(cacheKey, texture);
   return texture;
 }

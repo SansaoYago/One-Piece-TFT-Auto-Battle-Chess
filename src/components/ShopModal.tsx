@@ -118,12 +118,12 @@ export const ShopModal: React.FC<ShopModalProps> = ({
   };
 
   return (
-    <div className="relative z-30 select-none">
+    <div className="relative z-30 select-none w-[220px] h-[48px] shrink-0">
       {/* Dynamic Minimal Toggle Button OR Sell Area OR Return Button */}
       {isViewingOpponentArena ? (
         <button
           onClick={onReturnToPlayerArena}
-          className="flex items-center justify-center gap-1.5 min-w-[144px] h-[48px] px-3.5 rounded-2xl font-black text-xs tracking-wider uppercase transition-all duration-300 shadow-[0_0_20px_rgba(245,158,11,0.5)] border-2 border-amber-400 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 cursor-pointer animate-bounce whitespace-nowrap"
+          className="flex items-center justify-center gap-1.5 w-full h-full px-3 rounded-2xl font-black text-xs tracking-wider uppercase transition-all duration-300 shadow-[0_0_20px_rgba(245,158,11,0.5)] border-2 border-amber-400 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 cursor-pointer animate-bounce whitespace-nowrap"
         >
           <ArrowLeftCircle className="w-4 h-4 text-slate-950 shrink-0" />
           <span>Voltar</span>
@@ -144,26 +144,26 @@ export const ShopModal: React.FC<ShopModalProps> = ({
           onClick={() => {
             if (draggedUnit) onSellUnit(draggedUnit);
           }}
-          className={`flex items-center justify-center gap-1.5 min-w-[164px] h-[48px] px-3.5 rounded-2xl font-black text-xs tracking-wide uppercase transition-all duration-200 shadow-2xl border cursor-pointer animate-pulse select-none ${
+          className={`flex items-center justify-center gap-2 w-full h-full px-3 rounded-2xl font-black text-xs tracking-wide uppercase transition-all duration-200 shadow-2xl border cursor-pointer select-none ${
             isSellActive
-              ? 'bg-rose-600/95 text-white border-rose-300 scale-105 ring-4 ring-rose-400/50 shadow-[0_0_25px_rgba(244,63,94,0.8)]'
-              : 'bg-rose-950/70 text-rose-300 border-rose-500/70 hover:scale-102 backdrop-blur-md'
+              ? 'bg-rose-600/95 text-white border-rose-300 ring-4 ring-rose-400/50 shadow-[0_0_25px_rgba(244,63,94,0.8)]'
+              : 'bg-rose-950/70 text-rose-300 border-rose-500/70 backdrop-blur-md'
           }`}
           title="Solte aqui para vender"
         >
           <Trash2 className="w-4 h-4 text-rose-400 shrink-0" />
           <span className="text-[11px] font-bold">Vender</span>
-          <span className="font-mono font-black text-amber-300 text-sm ml-0.5">+{sellValue}฿</span>
+          <span className="font-mono font-black text-amber-300 text-sm ml-0.5 shrink-0">+{sellValue}฿</span>
         </div>
       ) : (
         /* Floating Retractable Golden Shop Toggle Button with Saldo */
         <button
           data-modal-toggle="true"
           onClick={onToggleOpen}
-          className={`flex items-center justify-center gap-2 min-w-[168px] h-[48px] px-3.5 rounded-2xl font-bold text-xs tracking-wide transition-all duration-300 shadow-xl border backdrop-blur-md cursor-pointer select-none whitespace-nowrap relative ${
+          className={`flex items-center justify-between w-full h-full px-3 rounded-2xl font-bold text-xs tracking-wide transition-all duration-300 shadow-xl border backdrop-blur-md cursor-pointer select-none whitespace-nowrap relative ${
             isOpen
               ? 'bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 border-amber-300 ring-2 ring-amber-400/50 shadow-[0_0_20px_rgba(245,158,11,0.4)]'
-              : 'bg-slate-900/85 text-amber-300 border-amber-500/60 hover:border-amber-400 hover:scale-102 shadow-lg'
+              : 'bg-slate-900/85 text-amber-300 border-amber-500/60 hover:border-amber-400 shadow-lg'
           }`}
           title={`Loja - Saldo Atual: ${gold}฿ (Atalho: D)`}
         >
@@ -185,7 +185,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
 
           {isLocked && (
             <div
-              className="flex items-center justify-center w-4 h-4 rounded-md bg-amber-500 text-slate-950 border border-amber-300 shadow"
+              className="flex items-center justify-center w-4 h-4 rounded-md bg-amber-500 text-slate-950 border border-amber-300 shadow shrink-0"
               title="Loja Travada"
             >
               <Lock className="w-2.5 h-2.5" />
@@ -263,6 +263,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
           {/* If unit is being dragged with shop open, show minimal sell target */}
           {draggedUnit && (
             <div
+              data-sell-zone="true"
               onDragOver={(e) => {
                 e.preventDefault();
                 setIsDragOverSell(true);
@@ -275,7 +276,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
               }}
               className={`mb-3 py-2.5 px-4 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 transition-all ${
                 isDragOverSell
-                  ? 'bg-rose-600/90 border-rose-300 text-white ring-4 ring-rose-400/50 scale-[1.01]'
+                  ? 'bg-rose-600/90 border-rose-300 text-white ring-4 ring-rose-400/50'
                   : 'bg-rose-950/40 border-rose-500/60 text-amber-300'
               }`}
             >

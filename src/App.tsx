@@ -2049,10 +2049,18 @@ export default function App() {
     applyStarUpgrades(nextBench, boardUnitsRef.current);
   };
 
+  // Helper: check if a unit is currently on the bench
+  const isBenchUnit = useCallback((u: UnitInstance | null | undefined): boolean => {
+    if (!u) return false;
+    if (typeof u.benchIndex === 'number' && u.benchIndex >= 0) return true;
+    if (u.gridX < 0 || u.gridY < 0) return true;
+    return benchSlotsRef.current.some((b) => b?.instanceId === u.instanceId);
+  }, []);
+
   // === Drag and Drop Handlers ===
   const handleDragStartUnit = (e: React.DragEvent, unit: UnitInstance) => {
     if (!isTestMode && unit.isEnemy) return;
-    if (phase === 'COMBAT') return;
+    if (phaseRef.current === 'COMBAT' && !isBenchUnit(unit)) return;
     setSelectedUnit(null);
     setDraggedUnit(unit);
     draggedUnitRef.current = unit;
@@ -2141,6 +2149,9 @@ export default function App() {
   };
 
   const executePlaceOrMoveUnit = (unitToPlace: UnitInstance, x: number, y: number) => {
+    // Combat phase rule: strictly no adding or moving to the battlefield during combat
+    if (phaseRef.current === 'COMBAT') return;
+
     const targetX = Math.round(Number(x));
     const targetY = Math.round(Number(y));
 
@@ -2306,8 +2317,6 @@ export default function App() {
   };
 
   const executeDropOnBench = (activeUnit: UnitInstance, slotIdx: number) => {
-    if (phaseRef.current === 'COMBAT') return;
-
     const currentBench = [...benchSlotsRef.current];
     const currentBoard = [...boardUnitsRef.current];
     const existingBenchUnit = currentBench[slotIdx];
@@ -2315,6 +2324,9 @@ export default function App() {
     // Check if activeUnit is on the board
     const boardMatch = currentBoard.find((u) => u.instanceId === activeUnit.instanceId);
     const isFromBoard = Boolean(boardMatch || (activeUnit.gridX >= 0 && activeUnit.gridY >= 0));
+
+    // Combat phase rule: moving from battlefield to bench or swapping with battlefield is not allowed
+    if (phaseRef.current === 'COMBAT' && isFromBoard) return;
 
     if (isFromBoard) {
       const unitBoardX = boardMatch ? boardMatch.gridX : activeUnit.gridX;
@@ -2402,15 +2414,17 @@ export default function App() {
         null;
     }
 
-    if (!activeUnit || phaseRef.current === 'COMBAT') return;
+    if (!activeUnit) return;
+    if (phaseRef.current === 'COMBAT' && !isBenchUnit(activeUnit)) return;
 
     executeDropOnBench(activeUnit, slotIdx);
   };
 
   // === Sell Unit Logic (PRD: Sell for Cost * Stars) ===
   const handleSellUnit = (targetUnit: UnitInstance) => {
-    if (phaseRef.current !== 'PREPARATION') {
-      alert('Você só pode vender unidades durante a Fase de Preparação!');
+    const isBench = isBenchUnit(targetUnit);
+    if (phaseRef.current !== 'PREPARATION' && !isBench) {
+      alert('Unidades no campo de batalha só podem ser vendidas durante a Fase de Preparação!');
       return;
     }
 
@@ -2419,9 +2433,16 @@ export default function App() {
     const sellPrice = calculateUnitSellValue(targetUnit);
 
     // 1. Remove unit from board or bench
+    let benchIdx = -1;
     if (targetUnit.benchIndex !== null && targetUnit.benchIndex !== undefined && targetUnit.benchIndex >= 0) {
+      benchIdx = targetUnit.benchIndex;
+    } else {
+      benchIdx = benchSlotsRef.current.findIndex((b) => b?.instanceId === targetUnit.instanceId);
+    }
+
+    if (benchIdx >= 0) {
       const nextBench = [...benchSlotsRef.current];
-      nextBench[targetUnit.benchIndex] = null;
+      nextBench[benchIdx] = null;
       setBenchSlots(nextBench);
       benchSlotsRef.current = nextBench;
     } else {
@@ -2470,7 +2491,8 @@ export default function App() {
 
   const handleStartPointerDrag = useCallback(
     (unit: UnitInstance, clientX: number, clientY: number) => {
-      if (phaseRef.current === 'COMBAT' || unit.isEnemy || isViewingOpponentArena) return;
+      if (unit.isEnemy || isViewingOpponentArena) return;
+      if (phaseRef.current === 'COMBAT' && !isBenchUnit(unit)) return;
       setPointerDragState({
         unit,
         startX: clientX,
@@ -2481,7 +2503,7 @@ export default function App() {
         hoverTarget: { type: null },
       });
     },
-    [isViewingOpponentArena]
+    [isViewingOpponentArena, isBenchUnit]
   );
 
   useEffect(() => {
@@ -3182,7 +3204,7 @@ export default function App() {
             totalRound <= 1 ? (
               /* No Round 1: Loja indisponível e invisível; mantém exatamente o mesmo espaço reservado para que o baú (Bench) não escorra para as laterais! */
               <div
-                className="invisible min-w-[168px] h-[48px] pointer-events-none select-none shrink-0"
+                className="invisible w-[220px] h-[48px] pointer-events-none select-none shrink-0"
                 aria-hidden="true"
               />
             ) : (

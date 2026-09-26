@@ -48,6 +48,8 @@ export const UnitInspector: React.FC<UnitInspectorProps> = ({
 
   const baseData: UnitBaseData = CHAMPION_DATABASE[unit.unitId] || CHAMPION_DATABASE.luffy;
   const isPrepPhase = gamePhase === 'PREPARATION' && !isViewingOpponentArena && !unit.isEnemy;
+  const isBenchUnit = (typeof unit.benchIndex === 'number' && unit.benchIndex >= 0) || unit.gridX < 0 || unit.gridY < 0;
+  const canSellUnit = !isViewingOpponentArena && !unit.isEnemy && (gamePhase === 'PREPARATION' || isBenchUnit);
   const sellValue = calculateUnitSellValue(unit);
 
   // Skill switching restrictions (1 change per round during preparation, 1* units have Skill B locked)
@@ -593,8 +595,8 @@ export const UnitInspector: React.FC<UnitInspectorProps> = ({
         )}
       </div>
 
-      {/* Bottom Action: Sell Unit during preparation phase */}
-      {isPrepPhase && onSellUnit && !unit.isEnemy && (
+      {/* Bottom Action: Sell Unit */}
+      {canSellUnit && onSellUnit && (
         <button
           onClick={() => onSellUnit(unit)}
           className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-rose-950/80 hover:bg-rose-900/90 text-rose-300 hover:text-white border border-rose-600/70 transition-all font-bold text-xs shadow-md cursor-pointer mt-0.5"
