@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { loadChampionModularRig, loadChampionSkinModel, loadChampionAttackAnimation, retargetClipToModel, sanitizeAnimationClip, ChampionRigData, isFemaleChampion } from '../utils/modelPreloader';
 import { createProceduralMannequin, ProceduralMannequin } from '../utils/proceduralMannequin';
 import { enrichMixamoModelIfNeeded } from '../utils/mixamoBodyEnricher';
@@ -377,18 +378,43 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
       (navigator.maxTouchPoints && navigator.maxTouchPoints > 2)
     );
 
+    // Desktop EXE detection: Electron wrapper / file: protocol / ?pbr=1 dev flag
+    const isExeApp = typeof window !== 'undefined' && (
+      (window.navigator?.userAgent?.toLowerCase() || '').includes('electron') ||
+      window.location.protocol === 'file:' ||
+      Boolean((window as any).process?.versions?.electron) ||
+      Boolean((window as any).__FORCE_PBR__) ||
+      new URLSearchParams(window.location.search).get('pbr') === '1'
+    );
+
     const renderer = new THREE.WebGLRenderer({
       alpha: true,
-      antialias: false,
+      antialias: isExeApp,
       powerPreference: 'high-performance',
-      precision: isMobileDevice ? 'lowp' : 'mediump',
+      precision: isExeApp ? 'highp' : (isMobileDevice ? 'lowp' : 'mediump'),
       stencil: false,
       depth: true,
     });
     renderer.setSize(width, height);
     renderer.setPixelRatio(isMobileDevice ? 1.0 : Math.min(window.devicePixelRatio || 1, 1.25));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    if (isExeApp) {
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.0;
+    }
     renderer.shadowMap.enabled = false;
+
+    // Authentic PBR Image-Based Lighting (IBL) exclusively on Desktop EXE (avoids GPU strain on Web)
+    let pmremGenerator: THREE.PMREMGenerator | null = null;
+    let envTexture: THREE.Texture | null = null;
+    if (isExeApp) {
+      pmremGenerator = new THREE.PMREMGenerator(renderer);
+      const roomEnv = new RoomEnvironment();
+      envTexture = pmremGenerator.fromScene(roomEnv, 0.04).texture;
+      scene.environment = envTexture;
+      scene.environmentIntensity = 0.85;
+      roomEnv.dispose();
+    }
 
     container.innerHTML = '';
     renderer.domElement.style.pointerEvents = 'none';
@@ -415,32 +441,40 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
     let orbLight1: THREE.PointLight | null = null;
     let orbLight2: THREE.PointLight | null = null;
     if (hasOrb) {
-      orbLight1 = new THREE.PointLight(0xa855f7, 3.2, 4.5);
+      orbLight1 = new THREE.PointLight(0xa855f7, isExeApp ? 2.2 : 3.2, 4.5);
       orbLight1.position.set(0, targetHeight * 0.55, 0.7);
       scene.add(orbLight1);
 
-      orbLight2 = new THREE.PointLight(0x9333ea, 2.4, 4.5);
+      orbLight2 = new THREE.PointLight(0x9333ea, isExeApp ? 1.8 : 2.4, 4.5);
       orbLight2.position.set(0, targetHeight * 0.8, -0.7);
       scene.add(orbLight2);
     }
 
-    // Dynamic Studio Lighting (Streamlined on Mobile for maximum 60FPS throughput)
-    const ambientIntensity = isMobileDevice ? 3.0 : 2.4;
+    // Dynamic Studio Lighting: Original high-performance web lights vs PBR-balanced lights on EXE
+    const ambientIntensity = isExeApp
+      ? 0.5
+      : (isMobileDevice ? 3.0 : 2.4);
     const ambientLight = new THREE.AmbientLight(0xffffff, ambientIntensity);
     scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, isMobileDevice ? 2.6 : 3.4);
+    const dirLight = new THREE.DirectionalLight(
+      0xffffff,
+      isExeApp ? 1.9 : (isMobileDevice ? 2.6 : 3.4)
+    );
     dirLight.position.set(2.5, 6, 4.5);
     dirLight.castShadow = false;
     scene.add(dirLight);
 
-    // Desktop/EXE receives full studio rim and fill lights; Mobile skips them to avoid GPU fragment shader throttling
+    // Desktop/EXE receives rim and fill lights; Mobile skips them
     if (!isMobileDevice) {
-      const rimLight = new THREE.DirectionalLight(0xffffff, 2.2);
+      const rimLight = new THREE.DirectionalLight(0xffffff, isExeApp ? 1.1 : 2.2);
       rimLight.position.set(isEnemy ? 2 : -2, 4, -3);
       scene.add(rimLight);
 
-      const fillLight = new THREE.DirectionalLight(isEnemy ? 0xf43f5e : 0x38bdf8, 1.8);
+      const fillLight = new THREE.DirectionalLight(
+        isEnemy ? 0xf43f5e : 0x38bdf8,
+        isExeApp ? 0.8 : 1.8
+      );
       fillLight.position.set(isEnemy ? 2.5 : -2.5, 1.5, 2.5);
       scene.add(fillLight);
     }
@@ -874,8 +908,25 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
                     } else {
                       mat.emissive = isEnemy ? new THREE.Color('#f43f5e').multiplyScalar(0.08) : new THREE.Color(0x000000);
                     }
-                    mat.roughness = Math.min(mat.roughness ?? 0.5, 0.65);
-                    mat.metalness = Math.min(mat.metalness ?? 0.1, 0.2);
+                    if (isExeApp) {
+                      mat.envMapIntensity = 1.0;
+                      if (mat.roughness === undefined || mat.roughness === null) {
+                        mat.roughness = 0.5;
+                      }
+                      if (mat.metalness === undefined || mat.metalness === null) {
+                        mat.metalness = 0.0;
+                      }
+                      if (mat.normalMap) {
+                        if (!mat.normalScale || (mat.normalScale.x === 0 && mat.normalScale.y === 0)) {
+                          mat.normalScale = new THREE.Vector2(1, 1);
+                        }
+                        mat.normalMap.needsUpdate = true;
+                      }
+                    } else {
+                      // Original lightweight web material parameters
+                      mat.roughness = Math.min(mat.roughness ?? 0.5, 0.65);
+                      mat.metalness = Math.min(mat.metalness ?? 0.1, 0.2);
+                    }
                     if (mat.map) {
                       mat.map.colorSpace = THREE.SRGBColorSpace;
                       if (mat.map.image) {
@@ -1094,6 +1145,12 @@ export const Champion3DModel: React.FC<Champion3DModelProps> = ({
       }
       modelGroupRef.current = null;
       mannequinRef.current = null;
+      if (envTexture) {
+        envTexture.dispose();
+      }
+      if (pmremGenerator) {
+        pmremGenerator.dispose();
+      }
       renderer.dispose();
       scene.clear();
       if (container) {
